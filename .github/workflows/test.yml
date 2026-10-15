@@ -1,0 +1,19 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.2
+        run: sudo apt-get update && sudo apt-get install -y lua5.2
+      - name: Run offline tests
+        run: bash test/run.sh
+        env:
+          LUA: lua5.2
+          LUAC: luac5.2

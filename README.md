@@ -1,5 +1,7 @@
 # Mass Vehicle Replace (Transport Fever 3)
 
+[![tests](https://github.com/ramsterhad/tf3-mass-vehicle-replace/actions/workflows/test.yml/badge.svg)](https://github.com/ramsterhad/tf3-mass-vehicle-replace/actions/workflows/test.yml)
+
 Replaces all vehicles of one model with another, across all lines. Adds a "Replace Vehicles" button to the depot window.
 
 Ersetzt alle Fahrzeuge eines Modells durch ein anderes, auf allen Linien. Fügt im Depotfenster einen Button „Fahrzeuge ersetzen“ hinzu.
