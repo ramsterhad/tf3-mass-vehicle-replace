@@ -1,13 +1,13 @@
--- Fahrzeugtausch: Knoepfe und Fenster. Feste Breiten, damit Liste, Popup und Fenster nicht springen.
--- Rechnung fuer einen Eintrag: Bild 96 + Abstand 8 + Text 240 = 344; dazu Innenabstand der Liste 2 x 12
--- und ihr Pfeil mit Rand etwa 24: rund 392, passt in eine Zelle von 440. Darunter die Frachtzeile, ebenso 344 breit:
+-- Mass Vehicle Replace: Knoepfe und Fenster. Feste Breiten, damit Liste, Popup und Fenster nicht springen.
+-- Rechnung fuer einen Eintrag: Innenabstand der Liste 12 + Bild 96 + Abstand 8 + Text 290 = 406. Im Spiel gemessen
+-- beginnt der Pfeil der Liste etwa bei 420 (Zelle 440), der Text endet also knapp davor. Frachtzeile 394 breit:
 -- 16 Felder zu 18 + 2 Rand = 320, bei mehr Frachten 15 Symbole und ein breiteres Feld "+n" (300 + 24).
 local ssu = require "::/gui/main/stylesheetutil.lua"
 
 local CELL = 440
 local MID = 48
 local ITEM_IMAGE = { 96, 20 }
-local ITEM_TEXT = 240
+local ITEM_TEXT = 290
 local CARGO_ICON = 18
 local CARGO_ROW = ITEM_IMAGE[1] + 8 + ITEM_TEXT
 local BIG_IMAGE = { CELL, 56 } -- so breit wie die Liste: das eingepasste Bild steht mittig darunter

@@ -28,5 +28,5 @@ First public release. Versions 0.x were internal test builds.
 - Decorative models are hidden: copies without a store entry (e.g. from asset mods) and "fake" locomotives without engine and cargo.
 - English and German.
 
-[Unreleased]: https://github.com/ramsterhad/tf3-vehicle-bulk-replace/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/ramsterhad/tf3-vehicle-bulk-replace/releases/tag/v1.0.0
+[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/releases/tag/v1.0.0

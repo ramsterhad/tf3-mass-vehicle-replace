@@ -1,4 +1,4 @@
--- Lokaler Test fuer fahrzeugtausch.script.lua ohne Spiel (Lua 5.2 wie im Spiel).
+-- Lokaler Test fuer mass_vehicle_replace.script.lua ohne Spiel (Lua 5.2 wie im Spiel).
 -- Bildet api, react, builtin usw. nach, baut das Fenster in mehreren Lagen auf und prueft die Regeln,
 -- an denen das Spiel bisher abgestuerzt ist oder falsch gezeichnet hat.
 -- Aufruf: lua5.2 test_ft.lua <script.lua> <css.lua> <strings_de.lua>
@@ -401,7 +401,7 @@ local function openAndRender(label, carrier, locked)
 		bar.props.secondaryButtons[1].customItem.props.onClick()
 		opened = true
 	end
-	local w = windows["fahrzeugtausch.window"]
+	local w = windows["mass_vehicle_replace.window"]
 	check(opened and w, label .. ": Fenster nicht geoeffnet")
 	lastWindow = w
 	local win = render("FtWindow", w.params)

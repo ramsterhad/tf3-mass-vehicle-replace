@@ -1,7 +1,7 @@
 #!/bin/bash
-# Lokaler Test des Fahrzeugtausch-Fensters (WSL). Aufruf: bash run.sh
+# Lokaler Test des Fensters von Mass Vehicle Replace (WSL). Aufruf: bash run.sh
 set -e
-MOD="${MOD:-$(cd "$(dirname "$0")/.." && pwd)/fahrzeugtausch_1}"
+MOD="${MOD:-$(cd "$(dirname "$0")/.." && pwd)/mass_vehicle_replace_1}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 LUA="$HOME/.local/lua52/root/usr/bin/lua5.2"
 export LD_LIBRARY_PATH="$HOME/.local/lua52/root/usr/lib/x86_64-linux-gnu"
@@ -17,5 +17,5 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
         f.write("\t[%s] = %s,\n" % (json.dumps(k), json.dumps(v, ensure_ascii=False)))
     f.write("}\n")
 PY
-"$HOME/.local/bin/luac52" -p "$MOD/content/gui/fahrzeugtausch.script.lua" "$MOD/content/gui/fahrzeugtausch.css.lua"
-"$LUA" "$HERE/test_ft.lua" "$MOD/content/gui/fahrzeugtausch.script.lua" "$MOD/content/gui/fahrzeugtausch.css.lua" "$HERE/strings_de.lua"
+"$HOME/.local/bin/luac52" -p "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua"
+"$LUA" "$HERE/test_ft.lua" "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua" "$HERE/strings_de.lua"

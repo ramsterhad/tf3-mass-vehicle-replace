@@ -1,4 +1,4 @@
--- Fahrzeugtausch: ersetzt alle Fahrzeugteile eines Modells durch ein anderes Modell, auf allen Linien und im Depot.
+-- Mass Vehicle Replace: ersetzt alle Fahrzeugteile eines Modells durch ein anderes Modell, auf allen Linien und im Depot.
 -- Knopf "Fahrzeuge ersetzen" im Depotfenster, Fenster mit zwei Auswahllisten. Der Tausch nutzt makeVehicleReplaceCmd wie der
 -- Ersetzen-Dialog des Spiels (gui/line_vehicle_mgmt/vehicle_util.tl makePart, vehicle_react_util.tl).
 -- Schleifenvariablen ohne `_`, das ist hier die Uebersetzungsfunktion.
@@ -9,11 +9,11 @@ local gui_react_util = ug_require "::/gui/main/gui_react_util.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local okGlobals, game_react_globals = pcall(ug_require, "::/gui/main/game_react_globals.tl")
 
-local WINDOW_KEY = "fahrzeugtausch.window"
+local WINDOW_KEY = "mass_vehicle_replace.window"
 local CT = api.type.ComponentType
 
 local function log(...)
-	debugPrint("[Fahrzeugtausch]", ...)
+	debugPrint("[MassVehicleReplace]", ...)
 end
 
 -- Modelldaten ------------------------------------------------------------------------------------
@@ -440,7 +440,7 @@ local function replaceAll(altKey, neuKey)
 end
 
 -- Fenster ---------------------------------------------------------------------------------------------
--- Aufbau in Zeilen aus Zellen fester Breite (Klassen in fahrzeugtausch.css.lua):
+-- Aufbau in Zeilen aus Zellen fester Breite (Klassen in mass_vehicle_replace.css.lua):
 --   Fahrzeugart und Sortierung
 --   [Altes Modell]   [    ]   [Neues Modell]
 --   [Auswahlliste]   [Pfeil]  [Auswahlliste]   <- Pfeil steht mittig zu den Listen
@@ -449,7 +449,7 @@ end
 -- Feste Breiten und Hoehen: Liste, Popup und Fenster aendern ihre Groesse nicht, egal was gewaehlt ist.
 -- styleutil.makeStyle kennt nur size, keine minSize/maxSize/gravity/padding; die stehen daher in Klassen.
 
-local ITEM_NAME_CHARS = 30 -- laengere Namen werden gekuerzt, voller Name als Tooltip
+local ITEM_NAME_CHARS = 42 -- laengere Namen werden gekuerzt, voller Name als Tooltip
 -- Umschalter der Fahrzeugart: bleibt sichtbar, das Depot waehlt seine Art nur vor (ersetzt wird ohnehin ueberall)
 local SHOW_CARRIER_BAR = true
 
@@ -872,7 +872,7 @@ local FtWindow = react.RegisterWrapperRecipe("FtWindow", builtin.Window, functio
 	react.onUnmount(function() windowOpen = false end)
 	return builtin.Window{
 		meta = { class = "ft-window" },
-		id = "fahrzeugtausch.window",
+		id = "mass_vehicle_replace.window",
 		-- 0 bis 1 ueber den Bildschirm wie die mittigen Fenster des Spiels (main_page 0.5/0.5);
 		-- mittig steht es erst mit dem Anker der CSS-Klasse ft-window
 		initialX = 0.5,
@@ -921,7 +921,7 @@ local depotOfWindow -- Depot des zuletzt aufgebauten Depotfensters
 -- "Fahrzeuge verwalten" gibt es nur im Depotfenster, andere Fenster bleiben unveraendert.
 local function replaceButton(depot)
 	return builtin.Button{
-		meta = { class = "primary", tag = "fahrzeugtausch.replaceVehicles" },
+		meta = { class = "primary", tag = "mass_vehicle_replace.replaceVehicles" },
 		onClick = function()
 			if windowOpen then closeWindow() end
 			log("Depotknopf", tostring(depot))

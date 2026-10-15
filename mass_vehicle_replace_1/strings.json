@@ -1,6 +1,6 @@
 {
 	"en": {
-		"ft_title": "Bulk Vehicle Replace",
+		"ft_title": "Mass Vehicle Replace",
 		"ft_replace_vehicles": "Replace Vehicles",
 		"ft_old_model": "Old model",
 		"ft_new_model": "New model",
@@ -38,7 +38,7 @@
 		"ft_n_parts_1": "1 car"
 	},
 	"de": {
-		"ft_title": "Bulk Vehicle Replace",
+		"ft_title": "Mass Vehicle Replace",
 		"ft_replace_vehicles": "Fahrzeuge ersetzen",
 		"ft_old_model": "Altes Modell",
 		"ft_new_model": "Neues Modell",
