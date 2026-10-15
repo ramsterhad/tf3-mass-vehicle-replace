@@ -10,7 +10,7 @@ Ersetzt alle Fahrzeuge eines Modells durch ein anderes, auf allen Linien. Fügt 
 
 - Lists the models you own (left) and suitable replacements that are currently available (right).
 - "Same cargo" filter: only offer models that can carry at least everything the old one could. Can be switched off.
-- Locomotives only replace locomotives, wagons only wagons. Multiple units are replaced as complete sets. In mixed trains only the chosen model is replaced.
+- Locomotives only replace locomotives, wagons only wagons. Multiple units are replaced as complete sets. Reversed vehicles and units stay reversed. In mixed trains only the chosen model is replaced.
 - Sort by name or year. Cargo icons for every model. The color of the old vehicles is kept where possible.
 - Uses the game's own replace command: the window shows the full purchase price, the game charges that price minus the residual value of the old vehicles.
 - English and German.

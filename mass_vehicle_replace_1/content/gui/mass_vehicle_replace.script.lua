@@ -45,9 +45,22 @@ end
 
 -- Frachtarten, die das Modell laden kann, wie im Kauffenster (vehicle_store_util): je Ladung mit Kapazitaet
 -- alle Frachtarten ihres cargoTypeSet; sortiert nach der Reihenfolge des Spiels
+-- Frachtart einmal nachschlagen und merken (Symbol, Name, Reihenfolge); die Liste fragt sonst bei jedem
+-- Neuzeichnen je Eintrag und Feld erneut nach. false: unbekannte Frachtart
+local cargoCache = {}
+local function cargoType(id)
+	local c = cargoCache[id]
+	if c == nil then
+		local ok, ct = pcall(api.res.cargoTypeRep.get, id)
+		c = ok and ct and { icon = ct.icon, name = ct.name, order = ct.order or 0 } or false
+		cargoCache[id] = c
+	end
+	return c
+end
+
 local function cargoOrder(id)
-	local ok, ct = pcall(api.res.cargoTypeRep.get, id)
-	return ok and ct and ct.order or 0
+	local c = cargoType(id)
+	return c and c.order or 0
 end
 
 local function sortCargos(list)
@@ -398,6 +411,21 @@ local function rebuild(cfg, altInfo, neuInfo, t)
 	return conf, units
 end
 
+-- Ausrichtung zum Pruefen gedrehter Triebzuege: Modell-ID je Teil, ">" vorwaerts, "<" gedreht, "|" trennt Gruppen
+local function orientation(c)
+	local out, k = {}, 1
+	for __, size in ipairs(c.vehicleGroups) do
+		local g = {}
+		for j = k, k + size - 1 do
+			local p = c.vehicles[j]
+			g[#g + 1] = tostring(p.part.modelId) .. (p.part.reversed and "<" or ">")
+		end
+		out[#out + 1] = table.concat(g, " ")
+		k = k + size
+	end
+	return table.concat(out, " | ")
+end
+
 -- Ersetzt in jedem Fahrzeug alt durch neu; die uebrigen Teile bleiben, wie sie sind.
 local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
@@ -419,6 +447,7 @@ local function replaceAll(altKey, neuKey)
 				if part.purchaseTime ~= t then kept = true end
 			end
 			if kept then money_log.partial = money_log.partial + 1 else money_log.whole = money_log.whole + 1 end
+			pcall(function() log("Ausrichtung", v, "alt:", orientation(cfg), "neu:", orientation(conf)) end)
 			result.sent = result.sent + 1
 			local entity = v
 			api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, conf), function(__, success)
@@ -484,9 +513,9 @@ end
 local CARGO_SLOTS = 16
 
 local function cargoInfo(id)
-	local ok, ct = pcall(api.res.cargoTypeRep.get, id)
-	if not ok or not ct then return nil, nil end
-	return ct.icon, ct.name
+	local c = cargoType(id)
+	if not c then return nil, nil end
+	return c.icon, c.name
 end
 
 local function cargoRow(cargos)

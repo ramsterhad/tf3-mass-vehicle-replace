@@ -235,7 +235,7 @@ api = {
 				for _i, c in ipairs(set.cargoTypesIncluded or {}) do if CARGO[c] and not seen[CARGO[c]] then seen[CARGO[c]] = true; cb(CARGO[c]) end end
 			end,
 			-- Reihenfolge des Spiels absichtlich anders als die Nummern: Oel vor Kohle
-			get = function(id) return { name = CARGO_NAMES[id], icon = "cargo/" .. id .. ".tga", order = id == 6 and 0 or id } end,
+			get = function(id) CARGO_GETS = (CARGO_GETS or 0) + 1; return { name = CARGO_NAMES[id], icon = "cargo/" .. id .. ".tga", order = id == 6 and 0 or id } end,
 		},
 		modelRep = {
 			getAll = function() local t = {}; for id in pairs(models) do t[id] = true end; return t end,
@@ -702,6 +702,11 @@ cs = combos(t)
 local anyCargo = false
 for i = 2, itemCount(cs[2]) do local icx = cargoOf(cs[2].props.items[i]); if #icx > 0 then anyCargo = true end end
 check(anyCargo, "rechte Liste ohne Frachtsymbole")
+
+print("== Frachtarten werden nur einmal nachgeschlagen")
+local getsBefore = CARGO_GETS or 0
+content("erneut zeichnen 1"); content("erneut zeichnen 2")
+check((CARGO_GETS or 0) == getsBefore, "Frachtarten werden bei jedem Zeichnen neu abgefragt: " .. ((CARGO_GETS or 0) - getsBefore))
 
 print("== Liste wird nach dem Ersetzen frisch aufgebaut")
 openAndRender("Zugdepot 7", 500, true)

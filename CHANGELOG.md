@@ -20,6 +20,7 @@ First public release. Versions 0.x were internal test builds.
 - Locomotives are only replaced by locomotives, wagons only by wagons.
 - Multiple units are listed and replaced as complete sets, with the number of cars shown.
 - In mixed trains only the chosen model is replaced, the rest of the train stays.
+- Reversed locomotives, wagons and multiple units stay reversed.
 - Cargo icons for every model, in a row below image and name.
 - "Same cargo" filter: only offer models that can carry at least everything the old one could. On by default, can be switched off.
 - Sorting by name or year.
