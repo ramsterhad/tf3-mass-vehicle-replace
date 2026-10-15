@@ -1,0 +1,15 @@
+{
+  "authors": [
+    {
+      "name": "ramsterhad",
+      "role": "CREATOR"
+    }
+  ],
+  "description": "Version 0.29 (15.10.2026)\n\nEin neues, besseres Fahrzeug ist erschienen und du willst alle alten Busse, Loks, Waggons, Schiffe oder Flugzeuge austauschen? Im Spiel geht das nur Linie für Linie. Mit dieser Mod ersetzt du alle Fahrzeuge eines Modells durch ein anderes.\n\nSo geht's\n1. Im Depotfenster auf den Button „Fahrzeuge ersetzen“ klicken. Er sitzt rechts neben „Fahrzeuge verwalten“.\n2. Links das alte Modell wählen. Angezeigt werden nur Modelle, die du besitzt, mit ihrer Anzahl.\n3. Rechts das neue Modell wählen. Angeboten werden nur passende Modelle, die gerade kaufbar sind und mindestens dieselbe Fracht laden können wie das alte. Mit dem Schalter „Gleiche Fracht“ lässt sich dieser Filter abschalten.\n4. Das Fenster zeigt, wie viele Fahrzeuge ersetzt werden und was das kostet. Dann auf „Ersetzen“ klicken.\n\nDetails\n- Die Fahrzeugart des Depots ist vorgewählt. Über die Symbole oben lässt sich auf eine andere Art wechseln.\n- Loks werden nur durch Loks ersetzt, Waggons nur durch Waggons.\n- Triebzüge werden als Ganzes getauscht.\n- Die Listen lassen sich nach Namen oder Baujahr sortieren.\n- Die Mod nutzt den Ersetzen-Befehl des Spiels. Es wird der normale Kaufpreis berechnet, für die alten Fahrzeuge schreibt das Spiel wie beim normalen Ersetzen ihren Restwert gut.\n- Sprachen: Deutsch und Englisch.\n\nHinweis: Ich empfehle, das Spiel zu speichern, bevor die Mod das erste Mal eingesetzt wird.\n\nMit KI-Unterstützung (Claude) entwickelt, von mir im Spiel getestet.\n\n---\n\nA new, better vehicle is out and you want to swap all your old buses, locomotives, wagons, ships or aircraft? In the base game you do that line by line. This mod replaces all vehicles of one model with another.\n\nHow it works\n1. In the depot window, click the \"Replace Vehicles\" button, right next to \"Manage Vehicles\".\n2. Choose the old model on the left. Only models you own are listed, along with how many you have.\n3. Choose the new model on the right. Only matching models that are currently available and can carry at least the same cargo as the old one are offered. The \"Same cargo\" switch turns this filter off.\n4. The window shows how many vehicles will be replaced and what it costs. Then click \"Replace\".\n\nDetails\n- The depot's vehicle type is preselected. Use the icons at the top to switch to another type.\n- Locomotives are only replaced by locomotives, wagons only by wagons.\n- Multiple units are replaced as a whole.\n- Lists can be sorted by name or by year.\n- The mod uses the game's own replace command. The regular purchase price is charged, and just like a normal replacement the game refunds the residual value of the old vehicles.\n- Languages: English and German.\n\nNote: I recommend saving your game before using the mod for the first time.\n\nDeveloped with AI assistance (Claude), tested in game by me.",
+  "name": "Bulk Vehicle Replace",
+  "summary": "Ersetzt alle Fahrzeuge eines Modells durch ein anderes. Replaces all vehicles of one model with another.",
+  "tags": [
+    "Script Mod"
+  ],
+  "url": ""
+}

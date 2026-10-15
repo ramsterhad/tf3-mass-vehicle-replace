@@ -1,0 +1,15 @@
+{
+	"modId": "fahrzeugtausch_1",
+	"revision": 29,
+	"severityAdd": "None",
+	"severityRemove": "None",
+	"visible": true,
+	"cosmetic": true,
+	"dependencies": null,
+	"incompatibilities": null,
+	"options": null,
+	"params": null,
+	"preRunScript": { "fileName": "" },
+	"runScript": { "fileName": "" },
+	"postRunScript": { "fileName": "" }
+}
