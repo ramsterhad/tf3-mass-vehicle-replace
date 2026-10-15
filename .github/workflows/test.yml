@@ -1,8 +1,8 @@
 name: tests
 
+# runs on every push (feature branches and the merge into main) and on every pull request
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
