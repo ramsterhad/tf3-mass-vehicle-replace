@@ -26,4 +26,8 @@ I recommend saving your game before using the mod for the first time.
 - `fahrzeugtausch_1/`: the mod itself (`mod.json`, `strings.json`, `content/gui/`, `_metadata/`).
 - `test/`: offline test harness. It mocks the game API and renders the window as a tree to check layout rules and replace logic. Run with `bash test/run.sh` (needs Lua 5.2 and Python 3, paths in `run.sh`).
 
+## License
+
+MIT, see [LICENSE](LICENSE).
+
 Developed with AI assistance (Claude), tested in game by the author.
