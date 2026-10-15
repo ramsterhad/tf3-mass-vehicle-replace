@@ -1,8 +1,10 @@
 name: tests
 
-# runs on every push (feature branches and the merge into main) and on every pull request
+# runs on every pull request (each push to its branch re-runs the check) and on main,
+# which includes every merge; no duplicate runs for branch pushes
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
