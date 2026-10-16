@@ -123,6 +123,9 @@ local modules = {
 	["::/gui/main/game_react_globals.tl"] = game_react_globals,
 	["::/gui/entity_window/entity_window_util.tl"] = entity_window_util,
 	["::/gui/entity_window/maintenance_station/maintenance_station.tl"] = MaintenanceStationWindow,
+	["::/gui/entity_window/maintenance_station/maintenance_station_eow.script.tl"] = {
+		MaintenanceStationEowExtensionPoint = { id = "::MaintenanceStationEowExtensionPoint" },
+	},
 }
 function ug_require(path)
 	local m = modules[path]
@@ -324,7 +327,7 @@ end
 -- CSS-Klassen einlesen ----------------------------------------------------------------------------------
 local cssText = io.open(CSS):read("*a")
 local cssClasses = {}
-for c in cssText:gmatch("!(ft%-[%w%-]+)") do cssClasses[c] = true end
+for c in cssText:gmatch("!(mvr%-[%w%-]+)") do cssClasses[c] = true end
 
 -- Regeln ------------------------------------------------------------------------------------------------
 local COMPONENTS = { Component = true, TextView = true, ImageView = true }
@@ -351,7 +354,7 @@ local function rules(tree, label)
 		local p = n.props or {}
 		local cls = p.meta and p.meta.class
 		if cls then
-			for c in tostring(cls):gmatch("ft%-[%w%-]+") do
+			for c in tostring(cls):gmatch("mvr%-[%w%-]+") do
 				check(cssClasses[c], path .. ": CSS-Klasse fehlt: " .. c)
 			end
 		end
@@ -396,7 +399,7 @@ local function shapeOf(itemNode)
 	-- Bild oder leere Flaeche zaehlen gleich, wenn die Klasse gleich ist
 	walk(itemNode, "", function(n)
 		local cls = n.props.meta and n.props.meta.class
-		local kind = (cls == "ft-item-image") and "Bild" or (tostring(cls):find("ft%-cargo%-icon") and "Fracht") or n.kind
+		local kind = (cls == "mvr-item-image") and "Bild" or (tostring(cls):find("mvr%-cargo%-icon") and "Fracht") or n.kind
 		s[#s + 1] = kind == "Fracht" and kind or (kind .. ":" .. tostring(cls))
 	end)
 	return table.concat(s, ",")
@@ -424,7 +427,7 @@ local function openAndRender(label, carrier, locked)
 		exports.doReplace(replacementApi)
 		local bar = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
 		check(#bar.props.secondaryButtons == 1, label .. ": Depotknopf fehlt in der Knopfleiste")
-		render("FtMaintenanceStationWindow", { keyEntity = carrier })
+		check(exports.depotProbeCondition({ entityId = carrier }) == false, label .. ": depot probe must never show its plugin")
 		local bar2 = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
 		bar2.props.secondaryButtons[1].customItem.props.onClick()
 		opened = true
@@ -436,7 +439,7 @@ local function openAndRender(label, carrier, locked)
 		currentRecipe = nil
 		check(sp.kind == "Spacer", label .. ": Kopfleiste der Verwaltung wurde veraendert")
 		-- Depot ohne Daten: keine Vorauswahl, alle Arten
-		render("FtMaintenanceStationWindow", { keyEntity = 999 })
+		exports.depotProbeCondition({ entityId = 999 })
 		local bar = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
 		bar.props.secondaryButtons[1].customItem.props.onClick()
 		opened = true
@@ -444,13 +447,13 @@ local function openAndRender(label, carrier, locked)
 	local w = windows["mass_vehicle_replace.window"]
 	check(opened and w, label .. ": Fenster nicht geoeffnet")
 	lastWindow = w
-	local win = render("FtWindow", w.params)
-	check(win.kind == "Window", label .. ": FtWindow liefert kein Window")
+	local win = render("MvrWindow", w.params)
+	check(win.kind == "Window", label .. ": MvrWindow liefert kein Window")
 	return w
 end
 
 local function content(label)
-	local t = render("FtContent", { onClose = function() end })
+	local t = render("MvrContent", { onClose = function() end })
 	rules(t, label)
 	sameShapes(t, label)
 	return t
@@ -460,7 +463,7 @@ end
 print("== Zugdepot")
 openAndRender("Zugdepot", 500, true)
 local t = content("Zugdepot")
-local on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "ft-filter" and n.props.value == 1 end)
+local on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
 check(#on == 1 and on[1].props.meta.tooltip == "Schiene: Loks und Wagen", "Zugdepot: Schiene nicht vorausgewaehlt")
 local cs = combos(t)
 check(#cs == 2, "zwei Listen erwartet, gefunden " .. #cs)
@@ -512,7 +515,7 @@ check(not nl:find("Universalwagen") and not nl:find("Avmz"), "Sammelwagen: kein 
 cs[1].props.onValueChange("m2")
 -- Schalter "Gleiche Fracht": aus zeigt alle Wagen, an wieder nur passende
 local function cargoToggle()
-	local tg = find(content("Schalter"), function(n) return n.kind == "ToggleButton" and n.props.meta and n.props.meta.class == "ft-cargo-filter" end)
+	local tg = find(content("Schalter"), function(n) return n.kind == "ToggleButton" and n.props.meta and n.props.meta.class == "mvr-cargo-filter" end)
 	check(#tg == 1, "Schalter Gleiche Fracht fehlt")
 	return tg[1]
 end
@@ -529,7 +532,7 @@ check(not nl:find("Universalwagen"), "Frachtfilter wieder an wirkt nicht: " .. n
 nl, cs = neuList()
 cs[2].props.onValueChange("m3")
 t = content("neu gewaehlt")
-local big = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "ft-big-image" end)
+local big = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-big-image" end)
 check(#big == 2, "zwei grosse Bilder erwartet, " .. #big)
 local summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
 check(#summary == 1, "Zusammenfassung fehlt")
@@ -545,7 +548,7 @@ t = content("Platzhalter geklickt")
 check(combos(t)[2].props.value == "m3", "Platzhalter hat Auswahl geloescht")
 
 print("== Sortierung nach Jahr")
-local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "ft-sort" end)
+local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
 check(#sorts == 2, "zwei Sortierknoepfe erwartet")
 sorts[2].props.onValueChange(1)
 t = content("Jahr")
@@ -557,7 +560,7 @@ check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" 
 
 print("== Ersetzen")
 sent = {}
-local btn = find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1]
+local btn = find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1]
 btn.props.onClick()
 print("  Befehle: " .. #sent)
 check(#sent == 3, "Wagen 2 steckt in 3 Fahrzeugen, Befehle: " .. #sent)
@@ -579,7 +582,7 @@ t = content("nach Ersetzen")
 local res = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Ersetzt:") end)
 print("  " .. tostring(res[1] and res[1].props.text))
 check(#res == 1, "Ergebnis des Ersetzens wird nicht angezeigt")
-local ic = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "ft-btn-icon" end)
+local ic = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-btn-icon" end)
 check(#ic == 1, "Symbol im Ersetzen-Knopf fehlt")
 
 print("== Triebzug als Ganzes tauschen")
@@ -608,7 +611,7 @@ check(summary[1] and summary[1].props.text == "2 Fahrzeuge werden ersetzt.", "Tr
 sent = {}
 costPerCommand = 3300000
 bankBalance = 10000000
-find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1].props.onClick()
+find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
 check(#sent == 2, "Triebzug: 2 Befehle erwartet, " .. #sent)
 for _i, c in ipairs(sent) do
 	local ids, rev = {}, {}
@@ -641,7 +644,7 @@ t = content("M-300 gegen ET 423")
 sent = {}
 costPerCommand = 2200000
 bankBalance = 10000000
-find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1].props.onClick()
+find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
 check(#sent == 1 and sent[1].e == 106, "M-300: ein Befehl fuer Zug 106 erwartet")
 if sent[1] then
 	local ids = {}
@@ -660,7 +663,7 @@ cs = combos(t)
 cs[2].props.onValueChange("m61")
 t = content("ET 420 gegen Roter Pfeil")
 sent = {}
-find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1].props.onClick()
+find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
 check(#sent == 2, "ET 420 gegen Roter Pfeil: 2 Befehle")
 for _i, c in ipairs(sent) do
 	local ids = {}
@@ -700,9 +703,9 @@ local function cargoOf(itemNode)
 	local icons, more, tip = {}, nil, nil
 	walk(itemNode, "", function(n)
 		local cls = n.props.meta and tostring(n.props.meta.class) or ""
-		if cls:find("ft%-cargo%-icon") and n.kind == "ImageView" then icons[#icons + 1] = n.props.path end
-		if cls:find("ft%-cargo%-icon") and n.kind == "TextView" then more = n.props.text end
-		if cls == "ft-cargo" then tip = n.props.meta.tooltip end
+		if cls:find("mvr%-cargo%-icon") and n.kind == "ImageView" then icons[#icons + 1] = n.props.path end
+		if cls:find("mvr%-cargo%-icon") and n.kind == "TextView" then more = n.props.text end
+		if cls == "mvr-cargo" then tip = n.props.meta.tooltip end
 	end)
 	return icons, more, tip
 end
@@ -751,7 +754,7 @@ vehicles[106] = saved
 print("== Strassendepot")
 openAndRender("Strassendepot", 501, true)
 t = content("Strassendepot")
-on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "ft-filter" and n.props.value == 1 end)
+on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
 check(#on == 1 and on[1].props.meta.tooltip == "Straße: Busse und Lkw", "Strassendepot: Strasse nicht vorausgewaehlt")
 cs = combos(t)
 names = {}
@@ -772,7 +775,7 @@ print("== Strassenbahndepot (carrier gesetzt) und gemischtes Depot")
 local function preselected(depot, label, tooltip)
 	openAndRender(label, depot, true)
 	local tt = content(label)
-	local hit = find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "ft-filter" and n.props.value == 1 end)
+	local hit = find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
 	check(#hit == 1 and hit[1].props.meta.tooltip == tooltip, label .. ": falsche Vorauswahl " .. tostring(hit[1] and hit[1].props.meta.tooltip))
 end
 preselected(502, "Strassenbahndepot", "Straßenbahnen")
@@ -782,7 +785,7 @@ preselected(503, "gemischtes Depot", "Straßenbahnen")
 print("== Depot ohne Daten, dann Schiffe ohne Bestand")
 openAndRender("Depot ohne Daten", nil, false)
 t = content("Verwaltung alle")
-local filters = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "ft-filter" end)
+local filters = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" end)
 check(#filters == 5, "fuenf Fahrzeugarten erwartet")
 filters[4].props.onValueChange(1)
 t = content("Schiffe")
@@ -819,7 +822,7 @@ for _i, case in ipairs({ { 1e19, 8 }, { math.huge, 8 }, { 0 / 0, 0 } }) do
 	bankBalance = b
 	t = content(label .. " Kasten")
 	local okClick, errClick = pcall(function()
-		find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1].props.onClick()
+		find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
 	end)
 	check(okClick, label .. ": replacing fails: " .. tostring(errClick))
 	check(#sent == expected, label .. ": " .. expected .. " commands expected, " .. #sent)
@@ -830,7 +833,7 @@ print("== Not enough money")
 -- the replace command does not check the balance; the full purchase price must be covered
 -- (Strassendepot: 8 Kipper, Kasten costs 61000 each, 488000 in total)
 local function replaceButton(tt)
-	return find(tt, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1]
+	return find(tt, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1]
 end
 local function priceText(tt)
 	local pt = find(tt, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
@@ -848,7 +851,7 @@ costPerCommand = 61000
 t = chooseKasten("too little money", 487999)
 local btnPoor = replaceButton(t)
 check(btnPoor.props.meta.enabled == false, "button not disabled without enough money")
-check(btnPoor.props.meta.class:find("ft-no-money", 1, true) ~= nil, "button without ft-no-money class")
+check(btnPoor.props.meta.class:find("mvr-no-money", 1, true) ~= nil, "button without mvr-no-money class")
 check(btnPoor.props.meta.tooltip == "Nicht genug Geld", "tooltip: " .. tostring(btnPoor.props.meta.tooltip))
 check(priceText(t) == "Kaufpreis: $488000", "price line: " .. tostring(priceText(t)))
 local function buttonText(btn)
@@ -884,6 +887,50 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 0, "click does not check the balance again: " .. #sent)
 bankBalance = 5000000
+
+print("== Depot window is not replaced, depot comes from the plugin condition")
+check(_react.recipeReplace.MaintenanceStationWindow == nil, "MaintenanceStationWindow is replaced although the plugin condition gives the depot")
+check(type(exports.depotProbe) == "table" or type(exports.depotProbe) == "function", "depot probe plugin recipe missing in data()")
+-- two depot windows render one after the other: each button opens its own depot (issue #4)
+local manage = { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} }
+exports.depotProbeCondition({ entityId = 500 })
+local barA = entity_window_util.ActionButtonBar(nil, manage)
+exports.depotProbeCondition({ entityId = 501 })
+local barB = entity_window_util.ActionButtonBar(nil, manage)
+-- the window opens with the vehicle type of its own depot: 500 rail, 501 road
+local function preselectedAfterClick(bar, label)
+	bar.props.secondaryButtons[1].customItem.props.onClick()
+	local w = windows["mass_vehicle_replace.window"]
+	check(w ~= nil, label .. ": window not opened")
+	if w then lastWindow = w; render("MvrWindow", w.params) end
+	local hit = find(content(label), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
+	return hit[1] and hit[1].props.meta.tooltip
+end
+local typeA = preselectedAfterClick(barA, "first depot window")
+check(typeA == "Schiene: Loks und Wagen", "button of the first depot window opens another depot: " .. tostring(typeA))
+local typeB = preselectedAfterClick(barB, "second depot window")
+check(typeB == "Straße: Busse und Lkw", "button of the second depot window opens another depot: " .. tostring(typeB))
+if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+
+print("== Robust against mods that overwrite the module field")
+-- fresh copy of the mod without the other mod's replacement in front of it
+local savedReplace, savedField = _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar
+_react.recipeReplace.ActionButtonBar = nil
+chunk()
+local fresh = data()
+fresh.doReplace(replacementApi)
+-- a careless mod swaps the field with a plain function after we loaded
+entity_window_util.ActionButtonBar = function(ref, p) return { kind = "Swapped", props = p } end
+local okSwap, swapped = pcall(barRecipe, nil, manage)
+check(okSwap, "our replacement breaks when another mod swaps the module field: " .. tostring(swapped))
+check(okSwap and swapped.kind == "ActionButtonBar" and #swapped.props.secondaryButtons == 1, "captured recipe not used after the field was swapped")
+-- the field is already swapped when the mod loads: no crash, no replacement
+_react.recipeReplace.ActionButtonBar = nil
+chunk()
+local okLoad = pcall(function() data().doReplace(replacementApi) end)
+check(okLoad, "doReplace fails when ActionButtonBar is not a recipe")
+check(_react.recipeReplace.ActionButtonBar == nil, "a plain function was passed to ReplaceRecipe")
+_react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar = savedReplace, savedField
 
 print(string.format("\n%d Pruefungen, %d Fehler", checks, failures))
 os.exit(failures == 0 and 0 or 1)

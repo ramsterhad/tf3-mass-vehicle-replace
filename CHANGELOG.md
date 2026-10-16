@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The depot is now read through the game's extension point for the depot window. The depot window itself is no longer replaced, so mods that change it no longer conflict with this one (#8).
+- Internal names (recipes, CSS classes, translation keys) carry the prefix "mvr", so they cannot clash with other mods.
+
+### Fixed
+
+- With several depot windows open, the button always opens the depot of its own window (#4).
+- If another mod overwrites the game's button bar in an incompatible way, only the depot button is switched off instead of the game crashing.
+
 ## [1.0.2] - 2026-10-16
 
 ### Fixed
@@ -43,6 +53,7 @@ First public release. Versions 0.x were internal test builds.
 - Decorative models are hidden: copies without a store entry (e.g. from asset mods) and "fake" locomotives without engine and cargo.
 - English and German.
 
-[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/releases/tag/v1.0.0

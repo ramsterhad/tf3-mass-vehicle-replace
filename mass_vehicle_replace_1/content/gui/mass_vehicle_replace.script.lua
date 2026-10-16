@@ -331,11 +331,11 @@ local result = { running = false, sent = 0, ok = 0, failed = 0, text = "" }
 
 local function updateText()
 	if result.sent == 0 then
-		result.text = _("ft_none_found")
+		result.text = _("mvr_none_found")
 		return
 	end
-	local s = string.format(_("ft_replaced"), result.ok, result.sent)
-	if result.failed > 0 then s = s .. string.format(_("ft_failed"), result.failed) end
+	local s = string.format(_("mvr_replaced"), result.ok, result.sent)
+	if result.failed > 0 then s = s .. string.format(_("mvr_failed"), result.failed) end
 	result.text = s
 end
 
@@ -438,7 +438,7 @@ local function replaceAll(altKey, neuKey)
 	end
 	-- checked again here: the balance may have changed since the window was drawn
 	if not enoughMoney(neuInfo.price * units) then
-		result.text = _("ft_not_enough_money")
+		result.text = _("mvr_not_enough_money")
 		return
 	end
 	for __, job in ipairs(jobs) do
@@ -493,7 +493,7 @@ end
 local function itemLine(s)
 	local short, cut = shorten(oneLine(s), ITEM_NAME_CHARS)
 	return builtin.TextView{
-		meta = { class = "font-scale-annotation, ft-item-text", tooltip = cut and oneLine(s) or nil },
+		meta = { class = "font-scale-annotation, mvr-item-text", tooltip = cut and oneLine(s) or nil },
 		text = short,
 	}
 end
@@ -517,11 +517,11 @@ local function cargoRow(cargos)
 	for k = 1, CARGO_SLOTS do
 		local icon = k <= show and cargoInfo(cargos[k]) or nil
 		if icon and icon ~= "" then
-			slots[k] = builtin.ImageView{ meta = { class = "ft-cargo-icon", mouseTransparent = true }, path = icon, scaling = builtin.type.ImageViewScaling.AutoFit }
+			slots[k] = builtin.ImageView{ meta = { class = "mvr-cargo-icon", mouseTransparent = true }, path = icon, scaling = builtin.type.ImageViewScaling.AutoFit }
 		elseif k == CARGO_SLOTS and n > CARGO_SLOTS then
-			slots[k] = builtin.TextView{ meta = { class = "font-scale-annotation, ft-cargo-icon, ft-cargo-more" }, text = "+" .. (n - show) }
+			slots[k] = builtin.TextView{ meta = { class = "font-scale-annotation, mvr-cargo-icon, mvr-cargo-more" }, text = "+" .. (n - show) }
 		else
-			slots[k] = builtin.Component{ meta = { class = "ft-cargo-icon" } }
+			slots[k] = builtin.Component{ meta = { class = "mvr-cargo-icon" } }
 		end
 	end
 	for k = 1, n do
@@ -529,7 +529,7 @@ local function cargoRow(cargos)
 		if name and name ~= "" then names[#names + 1] = name end
 	end
 	return builtin.Component{
-		meta = { class = "ft-cargo", tooltip = #names > 0 and table.concat(names, ", ") or nil },
+		meta = { class = "mvr-cargo", tooltip = #names > 0 and table.concat(names, ", ") or nil },
 		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Horizontal, children = slots },
 	}
 end
@@ -539,10 +539,10 @@ end
 -- Der Inhalt muss eine Komponente sein, ein Layout allein laesst das Spiel abstuerzen.
 local function item(value, name, second, icon, cargos)
 	local img = (icon and icon ~= "")
-		and builtin.ImageView{ meta = { class = "ft-item-image", mouseTransparent = true }, path = icon, scaling = builtin.type.ImageViewScaling.AutoFit }
-		or builtin.Component{ meta = { class = "ft-item-image" } }
+		and builtin.ImageView{ meta = { class = "mvr-item-image", mouseTransparent = true }, path = icon, scaling = builtin.type.ImageViewScaling.AutoFit }
+		or builtin.Component{ meta = { class = "mvr-item-image" } }
 	return builtin.ComboBoxItem{ value = value, content = builtin.Component{
-		meta = { class = "ft-item" },
+		meta = { class = "mvr-item" },
 		layout = builtin.BoxLayout{
 			orientation = builtin.type.Orientation.Vertical,
 			children = {
@@ -568,7 +568,7 @@ local function combo(value, items, placeholder, onChange, content)
 	local all = { item(NONE, placeholder, " ", nil) }
 	for __, it in ipairs(items) do all[#all + 1] = it end
 	return builtin.ComboBox{
-		meta = { class = "ft-combo", localKey = "combo:" .. tostring(value or NONE) .. "|" .. tostring(content or "") },
+		meta = { class = "mvr-combo", localKey = "combo:" .. tostring(value or NONE) .. "|" .. tostring(content or "") },
 		value = value or NONE,
 		items = all,
 		onValueChange = function(v) if v ~= NONE then onChange(v) end end,
@@ -578,7 +578,7 @@ end
 -- Zelle fester Breite; kind "cell" fuer die Spalten, "mid" fuer die schmale Mitte
 local function cell(kind, child)
 	return builtin.Component{
-		meta = { class = kind == "mid" and "ft-mid" or "ft-cell" },
+		meta = { class = kind == "mid" and "mvr-mid" or "mvr-cell" },
 		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { child } },
 	}
 end
@@ -594,19 +594,19 @@ end
 -- grosses Bild des gewaehlten Modells in fester Flaeche; ohne Modell bleibt die Flaeche leer
 local function bigPicture(i)
 	if i and i.iconBig and i.iconBig ~= "" then
-		return builtin.ImageView{ meta = { class = "ft-big-image", tooltip = oneLine(i.name) }, path = i.iconBig, scaling = builtin.type.ImageViewScaling.AutoFit }
+		return builtin.ImageView{ meta = { class = "mvr-big-image", tooltip = oneLine(i.name) }, path = i.iconBig, scaling = builtin.type.ImageViewScaling.AutoFit }
 	end
-	return builtin.Component{ meta = { class = "ft-big-image" } }
+	return builtin.Component{ meta = { class = "mvr-big-image" } }
 end
 
 -- Fahrzeugarten mit den Symbolen der Fahrzeugverwaltung; nil = alle
 local CARRIERS = {}
 for __, c in ipairs({
-	{ key = "ROAD", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_bus_18.tga", tooltip = "ft_carrier_road" },
-	{ key = "TRAM", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_tram_18.tga", tooltip = "ft_carrier_tram" },
-	{ key = "RAIL", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_train_18.tga", tooltip = "ft_carrier_rail" },
-	{ key = "WATER", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_ship_18.tga", tooltip = "ft_carrier_water" },
-	{ key = "AIR", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_airplane_18.tga", tooltip = "ft_carrier_air" },
+	{ key = "ROAD", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_bus_18.tga", tooltip = "mvr_carrier_road" },
+	{ key = "TRAM", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_tram_18.tga", tooltip = "mvr_carrier_tram" },
+	{ key = "RAIL", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_train_18.tga", tooltip = "mvr_carrier_rail" },
+	{ key = "WATER", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_ship_18.tga", tooltip = "mvr_carrier_water" },
+	{ key = "AIR", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_airplane_18.tga", tooltip = "mvr_carrier_air" },
 }) do
 	local ok, v = pcall(function() return api.type["enum"].Carrier[c.key] end)
 	if ok and v ~= nil then c.value = v; CARRIERS[#CARRIERS + 1] = c end
@@ -685,7 +685,7 @@ local function compareModels(a, b, sort)
 	return a.key < b.key
 end
 
-local SORTS = { { key = "name", label = "ft_sort_name" }, { key = "year", label = "ft_sort_year" } }
+local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- Auswahl im Fenster; liegt ausserhalb des Rezepts, damit jedes Oeffnen frisch beginnt
 local sel = { carrier = nil, locked = false, alt = nil, neu = nil, sort = "name", sameCargo = true }
@@ -695,8 +695,8 @@ local function topBar(update)
 	if SHOW_CARRIER_BAR or not sel.locked then
 		for __, c in ipairs(CARRIERS) do
 			children[#children + 1] = builtin.ToggleButton{
-				meta = { class = "ft-filter", tooltip = _(c.tooltip) },
-				content = builtin.ImageView{ meta = { class = "ft-filter-icon" }, path = c.icon, scaling = builtin.type.ImageViewScaling.AutoFit },
+				meta = { class = "mvr-filter", tooltip = _(c.tooltip) },
+				content = builtin.ImageView{ meta = { class = "mvr-filter-icon" }, path = c.icon, scaling = builtin.type.ImageViewScaling.AutoFit },
 				value = sel.carrier == c.value and 1 or 0,
 				onValueChange = function(v)
 					update(function()
@@ -710,14 +710,14 @@ local function topBar(update)
 	children[#children + 1] = gui_react_util.makeHorizontalSpacer()
 	-- Frachtfilter abschaltbar: an = rechts nur Modelle, die alles laden koennen, was das alte konnte
 	children[#children + 1] = builtin.ToggleButton{
-		meta = { class = "ft-cargo-filter", tooltip = _("ft_same_cargo_tip") },
-		content = text(_("ft_same_cargo"), "font-scale-annotation"),
+		meta = { class = "mvr-cargo-filter", tooltip = _("mvr_same_cargo_tip") },
+		content = text(_("mvr_same_cargo"), "font-scale-annotation"),
 		value = sel.sameCargo and 1 or 0,
 		onValueChange = function(v) update(function() sel.sameCargo = v == 1 end) end,
 	}
 	for __, s in ipairs(SORTS) do
 		children[#children + 1] = builtin.ToggleButton{
-			meta = { class = "ft-sort" },
+			meta = { class = "mvr-sort" },
 			content = text(_(s.label), "font-scale-annotation"),
 			value = sel.sort == s.key and 1 or 0,
 			onValueChange = function() update(function() sel.sort = s.key end) end,
@@ -726,7 +726,7 @@ local function topBar(update)
 	return row(children)
 end
 
-local FtContent = react.RegisterRecipe("FtContent", function(p)
+local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	react.useInputAction("IA_MENU_BACK", react.iaHandler(p.onClose))
 	-- Zaehler nur zum Neuzeichnen; die Auswahl selbst steht in sel
 	local tick = react.useState(0)
@@ -786,14 +786,14 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 
 	local altItems = {}
 	for k, x in ipairs(alts) do
-		local second = count("ft_n_vehicles", x.e.vehicles)
+		local second = count("mvr_n_vehicles", x.e.vehicles)
 		if x.i.mu then
 			-- Triebzuege: Zahl der Einheiten, bei Mehrfachtraktion dazu die Zahl der Zuege
-			second = count("ft_n_mus", x.e.parts)
-			if x.e.parts ~= x.e.vehicles then second = second .. " " .. count("ft_in_trains", x.e.vehicles) end
+			second = count("mvr_n_mus", x.e.parts)
+			if x.e.parts ~= x.e.vehicles then second = second .. " " .. count("mvr_in_trains", x.e.vehicles) end
 		elseif x.e.parts ~= x.e.vehicles and x.e.carrier == RAIL then
 			-- Wagen und Loks kommen oft mehrfach in einem Zug vor: Stueckzahl und Zahl der Zuege
-			second = count(x.i.engine and "ft_n_locos" or "ft_n_wagons", x.e.parts) .. " " .. count("ft_in_trains", x.e.vehicles)
+			second = count(x.i.engine and "mvr_n_locos" or "mvr_n_wagons", x.e.parts) .. " " .. count("mvr_in_trains", x.e.vehicles)
 		end
 		altItems[k] = item(x.i.key, x.i.name, second, x.i.icon, x.i.cargos)
 	end
@@ -802,7 +802,7 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 		local second = money(i.price)
 		if i.yearFrom > 0 then second = second .. " · " .. tostring(i.yearFrom) end
 		-- Triebzuege gleichen Namens gibt es in mehreren Laengen
-		if i.mu then second = second .. " · " .. count("ft_n_parts", #i.parts) end
+		if i.mu then second = second .. " · " .. count("mvr_n_parts", #i.parts) end
 		neuItems[k] = item(i.key, i.name, second, i.icon, i.cargos)
 	end
 
@@ -814,11 +814,11 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	engine_react_util.useStepState(function() return enoughMoney(shownPrice) end)
 	local affordable = enoughMoney(shownPrice)
 	if e and neuInfo then
-		summary = { count("ft_will_replace", e.vehicles), string.format(_("ft_price"), money(shownPrice)) }
+		summary = { count("mvr_will_replace", e.vehicles), string.format(_("mvr_price"), money(shownPrice)) }
 	elseif #neus == 0 and altInfo then
-		summary = { _("ft_none_buyable"), " " }
+		summary = { _("mvr_none_buyable"), " " }
 	elseif not altInfo then
-		summary = { _("ft_no_vehicles"), " " }
+		summary = { _("mvr_no_vehicles"), " " }
 	end
 	-- Ergebnis des letzten Ersetzens steht an derselben Stelle, bis ein neues Modell gewaehlt wird
 	if not neuInfo and resultState:old() ~= "" then summary = { resultState:old(), " " } end
@@ -827,17 +827,17 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	for k, x in ipairs(alts) do altContent[k] = x.i.key .. ":" .. x.e.parts .. ":" .. x.e.vehicles end
 	for k, i in ipairs(neus) do neuContent[k] = i.key end
 	neuContent[#neuContent + 1] = sel.sameCargo and "fracht" or "alle"
-	local altCombo = combo(altInfo and altInfo.key, altItems, _("ft_no_vehicles"), function(v)
+	local altCombo = combo(altInfo and altInfo.key, altItems, _("mvr_no_vehicles"), function(v)
 		local i = info(v)
 		if i then log("Auswahl alt", tostring(i.key), oneLine(i.name), "Klasse", tostring(i.class), "Motor", tostring(i.engine), "Ladung", tostring(i.load), "Triebzugteil", tostring(i.muPart or false), "Pfad", tostring(i.path)) end
 		update(function() sel.alt, sel.neu = v, nil; result.text = "" end)
 	end, table.concat(altContent, ","))
 	local neuCombo = combo(neuInfo and neuInfo.key, neuItems,
-		#neuItems > 0 and " " or _("ft_no_model"),
+		#neuItems > 0 and " " or _("mvr_no_model"),
 		function(v) update(function() sel.neu = v; result.text = "" end) end, table.concat(neuContent, ","))
 
 	local swap = builtin.ImageView{
-		meta = { class = "ft-swap" },
+		meta = { class = "mvr-swap" },
 		path = "::/gui/line_vehicle_mgmt/icons/symbol_arrows_refresh.tga",
 		scaling = builtin.type.ImageViewScaling.AutoFit,
 	}
@@ -845,16 +845,16 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	local button = builtin.Button{
 		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
 		meta = {
-			class = "primary, ft-replace-btn" .. (affordable and "" or ", ft-no-money"),
+			class = "primary, mvr-replace-btn" .. (affordable and "" or ", mvr-no-money"),
 			enabled = affordable,
-			tooltip = not affordable and _("ft_not_enough_money") or nil,
+			tooltip = not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
-					builtin.ImageView{ meta = { class = "ft-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(affordable and _("ft_replace") or _("ft_not_enough_money")),
+					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
+					text(affordable and _("mvr_replace") or _("mvr_not_enough_money")),
 				},
 			},
 		},
@@ -862,7 +862,7 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 			if not (altInfo and neuInfo) then return end
 			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key)
 			if not ok then
-				result.text = _("ft_error") .. " " .. tostring(err)
+				result.text = _("mvr_error") .. " " .. tostring(err)
 				log("Fehler", tostring(err))
 			end
 			-- Auswahl leeren: unten steht nun das Ergebnis
@@ -875,11 +875,11 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 
 	local children = {
 		topBar(update),
-		row({ cell("cell", text(_("ft_old_model"))), cell("mid", empty()), cell("cell", text(_("ft_new_model"))) }),
+		row({ cell("cell", text(_("mvr_old_model"))), cell("mid", empty()), cell("cell", text(_("mvr_new_model"))) }),
 		row({ cell("cell", altCombo), cell("mid", swap), cell("cell", neuCombo) }),
 		row({ cell("cell", bigPicture(altInfo)), cell("mid", empty()), cell("cell", bigPicture(neuInfo)) }),
 		-- Abstand zwischen Bildern und Text; der Knopf bleibt mittig zum Textblock
-		builtin.Component{ meta = { class = "ft-gap" } },
+		builtin.Component{ meta = { class = "mvr-gap" } },
 		row({
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
 			gui_react_util.makeHorizontalSpacer(),
@@ -890,7 +890,7 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	-- ein Rezept muss ein Layout liefern, keine Komponente
 	return builtin.BoxLayout{ children = {
 		builtin.Component{
-			meta = { class = "ft-content" }, -- feste Breite ergibt sich aus den Zellen
+			meta = { class = "mvr-content" }, -- feste Breite ergibt sich aus den Zellen
 			layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = children },
 		},
 	} }
@@ -898,21 +898,21 @@ end)
 
 local windowOpen = false
 
-local FtWindow = react.RegisterWrapperRecipe("FtWindow", builtin.Window, function(p)
+local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, function(p)
 	react.onUnmount(function() windowOpen = false end)
 	return builtin.Window{
-		meta = { class = "ft-window" },
+		meta = { class = "mvr-window" },
 		id = "mass_vehicle_replace.window",
 		-- 0 bis 1 ueber den Bildschirm wie die mittigen Fenster des Spiels (main_page 0.5/0.5);
-		-- mittig steht es erst mit dem Anker der CSS-Klasse ft-window
+		-- mittig steht es erst mit dem Anker der CSS-Klasse mvr-window
 		initialX = 0.5,
 		initialY = 0.5,
-		title = _("ft_title"),
+		title = _("mvr_title"),
 		onClose = p.onClose,
 		closable = true,
 		movable = true,
 		autoFocusOnBecomingVisible = true,
-		content = FtContent{ onClose = p.onClose },
+		content = MvrContent{ onClose = p.onClose },
 	}
 end)
 
@@ -922,7 +922,7 @@ end
 local function closeWindow()
 	windowOpen = false
 	local wc = windowApi()
-	if wc then pcall(wc.removeWindow, FtWindow, WINDOW_KEY) end
+	if wc then pcall(wc.removeWindow, MvrWindow, WINDOW_KEY) end
 end
 -- carrier: Fahrzeugart, auf die das Fenster beim Oeffnen eingestellt wird (nil = alle)
 -- locked: aus dem Depot geoeffnet; ohne Umschalter (SHOW_CARRIER_BAR aus) bleibt es bei dieser Art
@@ -932,19 +932,36 @@ local function openWindow(carrier, locked)
 	result.text = ""
 	sel.carrier, sel.locked, sel.alt, sel.neu = carrier, locked and carrier ~= nil or false, nil, nil
 	log("Fenster", "Fahrzeugart", tostring(carrier), type(carrier), "Depot", tostring(locked))
-	local ok, err = pcall(wc.addWindow, FtWindow, WINDOW_KEY, { onClose = closeWindow })
+	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("Fenster fehlgeschlagen", tostring(err)) end
 end
 
 -- "Replace Vehicles" button in the depot window, to the right of "Manage Vehicles".
--- The depot window builds its button bar with entity_window_util.ActionButtonBar. That recipe is replaced
--- through the game's replacement API; the module field itself stays untouched, because other mods pass it
--- to react.CallOriginalRecipe, which only works with the registered recipe.
+-- Two hooks, both as small as the game allows (see the tf3-mod-compat rules):
+-- 1. The depot entity comes from the condition of a MaintenanceStationEowExtensionPoint plugin. The depot
+--    window calls every plugin condition with its entity while it renders, before it builds its button bar
+--    (maintenance_station.tl: usePlugins, then entity_window_util.ActionButtonBar). The condition only
+--    remembers the depot and returns false, so the plugin never shows anything.
+-- 2. The button bar recipe is replaced through the replacement API and chained with a replacement another
+--    mod installed earlier. The module field stays untouched: other mods pass it to react.CallOriginalRecipe,
+--    which only works with the registered recipe. There is no extension point for the button bar.
 local MANAGE_TAG = "entityWindow.maintenanceStation.manageVehicle"
 local okEwu, entity_window_util = pcall(ug_require, "::/gui/entity_window/entity_window_util.tl")
-local okMsw, MaintenanceStationWindow = pcall(ug_require, "::/gui/entity_window/maintenance_station/maintenance_station.tl")
+local okEow, maintenance_station_eow = pcall(ug_require, "::/gui/entity_window/maintenance_station/maintenance_station_eow.script.tl")
+-- captured at load: other mods may overwrite the module field later
+local ActionButtonBar = okEwu and type(entity_window_util) == "table" and entity_window_util.ActionButtonBar or nil
 
-local depotOfWindow -- depot of the depot window built last
+local depotOfWindow -- depot of the depot window that is rendering right now
+
+local function depotProbeCondition(extensionParams)
+	if type(extensionParams) == "table" then depotOfWindow = extensionParams.entityId end
+	return false
+end
+-- never instantiated (the condition is always false), but the plugin resource needs a recipe
+local MvrDepotProbe = okEow and type(maintenance_station_eow) == "table"
+	and react.RegisterPluginRecipe(maintenance_station_eow.MaintenanceStationEowExtensionPoint, "MvrDepotProbe", function()
+		return builtin.BoxLayout{}
+	end) or nil
 
 -- The button sits at the right edge: the bar puts a spacer between primary and secondary buttons, so it
 -- goes in as the first secondary button (customItem, styled like a primary button) before any tool button.
@@ -965,7 +982,7 @@ local function replaceButton(depot)
 						path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga",
 						scaling = builtin.type.ImageViewScaling.AutoFit,
 					},
-					builtin.TextView{ meta = { class = "font-scale-body" }, text = _("ft_replace_vehicles") },
+					builtin.TextView{ meta = { class = "font-scale-body" }, text = _("mvr_replace_vehicles") },
 				},
 			},
 		},
@@ -997,41 +1014,39 @@ local function withReplaceButton(p)
 	return copy
 end
 
-local priorBar, priorMsw -- replacements by other mods that were installed before ours
+local priorBar -- replacement of the button bar by another mod, installed before ours
 -- Replacement for ActionButtonBar; the params are the last argument, a ref may come before them.
 local function actionButtonBar(...)
 	local n = select("#", ...)
 	local args = { ... }
 	if n > 0 then args[n] = withReplaceButton(args[n]) end
 	if priorBar then return priorBar(table.unpack(args, 1, n)) end
-	return react.CallOriginalRecipe(entity_window_util.ActionButtonBar, table.unpack(args, 1, n))
+	return react.CallOriginalRecipe(ActionButtonBar, table.unpack(args, 1, n))
 end
-
--- Only remembers the depot; the original window runs later as a node of its own.
--- CallOriginalRecipe returns a recipe node, which has to go into a layout.
-local FtMaintenanceStationWindow = okEwu and okMsw and react.RegisterRecipe("FtMaintenanceStationWindow", function(params)
-	depotOfWindow = params.keyEntity
-	local child
-	if priorMsw then child = priorMsw(params) else child = react.CallOriginalRecipe(MaintenanceStationWindow, params) end
-	return builtin.BoxLayout{ child = child }
-end) or nil
-
-if not FtMaintenanceStationWindow then log("Depotfenster nicht gefunden", tostring(entity_window_util), tostring(MaintenanceStationWindow)) end
 
 local installed = false
 local function doReplace(replacementApi)
-	if installed or not FtMaintenanceStationWindow then return end
+	if installed then return end
 	installed = true
-	priorBar = currentReplacement(entity_window_util.ActionButtonBar)
-	priorMsw = currentReplacement(MaintenanceStationWindow)
-	log("Ersetzungen anderer Mods", "ActionButtonBar", tostring(priorBar ~= nil), "MaintenanceStationWindow", tostring(priorMsw ~= nil))
-	replacementApi.ReplaceRecipe(entity_window_util.ActionButtonBar, actionButtonBar)
-	replacementApi.ReplaceRecipe(MaintenanceStationWindow, FtMaintenanceStationWindow)
+	-- a failed hook only loses the depot button, never the game UI
+	local ok, err = pcall(function()
+		local okId, id = pcall(react.GetRecipeId, ActionButtonBar)
+		if not okId or id == nil then
+			log("ActionButtonBar is not a recipe, depot button disabled", tostring(ActionButtonBar))
+			return
+		end
+		priorBar = currentReplacement(ActionButtonBar)
+		log("replacements by other mods", "ActionButtonBar", tostring(priorBar ~= nil), "depot plugin", tostring(MvrDepotProbe ~= nil))
+		replacementApi.ReplaceRecipe(ActionButtonBar, actionButtonBar)
+	end)
+	if not ok then log("depot button not installed", tostring(err)) end
 end
 
 -- .script.lua resources expose their exports through data(), not a return value
 function data()
 	return {
 		doReplace = doReplace,
+		depotProbe = MvrDepotProbe,
+		depotProbeCondition = depotProbeCondition,
 	}
 end
