@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - With several depot windows open, the button always opens the depot of its own window (#4).
 - If another mod overwrites the game's button bar in an incompatible way, only the depot button is switched off instead of the game crashing.
+- Reversed vehicles came back facing forward after replacing them (#7): multiple units, and single models replaced by a multiple unit or the other way round (e.g. Talent 1 by Talent 2). The new vehicle now faces the same way as the old one.
+- Trains with inconsistent group data (more group slots than vehicles) were skipped when replacing (#13). Group sizes are now clamped to the vehicles that exist.
 
 ## [1.0.2] - 2026-10-16
 

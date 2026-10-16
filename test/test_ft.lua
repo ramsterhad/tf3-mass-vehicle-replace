@@ -629,6 +629,130 @@ for _i, c in ipairs(sent) do
 	end
 end
 
+print("== Reversed multiple unit stays reversed")
+-- Train 109: one ET 420 as defined (flags false,false,true) and one ET 420 reversed the way the game
+-- stores it: part order reversed and every reversed flag flipped (false,true,true).
+vehicle(109, { 50, 51, 50, 50, 51, 50 }, { { 3, "multiple_unit/et420.mdl" }, { 3, "multiple_unit/et420.mdl" } })
+do
+	local flags = { false, false, true, false, true, true }
+	for k, f in ipairs(flags) do vehicles[109].transportVehicleConfig.vehicles[k].part.reversed = f end
+end
+openAndRender("Zugdepot 2", 500, true)
+t = content("reversed unit")
+cs = combos(t)
+cs[1].props.onValueChange("u900")
+t = content("ET 420 selected")
+cs = combos(t)
+cs[2].props.onValueChange("u901")
+t = content("ET 423 selected")
+sent = {}
+costPerCommand = 3300000
+bankBalance = 20000000
+find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
+local c109
+for _i, c in ipairs(sent) do if c.e == 109 then c109 = c end end
+check(c109 ~= nil, "no replace command for train 109")
+if c109 then
+	local ids, rev = {}, {}
+	for _j, part in ipairs(c109.conf.vehicles) do ids[#ids + 1] = part.part.modelId; rev[#rev + 1] = part.part.reversed and "r" or "f" end
+	print("  train 109 after replace: " .. table.concat(ids, ",") .. " flags " .. table.concat(rev))
+	check(table.concat(ids, ",") == "52,53,53,52,52,53,53,52", "train 109 parts: " .. table.concat(ids, ","))
+	-- ET 423 as defined is f,f,f,r; the reversed unit must be its mirror image r,f,f,f with flipped flags: f,r,r,r
+	check(table.concat(rev) == "fffrfrrr", "train 109 orientation (expected fffrfrrr): " .. table.concat(rev))
+	check(table.concat(c109.conf.muFileNames, ",") == "multiple_unit/et423.mdl,multiple_unit/et423.mdl", "train 109 file names")
+end
+vehicles[109] = nil
+
+print("== Reversed single model stays reversed")
+-- in-game test 16.10.2026: Talent 1 is a single model; a reversed one replaced by Talent 2 (a multiple
+-- unit) came back facing forward. Train 119: two M-300, the second reversed, replaced by ET 423.
+vehicle(119, { 60, 60 })
+vehicles[119].transportVehicleConfig.vehicles[2].part.reversed = true
+openAndRender("reversed single", 500, true)
+t = content("reversed single")
+cs = combos(t)
+cs[1].props.onValueChange("m60")
+t = content("M-300 selected")
+cs = combos(t)
+cs[2].props.onValueChange("u901")
+t = content("ET 423 for M-300")
+sent = {}
+costPerCommand = 3300000
+bankBalance = 20000000
+find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
+local c119
+for _i, c in ipairs(sent) do if c.e == 119 then c119 = c end end
+check(c119 ~= nil, "no replace command for train 119")
+if c119 then
+	local ids, rev = {}, {}
+	for _j, part in ipairs(c119.conf.vehicles) do ids[#ids + 1] = part.part.modelId; rev[#rev + 1] = part.part.reversed and "r" or "f" end
+	check(table.concat(ids, ",") == "52,53,53,52,52,53,53,52", "train 119 parts: " .. table.concat(ids, ","))
+	check(table.concat(rev) == "fffrfrrr", "train 119 orientation (expected fffrfrrr): " .. table.concat(rev))
+end
+vehicles[119] = nil
+
+print("== Reversed multiple unit replaced by a single model")
+-- train 109 again: the second ET 420 is reversed; replaced by Roter Pfeil, the second one faces backwards
+vehicle(109, { 50, 51, 50, 50, 51, 50 }, { { 3, "multiple_unit/et420.mdl" }, { 3, "multiple_unit/et420.mdl" } })
+do
+	local flags = { false, false, true, false, true, true }
+	for k, f in ipairs(flags) do vehicles[109].transportVehicleConfig.vehicles[k].part.reversed = f end
+end
+openAndRender("reversed unit to single", 500, true)
+t = content("reversed unit to single")
+cs = combos(t)
+cs[1].props.onValueChange("u900")
+t = content("ET 420 selected")
+cs = combos(t)
+cs[2].props.onValueChange("m61")
+t = content("Roter Pfeil for ET 420")
+sent = {}
+costPerCommand = 3300000
+bankBalance = 20000000
+find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
+c109 = nil
+for _i, c in ipairs(sent) do if c.e == 109 then c109 = c end end
+check(c109 ~= nil, "no replace command for train 109 (to single)")
+if c109 then
+	local ids, rev = {}, {}
+	for _j, part in ipairs(c109.conf.vehicles) do ids[#ids + 1] = part.part.modelId; rev[#rev + 1] = part.part.reversed and "r" or "f" end
+	check(table.concat(ids, ",") == "61,61", "train 109 to single parts: " .. table.concat(ids, ","))
+	check(table.concat(rev) == "fr", "train 109 to single orientation (expected fr): " .. table.concat(rev))
+end
+vehicles[109] = nil
+
+print("== Group sizes beyond the part list")
+-- inconsistent save data: train 118 has one ET 420 (3 parts) but its group sizes claim two units
+-- (3 + 3); the window must still open, and replacing must keep the real unit and drop nothing
+vehicle(118, { 50, 51, 50 }, { { 3, "multiple_unit/et420.mdl" }, { 3, "multiple_unit/et420.mdl" } })
+do
+	local okRender, errRender = pcall(function()
+		openAndRender("inconsistent groups", 500, true)
+		t = content("inconsistent groups")
+		combos(t)[1].props.onValueChange("u900")
+		t = content("inconsistent groups ET 420")
+		combos(t)[2].props.onValueChange("u901")
+		t = content("inconsistent groups ET 423")
+	end)
+	check(okRender, "window breaks with group sizes beyond the part list: " .. tostring(errRender))
+	if okRender then
+		sent = {}
+		costPerCommand = 3300000
+		bankBalance = 20000000
+		find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
+		local c118
+		for _i, c in ipairs(sent) do if c.e == 118 then c118 = c end end
+		check(c118 ~= nil, "no replace command for train 118")
+		if c118 then
+			local ids = {}
+			for _j, part in ipairs(c118.conf.vehicles) do ids[#ids + 1] = part.part.modelId end
+			check(table.concat(ids, ",") == "52,53,53,52", "train 118 parts: " .. table.concat(ids, ","))
+			check(table.concat(c118.conf.vehicleGroups, ",") == "4", "train 118 groups: " .. table.concat(c118.conf.vehicleGroups, ","))
+		end
+	end
+end
+vehicles[118] = nil
+
 print("== Triebwagen gegen Triebzug")
 openAndRender("Zugdepot 4", 500, true)
 t = content("Zugdepot 4")
