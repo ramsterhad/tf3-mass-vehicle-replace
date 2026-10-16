@@ -16,6 +16,13 @@ local function log(...)
 	debugPrint("[MassVehicleReplace]", ...)
 end
 
+-- Number as whole-number text for the log. Never use %d: in the game's Lua 5.2 it fails with
+-- "not a number in proper range" on values beyond 2^63, inf and nan.
+local function num(v)
+	if type(v) == "number" then return string.format("%.0f", v) end
+	return tostring(v)
+end
+
 -- Modelldaten ------------------------------------------------------------------------------------
 -- Zwei Arten von Eintraegen, beide mit Schluessel key:
 --   "m<id>": einzelnes Modell (Lok, Wagen, Bus, Schiff ...), id aus modelRep
@@ -332,34 +339,6 @@ local function updateText()
 	result.text = s
 end
 
--- Kontostand des Spielers; nil bei unendlich Geld oder wenn die Abfrage scheitert
-local function balance()
-	local ok, b = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
-	return ok and b or nil
-end
-
--- Geldprotokoll fuer einen Tausch: Kontostand vorher und nachher gegen den Listenpreis des Neuen.
--- Ist die Abbuchung kleiner als der Listenpreis, schreibt das Spiel fuer das Alte etwas gut.
-local money_log = {}
-
-local function logMoneyWhenDone()
-	if result.ok + result.failed < result.sent then return end
-	local after = balance()
-	local before = money_log.before
-	if before and after then
-		local spent = before - after
-		log(string.format("Geld: vorher=%d nachher=%d abgebucht=%d Listenpreis=%d (Stueck=%d x %d) Differenz=%d",
-			before, after, spent, money_log.list, money_log.units, money_log.price, money_log.list - spent))
-		-- Abgleich mit dem Restwert, den das Kauffenster des Spiels beim Ersetzen gutschreibt (getDepreciatedValue
-		-- des ganzen Fahrzeugs); bei Zuegen, in denen nur ein Teil getauscht wird, ist das womoeglich zu hoch
-		log(string.format("Geld: Restwert der Fahrzeuge=%d erwartet=%d Abweichung=%d (Fahrzeuge ganz getauscht=%d, teilweise=%d)",
-			money_log.residual, money_log.list - money_log.residual, money_log.list - money_log.residual - spent,
-			money_log.whole, money_log.partial))
-	else
-		log("Geld: Kontostand nicht lesbar", tostring(before), tostring(after))
-	end
-end
-
 -- Baut die neue Zusammenstellung eines Fahrzeugs; nil, wenn alt darin nicht vorkommt.
 -- Einzelmodell: jedes Einzelteil alt wird zu neu, Triebzuege im selben Zug bleiben.
 -- Triebzug: jede Gruppe alt wird durch die Teile von neu ersetzt, Gruppengroesse und Dateiname passen sich an.
@@ -431,41 +410,28 @@ local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
 	result.sent, result.ok, result.failed = 0, 0, 0
-	money_log = { before = balance(), units = 0, price = neuInfo.price, list = 0, residual = 0, whole = 0, partial = 0 }
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
 	for __, v in ipairs(api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE)) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
-		local conf, units = nil, 0
-		if cfg then conf, units = rebuild(cfg, altInfo, neuInfo, t) end
+		local conf = cfg and rebuild(cfg, altInfo, neuInfo, t)
 		if conf then
-			local okV, value = pcall(api.engine.util.vehicle.getDepreciatedValue, v)
-			if okV and value then money_log.residual = money_log.residual + value end
-			-- ganz getauscht: kein altes Teil bleibt stehen
-			local kept = false
-			for __, part in ipairs(conf.vehicles) do
-				if part.purchaseTime ~= t then kept = true end
-			end
-			if kept then money_log.partial = money_log.partial + 1 else money_log.whole = money_log.whole + 1 end
 			pcall(function() log("Ausrichtung", v, "alt:", orientation(cfg), "neu:", orientation(conf)) end)
 			result.sent = result.sent + 1
 			local entity = v
 			api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, conf), function(__, success)
 				if success then
 					result.ok = result.ok + 1
-					money_log.units = money_log.units + units
-					money_log.list = money_log.list + units * neuInfo.price
 				else
 					result.failed = result.failed + 1
 					log("Ersetzen fehlgeschlagen", entity)
 				end
 				updateText()
-				logMoneyWhenDone()
 			end)
 		end
 	end
 	updateText()
-	log(string.format("alt=%s neu=%s geschickt=%d", altKey, neuKey, result.sent))
+	log(string.format("alt=%s neu=%s geschickt=%s", altKey, neuKey, num(result.sent)))
 end
 
 -- Fenster ---------------------------------------------------------------------------------------------
@@ -679,7 +645,11 @@ end
 -- In der Liste der alten Modelle stehen bei beiden zuerst die Fahrzeuge mit Antrieb, dann die Wagen.
 
 local function naturalKey(s)
-	local key = oneLine(s):lower():gsub("%d+", function(d) return string.format("%012d", tonumber(d)) end)
+	-- pad digit runs as text: %d on tonumber(d) fails for runs of 19 or more digits
+	local key = oneLine(s):lower():gsub("%d+", function(d)
+		d = d:gsub("^0+(%d)", "%1")
+		return string.rep("0", 20 - #d) .. d
+	end)
 	return key
 end
 

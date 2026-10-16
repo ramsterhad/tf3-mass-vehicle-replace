@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-16
+
+### Fixed
+
+- Lua error "bad argument #2 to 'format' (not a number in proper range)" after replacing vehicles when the money balance is extremely large, e.g. set by a money mod or cheat. The internal money log that caused it has been removed.
+- The same error could occur when sorting the lists if a vehicle name contains a run of 19 or more digits.
+
 ## [1.0.1] - 2026-10-16
 
 ### Fixed
