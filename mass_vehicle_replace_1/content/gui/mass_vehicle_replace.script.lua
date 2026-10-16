@@ -974,9 +974,10 @@ end
 -- The game keeps one replacement per recipe. A replacement another mod installed earlier is read here
 -- and called from ours, so both stay in the chain.
 local function currentReplacement(recipe)
-	local reg = type(_G) == "table" and rawget(_G, "_react") or nil
+	-- the game's GUI Lua has no rawget; _react is a plain global set up by the game
+	local okReg, reg = pcall(function() return _react end)
 	local okId, id = pcall(react.GetRecipeId, recipe)
-	if type(reg) ~= "table" or type(reg.recipeReplace) ~= "table" or not okId or id == nil then return nil end
+	if not okReg or type(reg) ~= "table" or type(reg.recipeReplace) ~= "table" or not okId or id == nil then return nil end
 	return reg.recipeReplace[id]
 end
 

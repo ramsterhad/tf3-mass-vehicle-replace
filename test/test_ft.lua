@@ -302,6 +302,8 @@ api = {
 }
 
 -- Skript laden ------------------------------------------------------------------------------------------
+-- the game's GUI Lua has no rawget (crashed at startup in 1.0.1 testing)
+rawget = nil
 local chunk = assert(loadfile(SCRIPT))
 chunk()
 local exports = data()
