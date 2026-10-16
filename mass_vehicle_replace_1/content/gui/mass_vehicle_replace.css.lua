@@ -76,6 +76,17 @@ function data()
 		gravity = { 1, 0.5 },
 		minSize = { 140, 0 },
 	})
+	-- not enough money: red like the game's buy button (vehicle_store.css.lua "R::VehicleCart !error!error!error",
+	-- which only applies inside the purchase window); class repeated for precedence over the button states
+	local okColors, colors = pcall(function()
+		return api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
+	end)
+	if okColors and colors and colors.Error then
+		a([[Window!ft-window Button!ft-no-money!ft-no-money!ft-no-money,
+			Window!ft-window Button!ft-no-money!ft-no-money!ft-no-money:hover]], {
+			backgroundColor1 = colors.Error,
+		})
+	end
 
 	a("Window!ft-window ToggleButton!ft-filter", {
 		padding = { 0, 0, 0, 0 },

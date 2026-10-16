@@ -390,6 +390,19 @@ local function rebuild(cfg, altInfo, neuInfo, t)
 	return conf, units
 end
 
+-- The replace command does not check the balance (the game's purchase window does that itself,
+-- vehicle_store_window.tl hasEnoughMoney), so without this check the player could go into debt.
+-- The full purchase price must be covered; the residual value the game credits afterwards is a bonus.
+local shownPrice = 0 -- purchase price shown in the window, read by its step state
+
+local function enoughMoney(price)
+	if price <= 0 then return true end
+	-- nil means infinite money (vehicle_store_window.tl fundsState: "nil if infinite!")
+	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	if not ok then return true end -- unreadable: leave it to the game, as before
+	return funds == nil or funds >= price
+end
+
 -- Ausrichtung zum Pruefen gedrehter Triebzuege: Modell-ID je Teil, ">" vorwaerts, "<" gedreht, "|" trennt Gruppen
 local function orientation(c)
 	local out, k = {}, 1
@@ -411,24 +424,36 @@ local function replaceAll(altKey, neuKey)
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
 	result.sent, result.ok, result.failed = 0, 0, 0
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
+	-- build all first: either every vehicle is replaced or none, like the purchase window
+	local jobs, units = {}, 0
 	for __, v in ipairs(api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE)) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
-		local conf = cfg and rebuild(cfg, altInfo, neuInfo, t)
+		local conf, n = nil, 0
+		if cfg then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
-			pcall(function() log("Ausrichtung", v, "alt:", orientation(cfg), "neu:", orientation(conf)) end)
-			result.sent = result.sent + 1
-			local entity = v
-			api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, conf), function(__, success)
-				if success then
-					result.ok = result.ok + 1
-				else
-					result.failed = result.failed + 1
-					log("Ersetzen fehlgeschlagen", entity)
-				end
-				updateText()
-			end)
+			jobs[#jobs + 1] = { entity = v, cfg = cfg, conf = conf }
+			units = units + n
 		end
+	end
+	-- checked again here: the balance may have changed since the window was drawn
+	if not enoughMoney(neuInfo.price * units) then
+		result.text = _("ft_not_enough_money")
+		return
+	end
+	for __, job in ipairs(jobs) do
+		pcall(function() log("Ausrichtung", job.entity, "alt:", orientation(job.cfg), "neu:", orientation(job.conf)) end)
+		result.sent = result.sent + 1
+		local entity = job.entity
+		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
+			if success then
+				result.ok = result.ok + 1
+			else
+				result.failed = result.failed + 1
+				log("Ersetzen fehlgeschlagen", entity)
+			end
+			updateText()
+		end)
 	end
 	updateText()
 	log(string.format("alt=%s neu=%s geschickt=%s", altKey, neuKey, num(result.sent)))
@@ -784,11 +809,12 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	-- ohne neues Modell bleibt der Platz leer; zwei Zeilen, damit nichts springt
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
+	shownPrice = e and neuInfo and neuInfo.price * e.parts or 0
+	-- the check below reads the balance now; this state only redraws the window when that answer changes
+	engine_react_util.useStepState(function() return enoughMoney(shownPrice) end)
+	local affordable = enoughMoney(shownPrice)
 	if e and neuInfo then
-		summary = {
-			count("ft_will_replace", e.vehicles),
-			string.format(_("ft_price"), money(neuInfo.price * e.parts)),
-		}
+		summary = { count("ft_will_replace", e.vehicles), string.format(_("ft_price"), money(shownPrice)) }
 	elseif #neus == 0 and altInfo then
 		summary = { _("ft_none_buyable"), " " }
 	elseif not altInfo then
@@ -817,13 +843,18 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	}
 
 	local button = builtin.Button{
-		meta = { class = "primary, ft-replace-btn" },
+		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
+		meta = {
+			class = "primary, ft-replace-btn" .. (affordable and "" or ", ft-no-money"),
+			enabled = affordable,
+			tooltip = not affordable and _("ft_not_enough_money") or nil,
+		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
 					builtin.ImageView{ meta = { class = "ft-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(_("ft_replace")),
+					text(affordable and _("ft_replace") or _("ft_not_enough_money")),
 				},
 			},
 		},

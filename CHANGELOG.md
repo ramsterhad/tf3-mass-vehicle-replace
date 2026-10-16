@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Vehicles could be replaced beyond the money balance, which the game itself does not allow (#21). The full purchase price must now be covered, otherwise the Replace button is disabled and shows "Not enough money". Infinite money is not affected.
 - Lua error "bad argument #2 to 'format' (not a number in proper range)" after replacing vehicles when the money balance is extremely large, e.g. set by a money mod or cheat. The internal money log that caused it has been removed.
 - The same error could occur when sorting the lists if a vehicle name contains a run of 19 or more digits.
 
