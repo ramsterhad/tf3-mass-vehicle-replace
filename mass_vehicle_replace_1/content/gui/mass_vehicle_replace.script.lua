@@ -266,9 +266,12 @@ end
 local function groupsOf(cfg)
 	local groups, from = {}, 1
 	local sizes = cfg.vehicleGroups or {}
+	local total = #cfg.vehicles
 	for gi = 1, #sizes do
 		local n = sizes[gi]
-		groups[#groups + 1] = { from = from, to = from + n - 1, path = (cfg.muFileNames or {})[gi] or "" }
+		-- group sizes beyond the part list (inconsistent data) are clamped, so no part index is ever nil
+		if from > total then break end
+		groups[#groups + 1] = { from = from, to = math.min(from + n - 1, total), path = (cfg.muFileNames or {})[gi] or "" }
 		from = from + n
 	end
 	if from <= #cfg.vehicles then
@@ -342,18 +345,48 @@ end
 -- Baut die neue Zusammenstellung eines Fahrzeugs; nil, wenn alt darin nicht vorkommt.
 -- Einzelmodell: jedes Einzelteil alt wird zu neu, Triebzuege im selben Zug bleiben.
 -- Triebzug: jede Gruppe alt wird durch die Teile von neu ersetzt, Gruppengroesse und Dateiname passen sich an.
+-- The game reverses a multiple unit by reversing the order of its parts and flipping each part's
+-- reversed flag (vehicle_store_window.tl, reverse). A group in a train is reversed when its parts
+-- match the definition read backwards with flipped flags; a group that matches neither (unknown
+-- state) counts as forward.
+local function groupReversed(cfg, g, muInfoOfGroup)
+	local parts = muInfoOfGroup.parts
+	local n = g.to - g.from + 1
+	if n ~= #parts then return false end
+	local forward, backward = true, true
+	for k = 1, n do
+		local p = cfg.vehicles[g.from + k - 1].part
+		local def, rdef = parts[k], parts[n + 1 - k]
+		if p.modelId ~= def.info.id or p.reversed ~= (not def.forward) then forward = false end
+		if p.modelId ~= rdef.info.id or p.reversed ~= rdef.forward then backward = false end
+	end
+	return backward and not forward
+end
+
 local function rebuild(cfg, altInfo, neuInfo, t)
 	local vehicles, sizes, paths, units = {}, {}, {}, 0
-	-- setzt neu an die Stelle von alt: Triebzug als eigene Gruppe mit seinem Dateinamen, Einzelmodell als Gruppe 1
-	local function putNew(old)
+	-- puts the new model where the old one was, facing the same way: a multiple unit as its own group
+	-- with its file name, a single model as a group of one. reversedUnit: the old unit faces backwards
+	-- (a single model by its reversed flag, a multiple unit by groupReversed)
+	local function putNew(old, reversedUnit)
 		if neuInfo.mu then
-			for __, p in ipairs(neuInfo.parts) do
-				vehicles[#vehicles + 1] = newPart(p.info, not p.forward, old.part.color, t)
+			local parts = neuInfo.parts
+			for k = 1, #parts do
+				-- no "a and b or c" here: p.forward can be false
+				local p, reversed
+				if reversedUnit then
+					p = parts[#parts + 1 - k]
+					reversed = p.forward
+				else
+					p = parts[k]
+					reversed = not p.forward
+				end
+				vehicles[#vehicles + 1] = newPart(p.info, reversed, old.part.color, t)
 			end
-			sizes[#sizes + 1] = #neuInfo.parts
+			sizes[#sizes + 1] = #parts
 			paths[#paths + 1] = neuInfo.path
 		else
-			vehicles[#vehicles + 1] = newPart(neuInfo, old.part.reversed, old.part.color, t)
+			vehicles[#vehicles + 1] = newPart(neuInfo, reversedUnit, old.part.color, t)
 			sizes[#sizes + 1] = 1
 			paths[#paths + 1] = ""
 		end
@@ -362,7 +395,7 @@ local function rebuild(cfg, altInfo, neuInfo, t)
 	for __, g in ipairs(groupsOf(cfg)) do
 		if g.path ~= "" then
 			if altInfo.mu and g.path == altInfo.path then
-				putNew(cfg.vehicles[g.from])
+				putNew(cfg.vehicles[g.from], groupReversed(cfg, g, altInfo))
 			else
 				for j = g.from, g.to do vehicles[#vehicles + 1] = cfg.vehicles[j] end
 				sizes[#sizes + 1] = g.to - g.from + 1
@@ -373,7 +406,7 @@ local function rebuild(cfg, altInfo, neuInfo, t)
 			for j = g.from, g.to do
 				local p = cfg.vehicles[j]
 				if not altInfo.mu and p.part.modelId == altInfo.id then
-					putNew(p)
+					putNew(p, p.part.reversed == true)
 				else
 					vehicles[#vehicles + 1] = p
 					sizes[#sizes + 1] = 1
