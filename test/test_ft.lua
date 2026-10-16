@@ -1233,6 +1233,14 @@ check(priceText(t) == "Kaufpreis: $488000", "residual unreadable: price line " .
 t = chooseKasten("residual unreadable, one short", 487999)
 check(replaceButton(t).props.meta.enabled == false, "residual unreadable: button enabled below the full price")
 residualThrows = false
+-- nan, negative and infinite values count as none (review finding: only the error path was tested)
+for v = 110, 117 do residuals[v] = 1000 end
+residuals[110], residuals[111], residuals[112] = 0 / 0, -1, math.huge
+t = chooseKasten("odd residual values", 483000) -- 488000 - 5 x 1000
+check(replaceButton(t).props.meta.enabled == true, "odd residual values: button disabled with price minus the valid residual")
+check(hasText(t, "Kosten nach Restwert: $483000"), "odd residual values: cost line")
+t = chooseKasten("odd residual values, one short", 482999)
+check(replaceButton(t).props.meta.enabled == false, "odd residual values: button enabled one short")
 residuals = {}
 step()
 bankBalance = 5000000
