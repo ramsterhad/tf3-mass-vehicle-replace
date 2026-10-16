@@ -850,7 +850,12 @@ local btnPoor = replaceButton(t)
 check(btnPoor.props.meta.enabled == false, "button not disabled without enough money")
 check(btnPoor.props.meta.class:find("ft-no-money", 1, true) ~= nil, "button without ft-no-money class")
 check(btnPoor.props.meta.tooltip == "Nicht genug Geld", "tooltip: " .. tostring(btnPoor.props.meta.tooltip))
-check(priceText(t) == "Kaufpreis: $488000 · Nicht genug Geld", "price line: " .. tostring(priceText(t)))
+check(priceText(t) == "Kaufpreis: $488000", "price line: " .. tostring(priceText(t)))
+local function buttonText(btn)
+	local tv = find(btn, function(n) return n.kind == "TextView" end)
+	return tv[1] and tv[1].props.text
+end
+check(buttonText(btnPoor) == "Nicht genug Geld", "button text without enough money: " .. tostring(buttonText(btnPoor)))
 sent = {}
 btnPoor.props.onClick() -- the game ignores clicks on disabled buttons; the click itself checks again anyway
 check(#sent == 0, "replaced without enough money: " .. #sent)
@@ -860,6 +865,7 @@ check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nich
 
 t = chooseKasten("exactly enough", 488000)
 check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
+check(buttonText(replaceButton(t)) == "Ersetzen", "button text with enough money: " .. tostring(buttonText(replaceButton(t))))
 check(priceText(t) == "Kaufpreis: $488000", "price line with enough money: " .. tostring(priceText(t)))
 sent = {}
 replaceButton(t).props.onClick()

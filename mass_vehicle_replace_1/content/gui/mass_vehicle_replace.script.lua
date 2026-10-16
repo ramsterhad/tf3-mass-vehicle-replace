@@ -814,9 +814,7 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	engine_react_util.useStepState(function() return enoughMoney(shownPrice) end)
 	local affordable = enoughMoney(shownPrice)
 	if e and neuInfo then
-		local price = string.format(_("ft_price"), money(shownPrice))
-		if not affordable then price = price .. " · " .. _("ft_not_enough_money") end
-		summary = { count("ft_will_replace", e.vehicles), price }
+		summary = { count("ft_will_replace", e.vehicles), string.format(_("ft_price"), money(shownPrice)) }
 	elseif #neus == 0 and altInfo then
 		summary = { _("ft_none_buyable"), " " }
 	elseif not altInfo then
@@ -845,7 +843,7 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	}
 
 	local button = builtin.Button{
-		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua) and with tooltip when the money is not enough
+		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
 		meta = {
 			class = "primary, ft-replace-btn" .. (affordable and "" or ", ft-no-money"),
 			enabled = affordable,
@@ -856,7 +854,7 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
 					builtin.ImageView{ meta = { class = "ft-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(_("ft_replace")),
+					text(affordable and _("ft_replace") or _("ft_not_enough_money")),
 				},
 			},
 		},
