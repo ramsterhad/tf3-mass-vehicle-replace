@@ -68,7 +68,31 @@ react.iaHandler = function(f) return f end
 react.onUnmount = function() end
 react.onEvent = function() end
 react.getCurrentRecipeName = function() return currentRecipe end
-react.CallOriginalRecipe = function(r, params) return { kind = "recipe:" .. r.name, props = params } end
+-- like react.lua: recipes are known by id, a call goes to the replacement if one is set, and
+-- CallOriginalRecipe only works with a registered recipe (in the game a plain function fails here)
+_react = { recipeReplace = {} }
+local recipeIds, originalFns = {}, {}
+react.GetRecipeId = function(r) return recipeIds[r] end
+local function gameRecipe(name, body)
+	originalFns[name] = body
+	local f = function(...)
+		local rep = _react.recipeReplace[name]
+		if rep then return rep(...) end
+		return body(...)
+	end
+	recipeIds[f] = name
+	return f
+end
+react.CallOriginalRecipe = function(r, ...)
+	local id = recipeIds[r]
+	if id == nil then error("attempt to call field '?' (a nil value)") end
+	return originalFns[id](...)
+end
+local replacementApi = { ReplaceRecipe = function(original, replacement)
+	local id = react.GetRecipeId(original)
+	if id == nil then error("table index is nil") end
+	_react.recipeReplace[id] = replacement
+end }
 
 local function render(name, params)
 	currentRecipe, stateIdx = name, 0
@@ -85,8 +109,10 @@ local game_react_globals = { getDefaultWindowApi = function() return {
 	addWindow = function(recipe, key, params) windows[key] = { recipe = recipe, params = params } end,
 	removeWindow = function(recipe, key) windows[key] = nil end,
 } end }
-local entity_window_util = { ActionButtonBar = function(ref, p) return { kind = "ActionButtonBar", props = p } end }
+local entity_window_util = { ActionButtonBar = gameRecipe("ActionButtonBar", function(ref, p) return { kind = "ActionButtonBar", props = p } end) }
 local MaintenanceStationWindow = makeRecipe("MaintenanceStationWindow", function() return builtin.BoxLayout{} end)
+recipeIds[MaintenanceStationWindow] = "MaintenanceStationWindow"
+originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:MaintenanceStationWindow", props = params } end
 
 local modules = {
 	["::/gui/main/react.lua"] = react,
@@ -276,10 +302,21 @@ api = {
 }
 
 -- Skript laden ------------------------------------------------------------------------------------------
+-- the game's GUI Lua has no rawget (crashed at startup in 1.0.1 testing)
+rawget = nil
 local chunk = assert(loadfile(SCRIPT))
 chunk()
 local exports = data()
 check(type(exports.doReplace) == "function", "doReplace fehlt in data()")
+
+-- another mod (like Manage Line From Vehicle) replaced the button bar before us and calls the
+-- original through the module field
+local otherBarCalls = 0
+local barRecipe = entity_window_util.ActionButtonBar
+_react.recipeReplace.ActionButtonBar = function(ref, p)
+	otherBarCalls = otherBarCalls + 1
+	return react.CallOriginalRecipe(entity_window_util.ActionButtonBar, ref, p)
+end
 
 -- CSS-Klassen einlesen ----------------------------------------------------------------------------------
 local cssText = io.open(CSS):read("*a")
@@ -381,7 +418,7 @@ local function openAndRender(label, carrier, locked)
 	local opened
 	if locked then
 		-- Depotknopf ueber die Knopfleiste
-		exports.doReplace({ ReplaceRecipe = function() end })
+		exports.doReplace(replacementApi)
 		local bar = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
 		check(#bar.props.secondaryButtons == 1, label .. ": Depotknopf fehlt in der Knopfleiste")
 		render("FtMaintenanceStationWindow", { keyEntity = carrier })
@@ -390,7 +427,7 @@ local function openAndRender(label, carrier, locked)
 		opened = true
 	else
 		-- Kopfleiste der Fahrzeugverwaltung bleibt wie im Spiel (Knopf dort ausgebaut)
-		exports.doReplace({ ReplaceRecipe = function() end })
+		exports.doReplace(replacementApi)
 		currentRecipe = "LineVehicleManagerTopBar"
 		local sp = gui_react_util.makeHorizontalSpacer()
 		currentRecipe = nil
@@ -758,6 +795,16 @@ check(itemCount(cs[2]) == 1, "ohne altes Modell: neue Liste nur Platzhalter")
 print("== Andere Fenster bleiben unveraendert")
 local plain = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "x" } }, secondaryButtons = {} })
 check(#plain.props.secondaryButtons == 0, "Knopf taucht in fremdem Fenster auf")
+
+print("== Other mods replacing the button bar")
+check(entity_window_util.ActionButtonBar == barRecipe, "ActionButtonBar field was overwritten, CallOriginalRecipe of other mods breaks")
+local before = otherBarCalls
+local okBar, depotBar = pcall(entity_window_util.ActionButtonBar, nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
+check(okBar, "button bar fails with another mod's replacement: " .. tostring(depotBar))
+check(otherBarCalls == before + 1, "replacement of the other mod is not called")
+check(okBar and #depotBar.props.secondaryButtons == 1, "depot button missing when another mod replaces the bar")
+local okNoRef, noRef = pcall(entity_window_util.ActionButtonBar, { primaryButtons = { { tag = "x" } } })
+check(okNoRef and noRef.kind == "ActionButtonBar", "call without ref does not reach the original: " .. tostring(noRef))
 
 print(string.format("\n%d Pruefungen, %d Fehler", checks, failures))
 os.exit(failures == 0 and 0 or 1)

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-16
+
+### Fixed
+
+- Crash ("attempt to call field '?'") when opening a depot together with other mods that replace the window button bar, e.g. "Manage Line from Vehicle". The button bar is now replaced through the game's replacement API, and replacements by other mods stay in the chain.
+
 ## [1.0.0] - 2026-10-15
 
 First public release. Versions 0.x were internal test builds.
@@ -29,5 +35,6 @@ First public release. Versions 0.x were internal test builds.
 - Decorative models are hidden: copies without a store entry (e.g. from asset mods) and "fake" locomotives without engine and cargo.
 - English and German.
 
-[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/releases/tag/v1.0.0

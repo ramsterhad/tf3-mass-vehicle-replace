@@ -4,7 +4,7 @@ function data()
 		data = {
 			filePath = "mass_vehicle_replace_1::/gui/mass_vehicle_replace.script",
 			doReplaceFn = "doReplace",
-			order = 110,
+			order = 1000,
 		},
 	}
 end
