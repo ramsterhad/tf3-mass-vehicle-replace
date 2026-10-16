@@ -293,24 +293,33 @@ end
 
 local function fleet()
 	local byKey = {}
+	-- whole: vehicles made of this entry alone, replaced completely (residual value, #26)
 	local function add(key, tv, seen)
 		local e = byKey[key]
-		if not e then e = { parts = 0, vehicles = 0, carrier = tv.carrier }; byKey[key] = e end
+		if not e then e = { parts = 0, vehicles = 0, carrier = tv.carrier, whole = {} }; byKey[key] = e end
 		e.parts = e.parts + 1
-		if not seen[key] then seen[key] = true; e.vehicles = e.vehicles + 1 end
+		if not seen[key] then seen[key] = true; seen.n = seen.n + 1; e.vehicles = e.vehicles + 1 end
 	end
 	for __, v in ipairs(ownVehicles()) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
-			local seen = {}
+			local seen, unknown = { n = 0 }, false
 			for __, g in ipairs(groupsOf(cfg)) do
 				if g.path ~= "" then
 					local mi = muOfPath(g.path)
 					if mi then add(mi.key, tv, seen) -- unbekannter Triebzug (Mod fehlt): nicht anbieten
-					elseif not unknownMu[g.path] then unknownMu[g.path] = true; log("Triebzug im Zug unbekannt", tostring(g.path)) end
+					else
+						unknown = true
+						if not unknownMu[g.path] then unknownMu[g.path] = true; log("Triebzug im Zug unbekannt", tostring(g.path)) end
+					end
 				else
 					for j = g.from, g.to do add("m" .. cfg.vehicles[j].part.modelId, tv, seen) end
+				end
+			end
+			if seen.n == 1 and not unknown then
+				for key in pairs(seen) do
+					if key ~= "n" then local w = byKey[key].whole; w[#w + 1] = v end
 				end
 			end
 		end
@@ -440,15 +449,28 @@ end
 
 -- The replace command does not check the balance (the game's purchase window does that itself,
 -- vehicle_store_window.tl hasEnoughMoney), so without this check the player could go into debt.
--- The full purchase price must be covered; the residual value the game credits afterwards is a bonus.
-local shownPrice = 0 -- purchase price shown in the window, read by its step state
+-- Like the game, the cost is the purchase price minus the residual value of the replaced vehicles (#26).
+local shownCost = 0 -- cost shown in the window, read by its step state
 
-local function enoughMoney(price)
-	if price <= 0 then return true end
+local function enoughMoney(cost)
+	if cost <= 0 then return true end
 	-- nil means infinite money (vehicle_store_window.tl fundsState: "nil if infinite!")
 	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
 	if not ok then return true end -- unreadable: leave it to the game, as before
-	return funds == nil or funds >= price
+	return funds == nil or funds >= cost
+end
+
+-- Residual value like the game's purchase window (vehicle_store_window.tl:3525-3547): getDepreciatedValue of
+-- each replaced vehicle. The game knows it per whole vehicle only, and what it credits when some parts of a
+-- vehicle stay is not known yet (#26), so only vehicles made of the old model alone count (fleet() whole).
+local function residual(vehicleIds)
+	local sum = 0
+	for __, v in ipairs(vehicleIds or {}) do
+		local ok, value = pcall(api.engine.util.vehicle.getDepreciatedValue, v)
+		-- value == value: not nan
+		if ok and type(value) == "number" and value == value and value > 0 and value < math.huge then sum = sum + value end
+	end
+	return sum
 end
 
 -- Ausrichtung zum Pruefen gedrehter Triebzuege: Modell-ID je Teil, ">" vorwaerts, "<" gedreht, "|" trennt Gruppen
@@ -490,8 +512,10 @@ local function replaceAll(altKey, neuKey)
 			units = units + n
 		end
 	end
-	-- checked again here: the balance may have changed since the window was drawn
-	if not enoughMoney(neuInfo.price * units) then
+	-- checked again here: the balance may have changed since the window was drawn; residual value by the
+	-- same rule as the window
+	local e = fleet()[altKey]
+	if not enoughMoney(neuInfo.price * units - residual(e and e.whole)) then
 		result.text = _("mvr_not_enough_money")
 		return
 	end
@@ -872,15 +896,19 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	-- ohne neues Modell bleibt der Platz leer; zwei Zeilen, damit nichts springt
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
-	shownPrice = e and neuInfo and neuInfo.price * e.parts or 0
+	local price = e and neuInfo and neuInfo.price * e.parts or 0
+	local refund = (e and neuInfo) and residual(e.whole) or 0
+	shownCost = price - refund
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
-	engine_react_util.useStepState(function() return enoughMoney(shownPrice) end)
-	local affordable = enoughMoney(shownPrice)
+	engine_react_util.useStepState(function() return enoughMoney(shownCost) end)
+	local affordable = enoughMoney(shownCost)
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
 	local busy = pending()
 	if e and neuInfo then
-		summary = { count("mvr_will_replace", e.vehicles), string.format(_("mvr_price"), money(shownPrice)) }
+		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
+		local priceLine = refund > 0 and string.format(_("mvr_cost_net"), money(shownCost)) or string.format(_("mvr_price"), money(price))
+		summary = { count("mvr_will_replace", e.vehicles), priceLine }
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }
 	elseif not altInfo then

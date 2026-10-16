@@ -268,6 +268,7 @@ local costPerCommand = 560000
 local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
+local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
 local function step()
 	local q = queuedCommands
 	queuedCommands = {}
@@ -326,7 +327,12 @@ api = {
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
 		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
-			vehicle = { getDepreciatedValue = function(v) assert(vehicles[v], "Restwert fuer unbekanntes Fahrzeug"); return 100000 end } },
+			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
+			vehicle = { getDepreciatedValue = function(v)
+				assert(vehicles[v], "residual value of an unknown vehicle")
+				if residualThrows then error("no residual value") end
+				return residuals[v] or 0
+			end } },
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
 	util = { formatMoney = function(v) return "$" .. tostring(v) end },
@@ -1166,6 +1172,69 @@ step() -- the callbacks of the closed window and of the new one arrive in the sa
 t = content("reopen, done")
 check(hasText(t, "Ersetzt: 8 von 8"), "old callbacks mixed into the new batch")
 holdSteps = false
+bankBalance = 5000000
+
+print("== Residual value of whole vehicles counts, like the game (issue #26)")
+-- the game's purchase window: cost = price - residual value (vehicle_store_window.tl:2995-3005, 3525-3547)
+for v = 110, 117 do residuals[v] = 1000 end
+residuals[130] = 1000000 -- the foreign truck is not replaced, its value must not count
+t = chooseKasten("residual, exactly enough", 480000) -- 8 x 61000 - 8 x 1000
+check(replaceButton(t).props.meta.enabled == true, "residual value not counted: button disabled with price minus residual")
+check(hasText(t, "Kosten nach Restwert: $480000"), "cost line with residual value missing")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 8, "price minus residual covered: 8 commands expected, " .. #sent)
+t = chooseKasten("residual, one short", 479999)
+check(replaceButton(t).props.meta.enabled == false, "button enabled one short of price minus residual")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
+
+print("== Partly replaced vehicles count at the full price (issue #26)")
+-- BR 50 pulls wagons in trains 102, 107 and 108; the wagons stay, so their residual value does not count
+residuals[102], residuals[107], residuals[108] = 1000000, 1000000, 1000000
+bankBalance = 4499999 -- BR 103: 3 x 1500000
+openAndRender("partly replaced", 500, true)
+t = content("partly replaced")
+combos(t)[1].props.onValueChange("m5")
+t = content("partly replaced, BR 50")
+combos(t)[2].props.onValueChange("m4")
+t = content("partly replaced, BR 103")
+check(priceText(t) == "Kaufpreis: $4500000", "partly replaced trains: price line " .. tostring(priceText(t)))
+check(replaceButton(t).props.meta.enabled == false, "residual value of partly replaced trains counted")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 0, "partly replaced trains replaced below the full price: " .. #sent)
+
+print("== Multiple units: whole and partly replaced trains (issue #26)")
+-- train 104 is one ET 420 alone (counts), train 103 has two ET 420 and a wagon (does not count)
+residuals[103], residuals[104] = 1000000, 1000000
+local function chooseEt423(label, b)
+	step()
+	bankBalance = b
+	openAndRender(label, 500, true)
+	local tt = content(label)
+	combos(tt)[1].props.onValueChange("u900")
+	tt = content(label .. ", ET 420")
+	combos(tt)[2].props.onValueChange("u901")
+	return content(label .. ", ET 423")
+end
+t = chooseEt423("multiple units, enough", 5600000) -- 3 units x 2200000 - 1000000 (train 104)
+check(hasText(t, "Kosten nach Restwert: $5600000"), "multiple units: cost line missing")
+check(replaceButton(t).props.meta.enabled == true, "multiple units: residual value of the whole train not counted")
+t = chooseEt423("multiple units, one short", 5599999)
+check(replaceButton(t).props.meta.enabled == false, "multiple units: residual value of the partly replaced train counted")
+
+print("== Residual value unreadable counts as none (issue #26)")
+residualThrows = true
+t = chooseKasten("residual unreadable, full price", 488000)
+check(replaceButton(t).props.meta.enabled == true, "residual unreadable: button disabled with the full price")
+check(priceText(t) == "Kaufpreis: $488000", "residual unreadable: price line " .. tostring(priceText(t)))
+t = chooseKasten("residual unreadable, one short", 487999)
+check(replaceButton(t).props.meta.enabled == false, "residual unreadable: button enabled below the full price")
+residualThrows = false
+residuals = {}
+step()
 bankBalance = 5000000
 
 print("== Depot window is not replaced, depot comes from the plugin condition")
