@@ -51,5 +51,7 @@ Check for answers at the start of a session.
   `C:\Program Files (x86)\Steam\userdata\17526841\3493540\local\staging_area\mass_vehicle_replace_1`.
   Only mirror it from the repo, never patch it:
   `rsync -a --delete --exclude _metadata/mod.io_fileid.txt mass_vehicle_replace_1/ "<staging>/"` (WSL).
-- Release: bump `revision` in `mod.json`, version line in `_metadata/modinfo.json` (both languages),
-  CHANGELOG; tag `vX.Y.Z` on `main`. The user uploads from the game; mod.io release notes in English only.
+- PR titles carry no version; each PR adds its entry under `## [Unreleased]` in the CHANGELOG.
+- Release: its own commit `Release X.Y.Z` straight on `main` after the user's game test and OK: bump
+  `revision` in `mod.json`, version line in `_metadata/modinfo.json` (both languages), turn `Unreleased`
+  into `## [X.Y.Z] - date`; tag `vX.Y.Z`. The user uploads from the game; mod.io release notes in English only.
