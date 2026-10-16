@@ -848,7 +848,7 @@ costPerCommand = 61000
 t = chooseKasten("too little money", 487999)
 local btnPoor = replaceButton(t)
 check(btnPoor.props.meta.enabled == false, "button not disabled without enough money")
-check(btnPoor.props.meta.class:find("error", 1, true) ~= nil, "button without error class")
+check(btnPoor.props.meta.class:find("ft-no-money", 1, true) ~= nil, "button without ft-no-money class")
 check(btnPoor.props.meta.tooltip == "Nicht genug Geld", "tooltip: " .. tostring(btnPoor.props.meta.tooltip))
 check(priceText(t) == "Kaufpreis: $488000 · Nicht genug Geld", "price line: " .. tostring(priceText(t)))
 sent = {}

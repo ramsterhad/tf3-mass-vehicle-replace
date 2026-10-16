@@ -845,9 +845,9 @@ local FtContent = react.RegisterRecipe("FtContent", function(p)
 	}
 
 	local button = builtin.Button{
-		-- like the purchase window: disabled with "error" class and tooltip when the money is not enough
+		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua) and with tooltip when the money is not enough
 		meta = {
-			class = "primary, ft-replace-btn" .. (affordable and "" or ", error"),
+			class = "primary, ft-replace-btn" .. (affordable and "" or ", ft-no-money"),
 			enabled = affordable,
 			tooltip = not affordable and _("ft_not_enough_money") or nil,
 		},
