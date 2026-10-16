@@ -16,6 +16,13 @@ local function log(...)
 	debugPrint("[MassVehicleReplace]", ...)
 end
 
+-- Number as whole-number text for the log. Never use %d: in the game's Lua 5.2 it fails with
+-- "not a number in proper range" on values beyond 2^63, inf and nan (e.g. a balance set by a money mod).
+local function num(v)
+	if type(v) == "number" then return string.format("%.0f", v) end
+	return tostring(v)
+end
+
 -- Modelldaten ------------------------------------------------------------------------------------
 -- Zwei Arten von Eintraegen, beide mit Schluessel key:
 --   "m<id>": einzelnes Modell (Lok, Wagen, Bus, Schiff ...), id aus modelRep
@@ -342,22 +349,28 @@ end
 -- Ist die Abbuchung kleiner als der Listenpreis, schreibt das Spiel fuer das Alte etwas gut.
 local money_log = {}
 
-local function logMoneyWhenDone()
-	if result.ok + result.failed < result.sent then return end
+local function writeMoneyLog()
 	local after = balance()
 	local before = money_log.before
-	if before and after then
+	if type(before) == "number" and type(after) == "number" then
 		local spent = before - after
-		log(string.format("Geld: vorher=%d nachher=%d abgebucht=%d Listenpreis=%d (Stueck=%d x %d) Differenz=%d",
-			before, after, spent, money_log.list, money_log.units, money_log.price, money_log.list - spent))
+		log(string.format("Geld: vorher=%s nachher=%s abgebucht=%s Listenpreis=%s (Stueck=%s x %s) Differenz=%s",
+			num(before), num(after), num(spent), num(money_log.list), num(money_log.units), num(money_log.price), num(money_log.list - spent)))
 		-- Abgleich mit dem Restwert, den das Kauffenster des Spiels beim Ersetzen gutschreibt (getDepreciatedValue
 		-- des ganzen Fahrzeugs); bei Zuegen, in denen nur ein Teil getauscht wird, ist das womoeglich zu hoch
-		log(string.format("Geld: Restwert der Fahrzeuge=%d erwartet=%d Abweichung=%d (Fahrzeuge ganz getauscht=%d, teilweise=%d)",
-			money_log.residual, money_log.list - money_log.residual, money_log.list - money_log.residual - spent,
-			money_log.whole, money_log.partial))
+		log(string.format("Geld: Restwert der Fahrzeuge=%s erwartet=%s Abweichung=%s (Fahrzeuge ganz getauscht=%s, teilweise=%s)",
+			num(money_log.residual), num(money_log.list - money_log.residual), num(money_log.list - money_log.residual - spent),
+			num(money_log.whole), num(money_log.partial)))
 	else
 		log("Geld: Kontostand nicht lesbar", tostring(before), tostring(after))
 	end
+end
+
+local function logMoneyWhenDone()
+	if result.ok + result.failed < result.sent then return end
+	-- diagnostics only: a failure here must never break the command callback
+	local ok, err = pcall(writeMoneyLog)
+	if not ok then log("money log failed", tostring(err)) end
 end
 
 -- Baut die neue Zusammenstellung eines Fahrzeugs; nil, wenn alt darin nicht vorkommt.
@@ -465,7 +478,7 @@ local function replaceAll(altKey, neuKey)
 		end
 	end
 	updateText()
-	log(string.format("alt=%s neu=%s geschickt=%d", altKey, neuKey, result.sent))
+	log(string.format("alt=%s neu=%s geschickt=%s", altKey, neuKey, num(result.sent)))
 end
 
 -- Fenster ---------------------------------------------------------------------------------------------
@@ -679,7 +692,11 @@ end
 -- In der Liste der alten Modelle stehen bei beiden zuerst die Fahrzeuge mit Antrieb, dann die Wagen.
 
 local function naturalKey(s)
-	local key = oneLine(s):lower():gsub("%d+", function(d) return string.format("%012d", tonumber(d)) end)
+	-- pad digit runs as text: %d on tonumber(d) fails for runs of 19 or more digits
+	local key = oneLine(s):lower():gsub("%d+", function(d)
+		d = d:gsub("^0+(%d)", "%1")
+		return string.rep("0", 20 - #d) .. d
+	end)
 	return key
 end
 
