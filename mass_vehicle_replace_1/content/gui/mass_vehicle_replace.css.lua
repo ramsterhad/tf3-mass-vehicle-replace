@@ -31,48 +31,48 @@ function data()
 
 	-- Startposition 0.5/0.5 meint die Ecke des Fensters; mit dem Anker in der Mitte steht es mittig
 	-- (so auch die Fenster Firma und Finanzen des Spiels)
-	a("Window!ft-window", {
+	a("Window!mvr-window", {
 		anchorPoint = { 0.5, 0.5 },
 	})
 
 	-- oben kein Innenabstand: unter dem Titel sonst mehr Luft ueber den Symbolen als darunter
-	a("Window!ft-window Window::Content", {
+	a("Window!mvr-window Window::Content", {
 		padding = { 0, 12, 12, 12 },
 	})
-	a("Window!ft-window BoxLayout", {
+	a("Window!mvr-window BoxLayout", {
 		innerSpacing = { 4, 8 },
 	})
 
 	-- Zellen der Zeilen: Spalten und schmale Mitte, mittig zur Zeile
-	a("!ft-cell", with(fixed(CELL), { gravity = { 0, 0.5 } }))
-	a("!ft-mid", with(fixed(MID), { gravity = { 0, 0.5 } }))
+	a("!mvr-cell", with(fixed(CELL), { gravity = { 0, 0.5 } }))
+	a("!mvr-mid", with(fixed(MID), { gravity = { 0, 0.5 } }))
 	-- Liste fuellt ihre Zelle
-	a("ComboBox!ft-combo", {
+	a("ComboBox!mvr-combo", {
 		gravity = { -1, 0.5 },
 	})
 	-- Tauschsymbol mittig in der Mitte: Ausrichtung wirkt in der Zelle nicht, daher fuellen Symbol und
 	-- gleich breite Raender links und rechts die Mitte genau aus (10 + 28 + 10 = MID)
-	a("ImageView!ft-swap", with(fixed(28, 28), { margin = { 0, (MID - 28) / 2, 0, (MID - 28) / 2 } }))
+	a("ImageView!mvr-swap", with(fixed(28, 28), { margin = { 0, (MID - 28) / 2, 0, (MID - 28) / 2 } }))
 	-- grosses Bild: feste Flaeche ueber die ganze Spaltenbreite, das Bild wird mittig eingepasst
-	a("!ft-big-image", with(fixed(BIG_IMAGE[1], BIG_IMAGE[2]), { gravity = { 0, 0 } }))
+	a("!mvr-big-image", with(fixed(BIG_IMAGE[1], BIG_IMAGE[2]), { gravity = { 0, 0 } }))
 
 	-- Eintraege der Listen (stehen auch im Popup, ausserhalb des Fensters)
-	a("!ft-item-image", with(fixed(ITEM_IMAGE[1], ITEM_IMAGE[2]), { gravity = { 0, 0.5 } }))
-	a("TextView!ft-item-text", fixed(ITEM_TEXT))
+	a("!mvr-item-image", with(fixed(ITEM_IMAGE[1], ITEM_IMAGE[2]), { gravity = { 0, 0.5 } }))
+	a("TextView!mvr-item-text", fixed(ITEM_TEXT))
 	-- Frachtzeile unter Bild und Text, links buendig
-	a("!ft-cargo", with(fixed(CARGO_ROW, CARGO_ICON + 2), { gravity = { 0, 0 }, margin = { 2, 0, 0, 0 } }))
-	a("!ft-cargo-icon", with(fixed(CARGO_ICON, CARGO_ICON), { margin = { 1, 1, 1, 1 } }))
-	a("TextView!ft-cargo-more", with(fixed(24, CARGO_ICON), { margin = { 1, 1, 1, 1 } }))
-	a("!ft-item", {
+	a("!mvr-cargo", with(fixed(CARGO_ROW, CARGO_ICON + 2), { gravity = { 0, 0 }, margin = { 2, 0, 0, 0 } }))
+	a("!mvr-cargo-icon", with(fixed(CARGO_ICON, CARGO_ICON), { margin = { 1, 1, 1, 1 } }))
+	a("TextView!mvr-cargo-more", with(fixed(24, CARGO_ICON), { margin = { 1, 1, 1, 1 } }))
+	a("!mvr-item", {
 		gravity = { -1, 0.5 },
 	})
-	a("!ft-content", {
+	a("!mvr-content", {
 		gravity = { 0, 0 },
 	})
 
-	a("!ft-gap", fixed(10, 8))
-	a("ImageView!ft-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
-	a("Window!ft-window Button!ft-replace-btn", {
+	a("!mvr-gap", fixed(10, 8))
+	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
+	a("Window!mvr-window Button!mvr-replace-btn", {
 		gravity = { 1, 0.5 },
 		minSize = { 140, 0 },
 	})
@@ -82,22 +82,22 @@ function data()
 		return api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
 	end)
 	if okColors and colors and colors.Error then
-		a([[Window!ft-window Button!ft-no-money!ft-no-money!ft-no-money,
-			Window!ft-window Button!ft-no-money!ft-no-money!ft-no-money:hover]], {
+		a([[Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money,
+			Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money:hover]], {
 			backgroundColor1 = colors.Error,
 		})
 	end
 
-	a("Window!ft-window ToggleButton!ft-filter", {
+	a("Window!mvr-window ToggleButton!mvr-filter", {
 		padding = { 0, 0, 0, 0 },
 	})
-	a("Window!ft-window ImageView!ft-filter-icon", {
+	a("Window!mvr-window ImageView!mvr-filter-icon", {
 		padding = { 6, 6, 6, 6 },
 	})
-	a("Window!ft-window ToggleButton!ft-sort", {
+	a("Window!mvr-window ToggleButton!mvr-sort", {
 		padding = { 4, 10, 4, 10 },
 	})
-	a("Window!ft-window ToggleButton!ft-cargo-filter", {
+	a("Window!mvr-window ToggleButton!mvr-cargo-filter", {
 		padding = { 4, 10, 4, 10 },
 		margin = { 0, 16, 0, 0 },
 	})

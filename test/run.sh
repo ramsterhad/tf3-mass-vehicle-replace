@@ -24,6 +24,8 @@ conf = json.load(open(mod + "/mod.json", encoding="utf-8"))
 assert isinstance(conf["revision"], int) and conf["revision"] > 0, "mod.json revision must be a positive integer"
 print("metadata ok: revision %d, summary %d characters" % (conf["revision"], len(info["summary"])))
 PY
+# compatibility rules (tf3-mod-compat): no overwritten game modules, chained replacements, mod prefix
+python3 "$HERE/lint.py" "$MOD" mvr
 
 # translations: same keys and placeholders in both languages; the German strings feed the test
 python3 - "$MOD/strings.json" "$HERE/strings_de.lua" <<'PY'
