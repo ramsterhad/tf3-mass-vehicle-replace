@@ -300,7 +300,7 @@ api = {
 	cmd = {
 		makeVehicleReplaceCmd = function(e, conf) return { e = e, conf = conf } end,
 		-- jeder Tausch bucht hier pro Befehl einen festen Betrag ab; geprueft wird nur die Rechnung im Protokoll
-		sendCommand = function(c, cb) sent[#sent + 1] = c; bankBalance = bankBalance - costPerCommand; if cb then cb(nil, true) end end,
+		sendCommand = function(c, cb) sent[#sent + 1] = c; if bankBalance then bankBalance = bankBalance - costPerCommand end; if cb then cb(nil, true) end end,
 	},
 }
 
@@ -598,6 +598,7 @@ local secondEt423
 for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
 check(secondEt423 == "$2200000 · 1975 · 4-teilig", "zweite Zeile ET 423: " .. tostring(secondEt423))
 check(table.concat(muNeu, "|") == "ACF M-300|Roter Pfeil|ET 423", "fuer ET 420 (nach Jahr, ohne Lok-Paar): Triebwagen und ET 423, keine Loks, keine Einzelteile: " .. table.concat(muNeu, "|"))
+bankBalance = 10000000
 cs[2].props.onValueChange("u901")
 t = content("ET 423 gewaehlt")
 price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
@@ -634,6 +635,7 @@ local rcNeu = {}
 for i = 2, itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  neu fuer M-300: " .. table.concat(rcNeu, " | "))
 check(table.concat(rcNeu, "|") == "Roter Pfeil|ET 420|ET 423", "fuer M-300 (nach Jahr): Triebzuege und Triebwagen, keine Loks: " .. table.concat(rcNeu, "|"))
+bankBalance = 10000000
 cs[2].props.onValueChange("u901")
 t = content("M-300 gegen ET 423")
 sent = {}
@@ -804,7 +806,9 @@ check(okNoRef and noRef.kind == "ActionButtonBar", "call without ref does not re
 
 print("== Replacing with balances beyond the integer range")
 -- bug report 16.10.2026: "bad argument #2 to 'format' (not a number in proper range)" in the money log
-for _i, b in ipairs({ 1e19, math.huge, 0 / 0 }) do
+-- nan never covers a price (like the purchase window, funds >= cost is false), so it replaces nothing
+for _i, case in ipairs({ { 1e19, 8 }, { math.huge, 8 }, { 0 / 0, 0 } }) do
+	local b, expected = case[1], case[2]
 	local label = "balance " .. tostring(b)
 	openAndRender(label, 501, true)
 	t = content(label)
@@ -813,12 +817,66 @@ for _i, b in ipairs({ 1e19, math.huge, 0 / 0 }) do
 	sent = {}
 	costPerCommand = 61000
 	bankBalance = b
+	t = content(label .. " Kasten")
 	local okClick, errClick = pcall(function()
 		find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1].props.onClick()
 	end)
 	check(okClick, label .. ": replacing fails: " .. tostring(errClick))
-	check(#sent == 8, label .. ": 8 commands expected, " .. #sent)
+	check(#sent == expected, label .. ": " .. expected .. " commands expected, " .. #sent)
 end
+bankBalance = 5000000
+
+print("== Not enough money")
+-- the replace command does not check the balance; the full purchase price must be covered
+-- (Strassendepot: 8 Kipper, Kasten costs 61000 each, 488000 in total)
+local function replaceButton(tt)
+	return find(tt, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1]
+end
+local function priceText(tt)
+	local pt = find(tt, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
+	return pt[1] and pt[1].props.text
+end
+local function chooseKasten(label, b)
+	bankBalance = b
+	openAndRender(label, 501, true)
+	t = content(label)
+	combos(t)[2].props.onValueChange("m11")
+	return content(label .. " Kasten")
+end
+costPerCommand = 61000
+
+t = chooseKasten("too little money", 487999)
+local btnPoor = replaceButton(t)
+check(btnPoor.props.meta.enabled == false, "button not disabled without enough money")
+check(btnPoor.props.meta.class:find("error", 1, true) ~= nil, "button without error class")
+check(btnPoor.props.meta.tooltip == "Nicht genug Geld", "tooltip: " .. tostring(btnPoor.props.meta.tooltip))
+check(priceText(t) == "Kaufpreis: $488000 · Nicht genug Geld", "price line: " .. tostring(priceText(t)))
+sent = {}
+btnPoor.props.onClick() -- the game ignores clicks on disabled buttons; the click itself checks again anyway
+check(#sent == 0, "replaced without enough money: " .. #sent)
+check(bankBalance == 487999, "balance changed without a replacement")
+t = content("too little money, after click")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nicht genug Geld" end) == 1, "no message after the refused click")
+
+t = chooseKasten("exactly enough", 488000)
+check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
+check(priceText(t) == "Kaufpreis: $488000", "price line with enough money: " .. tostring(priceText(t)))
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 8, "exactly enough: 8 commands expected, " .. #sent)
+
+t = chooseKasten("infinite money", nil)
+check(replaceButton(t).props.meta.enabled == true, "button disabled with infinite money")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 8, "infinite money: 8 commands expected, " .. #sent)
+
+t = chooseKasten("money spent meanwhile", 1000000)
+check(replaceButton(t).props.meta.enabled == true, "button disabled with enough money")
+bankBalance = 1000 -- spent while the window was open
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 0, "click does not check the balance again: " .. #sent)
 bankBalance = 5000000
 
 print(string.format("\n%d Pruefungen, %d Fehler", checks, failures))

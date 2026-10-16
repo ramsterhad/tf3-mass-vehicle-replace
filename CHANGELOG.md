@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Vehicles could be replaced beyond the money balance, which the game itself does not allow (#21). The full purchase price must now be covered, otherwise the Replace button is disabled and shows "Not enough money". Infinite money is not affected.
+
 ## [1.0.2] - 2026-10-16
 
 ### Fixed
