@@ -267,6 +267,7 @@ local costPerCommand = 560000
 -- commands waiting for the next simulation step; holdSteps keeps them waiting (game paused, slow step)
 local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
+local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local function step()
 	local q = queuedCommands
 	queuedCommands = {}
@@ -335,6 +336,7 @@ api = {
 		-- simulation step and its callback comes a frame later; step() below plays that out.
 		-- Each executed command books a fixed amount.
 		sendCommand = function(c, cb)
+			if throwAtCommand and #sent + 1 == throwAtCommand then error("command rejected") end
 			sent[#sent + 1] = c
 			queuedCommands[#queuedCommands + 1] = function()
 				if bankBalance then bankBalance = bankBalance - costPerCommand end
@@ -1003,6 +1005,7 @@ local function priceText(tt)
 	return pt[1] and pt[1].props.text
 end
 local function chooseKasten(label, b)
+	step() -- commands of an earlier test run first, so they do not book against this balance
 	bankBalance = b
 	openAndRender(label, 501, true)
 	t = content(label)
@@ -1135,6 +1138,18 @@ t = content("failing commands, step done")
 check(hasText(t, "Ersetzt: 0 von 8, Fehler: 8"), "failure count not shown")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
 commandSucceeds = true
+
+print("== A command that throws does not leave the button stuck (issue #9)")
+-- review finding on #28: counted before sending, a throwing command never got its callback
+holdSteps = true
+t = chooseKasten("throwing command", nil)
+sent, throwAtCommand = {}, 3
+replaceButton(t).props.onClick()
+throwAtCommand = nil
+check(#sent == 2, "throwing command: 2 commands sent before the error, " .. #sent)
+holdSteps = false
+t = content("throwing command, step done")
+check(replaceButton(t).props.meta.enabled == true, "button stuck after a command threw")
 
 print("== Callbacks of a closed window do not count (issue #9)")
 -- like the game's counter, which lives with its UI component (engine_react_util.tl:36-55)

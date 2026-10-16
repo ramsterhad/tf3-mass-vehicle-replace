@@ -500,7 +500,6 @@ local function replaceAll(altKey, neuKey)
 	result.sent, result.ok, result.failed = 0, 0, 0
 	for __, job in ipairs(jobs) do
 		pcall(function() log("Ausrichtung", job.entity, "alt:", orientation(job.cfg), "neu:", orientation(job.conf)) end)
-		result.sent = result.sent + 1
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
 			-- the window was closed and opened again meanwhile: this batch no longer counts
@@ -513,6 +512,9 @@ local function replaceAll(altKey, neuKey)
 			end
 			updateText()
 		end)
+		-- counted only once it is really sent: a command that throws gets no callback, and counting it
+		-- would leave the button disabled until the window is reopened
+		result.sent = result.sent + 1
 	end
 	updateText()
 	log(string.format("alt=%s neu=%s geschickt=%s", altKey, neuKey, num(result.sent)))
