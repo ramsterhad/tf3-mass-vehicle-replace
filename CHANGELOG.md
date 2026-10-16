@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If another mod overwrites the game's button bar in an incompatible way, only the depot button is switched off instead of the game crashing.
 - Reversed vehicles came back facing forward after replacing them (#7): multiple units, and single models replaced by a multiple unit or the other way round (e.g. Talent 1 by Talent 2). The new vehicle now faces the same way as the old one.
 - Trains with inconsistent group data (more group slots than vehicles) were skipped when replacing (#13). Group sizes are now clamped to the vehicles that exist.
+- Vehicles owned by someone else were listed and replaced at the player's cost (#1). Every campaign mission with vehicles hands some of them to an AI player. Only the player's own vehicles are listed and replaced now.
+- A new model that expired while the window was open (turn of the year) could still be bought (#3). The window now updates at a year change, and Replace checks availability again.
+- Multiple units where one part has no end year expired too early (#3). Like the game's store, such a unit now stays available.
 
 ## [1.0.2] - 2026-10-16
 
