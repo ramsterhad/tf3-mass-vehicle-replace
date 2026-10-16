@@ -17,7 +17,7 @@ local function log(...)
 end
 
 -- Number as whole-number text for the log. Never use %d: in the game's Lua 5.2 it fails with
--- "not a number in proper range" on values beyond 2^63, inf and nan (e.g. a balance set by a money mod).
+-- "not a number in proper range" on values beyond 2^63, inf and nan.
 local function num(v)
 	if type(v) == "number" then return string.format("%.0f", v) end
 	return tostring(v)
@@ -339,40 +339,6 @@ local function updateText()
 	result.text = s
 end
 
--- Kontostand des Spielers; nil bei unendlich Geld oder wenn die Abfrage scheitert
-local function balance()
-	local ok, b = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
-	return ok and b or nil
-end
-
--- Geldprotokoll fuer einen Tausch: Kontostand vorher und nachher gegen den Listenpreis des Neuen.
--- Ist die Abbuchung kleiner als der Listenpreis, schreibt das Spiel fuer das Alte etwas gut.
-local money_log = {}
-
-local function writeMoneyLog()
-	local after = balance()
-	local before = money_log.before
-	if type(before) == "number" and type(after) == "number" then
-		local spent = before - after
-		log(string.format("Geld: vorher=%s nachher=%s abgebucht=%s Listenpreis=%s (Stueck=%s x %s) Differenz=%s",
-			num(before), num(after), num(spent), num(money_log.list), num(money_log.units), num(money_log.price), num(money_log.list - spent)))
-		-- Abgleich mit dem Restwert, den das Kauffenster des Spiels beim Ersetzen gutschreibt (getDepreciatedValue
-		-- des ganzen Fahrzeugs); bei Zuegen, in denen nur ein Teil getauscht wird, ist das womoeglich zu hoch
-		log(string.format("Geld: Restwert der Fahrzeuge=%s erwartet=%s Abweichung=%s (Fahrzeuge ganz getauscht=%s, teilweise=%s)",
-			num(money_log.residual), num(money_log.list - money_log.residual), num(money_log.list - money_log.residual - spent),
-			num(money_log.whole), num(money_log.partial)))
-	else
-		log("Geld: Kontostand nicht lesbar", tostring(before), tostring(after))
-	end
-end
-
-local function logMoneyWhenDone()
-	if result.ok + result.failed < result.sent then return end
-	-- diagnostics only: a failure here must never break the command callback
-	local ok, err = pcall(writeMoneyLog)
-	if not ok then log("money log failed", tostring(err)) end
-end
-
 -- Baut die neue Zusammenstellung eines Fahrzeugs; nil, wenn alt darin nicht vorkommt.
 -- Einzelmodell: jedes Einzelteil alt wird zu neu, Triebzuege im selben Zug bleiben.
 -- Triebzug: jede Gruppe alt wird durch die Teile von neu ersetzt, Gruppengroesse und Dateiname passen sich an.
@@ -444,36 +410,23 @@ local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
 	result.sent, result.ok, result.failed = 0, 0, 0
-	money_log = { before = balance(), units = 0, price = neuInfo.price, list = 0, residual = 0, whole = 0, partial = 0 }
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
 	for __, v in ipairs(api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE)) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
-		local conf, units = nil, 0
-		if cfg then conf, units = rebuild(cfg, altInfo, neuInfo, t) end
+		local conf = cfg and rebuild(cfg, altInfo, neuInfo, t)
 		if conf then
-			local okV, value = pcall(api.engine.util.vehicle.getDepreciatedValue, v)
-			if okV and value then money_log.residual = money_log.residual + value end
-			-- ganz getauscht: kein altes Teil bleibt stehen
-			local kept = false
-			for __, part in ipairs(conf.vehicles) do
-				if part.purchaseTime ~= t then kept = true end
-			end
-			if kept then money_log.partial = money_log.partial + 1 else money_log.whole = money_log.whole + 1 end
 			pcall(function() log("Ausrichtung", v, "alt:", orientation(cfg), "neu:", orientation(conf)) end)
 			result.sent = result.sent + 1
 			local entity = v
 			api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, conf), function(__, success)
 				if success then
 					result.ok = result.ok + 1
-					money_log.units = money_log.units + units
-					money_log.list = money_log.list + units * neuInfo.price
 				else
 					result.failed = result.failed + 1
 					log("Ersetzen fehlgeschlagen", entity)
 				end
 				updateText()
-				logMoneyWhenDone()
 			end)
 		end
 	end

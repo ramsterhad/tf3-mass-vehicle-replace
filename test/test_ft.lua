@@ -570,14 +570,6 @@ for _i, c in ipairs(sent) do
 		check(table.concat(c.conf.vehicleGroups, ",") == "3,3,1", "Gruppen 103 falsch")
 	end
 end
-local moneyLine
-for _i, l in ipairs(logs) do if l:find("Geld: vorher", 1, true) then moneyLine = l end end
-print("  " .. tostring(moneyLine))
-check(moneyLine and moneyLine:find("vorher=5000000 nachher=3320000 abgebucht=1680000 Listenpreis=1680000 (Stueck=6 x 280000) Differenz=0", 1, true), "Geldprotokoll falsch")
-local resLine
-for _i, l in ipairs(logs) do if l:find("Restwert der Fahrzeuge", 1, true) then resLine = l end end
-print("  " .. tostring(resLine))
-check(resLine and resLine:find("Restwert der Fahrzeuge=300000 erwartet=1380000 Abweichung=-300000 (Fahrzeuge ganz getauscht=0, teilweise=3)", 1, true), "Restwert-Protokoll falsch")
 for _i, c in ipairs(sent) do
 	for _j, part in ipairs(c.conf.vehicles) do check(part.part.modelId ~= 2, "altes Modell nicht ersetzt in " .. c.e) end
 end
@@ -632,10 +624,6 @@ for _i, c in ipairs(sent) do
 		fail("Triebzugtausch trifft fremden Zug " .. tostring(c.e))
 	end
 end
-moneyLine = nil
-for _i, l in ipairs(logs) do if l:find("Geld: vorher", 1, true) then moneyLine = l end end
-print("  " .. tostring(moneyLine))
-check(moneyLine and moneyLine:find("Listenpreis=6600000 (Stueck=3 x 2200000) Differenz=0", 1, true), "Geldprotokoll Triebzug falsch")
 
 print("== Triebwagen gegen Triebzug")
 openAndRender("Zugdepot 4", 500, true)
@@ -660,9 +648,6 @@ if sent[1] then
 	check(table.concat(sent[1].conf.vehicleGroups, ",") == "4", "Gruppen 106")
 	check(table.concat(sent[1].conf.muFileNames, ",") == "multiple_unit/et423.mdl", "Dateiname 106")
 end
-local resLine2
-for _i, l in ipairs(logs) do if l:find("Restwert der Fahrzeuge", 1, true) then resLine2 = l end end
-check(resLine2 and resLine2:find("ganz getauscht=1, teilweise=0", 1, true), "M-300 gilt als ganz getauscht: " .. tostring(resLine2))
 print("== Triebzug gegen Triebwagen")
 openAndRender("Zugdepot 5", 500, true)
 t = content("Zugdepot 5")
@@ -817,27 +802,22 @@ check(okBar and #depotBar.props.secondaryButtons == 1, "depot button missing whe
 local okNoRef, noRef = pcall(entity_window_util.ActionButtonBar, { primaryButtons = { { tag = "x" } } })
 check(okNoRef and noRef.kind == "ActionButtonBar", "call without ref does not reach the original: " .. tostring(noRef))
 
-print("== Money log with balances beyond the integer range")
--- bug report 16.10.2026: "bad argument #2 to 'format' (not a number in proper range)" in logMoneyWhenDone
-for _i, case in ipairs({ { 1e19, "vorher=10000000000000000000 " }, { math.huge, "vorher=inf " }, { 0 / 0, "vorher=" } }) do
-	local label = "balance " .. tostring(case[1])
+print("== Replacing with balances beyond the integer range")
+-- bug report 16.10.2026: "bad argument #2 to 'format' (not a number in proper range)" in the money log
+for _i, b in ipairs({ 1e19, math.huge, 0 / 0 }) do
+	local label = "balance " .. tostring(b)
 	openAndRender(label, 501, true)
 	t = content(label)
 	combos(t)[2].props.onValueChange("m11")
 	t = content(label .. " Kasten")
 	sent = {}
 	costPerCommand = 61000
-	bankBalance = case[1]
-	local firstLog = #logs + 1
+	bankBalance = b
 	local okClick, errClick = pcall(function()
 		find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("ft%-replace%-btn") end)[1].props.onClick()
 	end)
 	check(okClick, label .. ": replacing fails: " .. tostring(errClick))
 	check(#sent == 8, label .. ": 8 commands expected, " .. #sent)
-	local line
-	for i = firstLog, #logs do if logs[i]:find("Geld: vorher", 1, true) then line = logs[i] end end
-	print("  " .. tostring(line))
-	check(line and line:find(case[2], 1, true), label .. ": money log missing: " .. tostring(line))
 end
 bankBalance = 5000000
 
