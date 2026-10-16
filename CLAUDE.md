@@ -30,6 +30,15 @@ Keep these subscribed and active in the compatibility savegame; check `stdout.tx
 | 6416135 | zhenya_auto_assign_terminals | wraps `builtin.Button`, line manager recipes |
 | 6416672 | zhenya_auto_color_lines | wraps `makeHorizontalSpacer`, `useStepState` |
 | 6415575 | gabri_cargo_catchment_1 | `MaintenanceStationEowExtensionPoint` plugin |
+| 6424525 | ui_overhaul_1 | wraps `ActionButtonBar` by swapping the field (Sell confirmation); switches it off when any mod replaces the bar, also ours |
+| 6422607 | bulk_vehicle_replace | replaces the vehicle window, wraps `builtin.ImageView`/`ToggleButton` in the line manager only |
+| 6424341 | quadraticfour_reworked_vehicle_maintenance | `MaintenanceStationEowExtensionPoint` plugin; suspected of the load crash on 16.10.2026 |
+
+## Reported to other mods
+
+Check for answers at the start of a session.
+
+- [maxblan/ui-overhaul#9](https://github.com/maxblan/ui-overhaul/issues/9): Sell confirmation could chain instead of stepping aside (16.10.2026).
 
 ## Workflow
 
