@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Crash ("attempt to call field '?'") when opening a depot together with other mods that replace the window button bar, e.g. "Manage Line From Vehicle". The button bar is now replaced through the game's replacement API, and replacements by other mods stay in the chain.
+
 ## [1.0.0] - 2026-10-15
 
 First public release. Versions 0.x were internal test builds.

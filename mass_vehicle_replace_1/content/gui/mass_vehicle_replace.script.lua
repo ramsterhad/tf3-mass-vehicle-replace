@@ -935,19 +935,19 @@ local function openWindow(carrier, locked)
 	if ok then windowOpen = true else log("Fenster fehlgeschlagen", tostring(err)) end
 end
 
--- Knopf "Fahrzeuge ersetzen" im Depotfenster, rechts neben "Fahrzeuge verwalten".
--- Das Fenster baut seine Knopfleiste ueber entity_window_util.ActionButtonBar. Solange das Original
--- des Depotfensters laeuft, wird dieser Aufruf kurz umgelenkt und um den eigenen Knopf ergaenzt.
+-- "Replace Vehicles" button in the depot window, to the right of "Manage Vehicles".
+-- The depot window builds its button bar with entity_window_util.ActionButtonBar. That recipe is replaced
+-- through the game's replacement API; the module field itself stays untouched, because other mods pass it
+-- to react.CallOriginalRecipe, which only works with the registered recipe.
 local MANAGE_TAG = "entityWindow.maintenanceStation.manageVehicle"
 local okEwu, entity_window_util = pcall(ug_require, "::/gui/entity_window/entity_window_util.tl")
 local okMsw, MaintenanceStationWindow = pcall(ug_require, "::/gui/entity_window/maintenance_station/maintenance_station.tl")
 
-local depotOfWindow -- Depot des zuletzt aufgebauten Depotfensters
+local depotOfWindow -- depot of the depot window built last
 
--- Ersatz fuer entity_window_util.ActionButtonBar: setzt im Depotfenster "Fahrzeuge ersetzen" an den rechten Rand.
--- Die Leiste stellt zwischen Haupt- und Nebenknoepfe einen Abstandhalter; der Knopf kommt daher als erster
--- Nebenknopf (customItem, im Stil eines Hauptknopfs) vor einen vorhandenen Werkzeugknopf.
--- "Fahrzeuge verwalten" gibt es nur im Depotfenster, andere Fenster bleiben unveraendert.
+-- The button sits at the right edge: the bar puts a spacer between primary and secondary buttons, so it
+-- goes in as the first secondary button (customItem, styled like a primary button) before any tool button.
+-- Only the depot window has "Manage Vehicles", other windows stay unchanged.
 local function replaceButton(depot)
 	return builtin.Button{
 		meta = { class = "primary", tag = "mass_vehicle_replace.replaceVehicles" },
@@ -971,42 +971,60 @@ local function replaceButton(depot)
 	}
 end
 
-local origBar
-local function actionButtonBar(ref, p)
-	if type(p) == "table" and p.primaryButtons then
-		local found = false
-		for __, b in ipairs(p.primaryButtons) do
-			if b.tag == MANAGE_TAG then found = true end
-		end
-		if found then
-			local secondary = { { customItem = replaceButton(depotOfWindow) } }
-			for __, b in ipairs(p.secondaryButtons or {}) do secondary[#secondary + 1] = b end
-			local copy = {}
-			for k, v in pairs(p) do copy[k] = v end
-			copy.secondaryButtons = secondary
-			p = copy
-		end
-	end
-	return origBar(ref, p)
+-- The game keeps one replacement per recipe. A replacement another mod installed earlier is read here
+-- and called from ours, so both stay in the chain.
+local function currentReplacement(recipe)
+	local reg = type(_G) == "table" and rawget(_G, "_react") or nil
+	local okId, id = pcall(react.GetRecipeId, recipe)
+	if type(reg) ~= "table" or type(reg.recipeReplace) ~= "table" or not okId or id == nil then return nil end
+	return reg.recipeReplace[id]
 end
 
--- Das Original laeuft erst nach diesem Rezept als eigener Knoten; hier wird nur das Depot gemerkt.
--- CallOriginalRecipe liefert einen Rezeptknoten, der in ein Layout muss.
+local function withReplaceButton(p)
+	if type(p) ~= "table" or not p.primaryButtons then return p end
+	local found = false
+	for __, b in ipairs(p.primaryButtons) do
+		if b.tag == MANAGE_TAG then found = true end
+	end
+	if not found then return p end
+	local secondary = { { customItem = replaceButton(depotOfWindow) } }
+	for __, b in ipairs(p.secondaryButtons or {}) do secondary[#secondary + 1] = b end
+	local copy = {}
+	for k, v in pairs(p) do copy[k] = v end
+	copy.secondaryButtons = secondary
+	return copy
+end
+
+local priorBar, priorMsw -- replacements by other mods that were installed before ours
+-- Replacement for ActionButtonBar; the params are the last argument, a ref may come before them.
+local function actionButtonBar(...)
+	local n = select("#", ...)
+	local args = { ... }
+	if n > 0 then args[n] = withReplaceButton(args[n]) end
+	if priorBar then return priorBar(table.unpack(args, 1, n)) end
+	return react.CallOriginalRecipe(entity_window_util.ActionButtonBar, table.unpack(args, 1, n))
+end
+
+-- Only remembers the depot; the original window runs later as a node of its own.
+-- CallOriginalRecipe returns a recipe node, which has to go into a layout.
 local FtMaintenanceStationWindow = okEwu and okMsw and react.RegisterRecipe("FtMaintenanceStationWindow", function(params)
 	depotOfWindow = params.keyEntity
-	return builtin.BoxLayout{ child = react.CallOriginalRecipe(MaintenanceStationWindow, params) }
+	local child
+	if priorMsw then child = priorMsw(params) else child = react.CallOriginalRecipe(MaintenanceStationWindow, params) end
+	return builtin.BoxLayout{ child = child }
 end) or nil
 
 if not FtMaintenanceStationWindow then log("Depotfenster nicht gefunden", tostring(entity_window_util), tostring(MaintenanceStationWindow)) end
 
+local installed = false
 local function doReplace(replacementApi)
-	if origBar then return end -- schon eingebaut
-	-- erst hier lesen, nicht beim Laden: so bleiben Ersetzungen anderer Mods in der Kette
-	if FtMaintenanceStationWindow then
-		origBar = entity_window_util.ActionButtonBar
-		entity_window_util.ActionButtonBar = actionButtonBar
-		replacementApi.ReplaceRecipe(MaintenanceStationWindow, FtMaintenanceStationWindow)
-	end
+	if installed or not FtMaintenanceStationWindow then return end
+	installed = true
+	priorBar = currentReplacement(entity_window_util.ActionButtonBar)
+	priorMsw = currentReplacement(MaintenanceStationWindow)
+	log("Ersetzungen anderer Mods", "ActionButtonBar", tostring(priorBar ~= nil), "MaintenanceStationWindow", tostring(priorMsw ~= nil))
+	replacementApi.ReplaceRecipe(entity_window_util.ActionButtonBar, actionButtonBar)
+	replacementApi.ReplaceRecipe(MaintenanceStationWindow, FtMaintenanceStationWindow)
 end
 
 -- .script.lua resources expose their exports through data(), not a return value
