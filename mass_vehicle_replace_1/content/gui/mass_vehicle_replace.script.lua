@@ -288,7 +288,10 @@ local unknownMu = {} -- nur einmal melden
 -- only the player's vehicles: campaign missions hand lines and vehicles to AI players
 -- (mission.zip transfer_ownership_util.tl), the game filters its own lists the same way (statistic_vehicles.tl:322)
 local function ownVehicles()
-	return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE, { requireOwnedByPlayer = api.engine.util.getPlayer() })
+	-- player unreadable: unfiltered as before, never break the window
+	local ok, player = pcall(api.engine.util.getPlayer)
+	if not ok or player == nil then return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE) end
+	return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE, { requireOwnedByPlayer = player })
 end
 
 local function fleet()

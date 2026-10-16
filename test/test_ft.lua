@@ -1051,6 +1051,15 @@ replaceButton(t).props.onClick()
 local foreignSent = false
 for _i, c in ipairs(sent) do if c.e == 130 then foreignSent = true end end
 check(#sent == 8 and not foreignSent, "foreign truck replaced or commands missing: " .. #sent)
+-- player unreadable: the window still opens, unfiltered as before
+local savedGetPlayer = api.engine.util.getPlayer
+api.engine.util.getPlayer = function() error("no player") end
+local okNoPlayer = pcall(function()
+	openAndRender("player unreadable", 501, true)
+	t = content("player unreadable")
+end)
+check(okNoPlayer and combos(t)[1].props.value == "m10", "window breaks when the player cannot be read")
+api.engine.util.getPlayer = savedGetPlayer
 
 print("== New model expires while the window is open (issue #3)")
 bankBalance = nil
