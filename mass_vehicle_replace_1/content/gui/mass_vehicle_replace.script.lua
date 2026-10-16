@@ -337,7 +337,15 @@ local function newPart(model, reversed, color, t)
 	return p
 end
 
-local result = { running = false, sent = 0, ok = 0, failed = 0, text = "" }
+-- Result of the last batch. Commands sent from the GUI run in the next simulation step and their callbacks
+-- come a frame later (api/tealdef/api/cmd.d.tl:2-10); until then the vehicles still look unchanged, so a
+-- second batch would replace the same vehicles again. Like the game (engine_react_util.tl:36-55, 66-98) we
+-- count pending callbacks for as long as the window is open; batch tells callbacks of an earlier window apart.
+local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "" }
+
+local function pending()
+	return result.sent > result.ok + result.failed
+end
 
 local function updateText()
 	if result.sent == 0 then
@@ -461,8 +469,8 @@ end
 -- Ersetzt in jedem Fahrzeug alt durch neu; die uebrigen Teile bleiben, wie sie sind.
 local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
+	if pending() then return end
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
-	result.sent, result.ok, result.failed = 0, 0, 0
 	-- the window may have stayed open over a year change; the replace command itself does not check
 	-- availability (vehicle_react_util.tl HandleVehicleChanges), the game only filters its list
 	if not available(neuInfo, api.engine.util.getYear()) then
@@ -487,11 +495,16 @@ local function replaceAll(altKey, neuKey)
 		result.text = _("mvr_not_enough_money")
 		return
 	end
+	-- counters are reset only here, right before sending: a refused click leaves the previous batch alone
+	local batch = result.batch
+	result.sent, result.ok, result.failed = 0, 0, 0
 	for __, job in ipairs(jobs) do
 		pcall(function() log("Ausrichtung", job.entity, "alt:", orientation(job.cfg), "neu:", orientation(job.conf)) end)
 		result.sent = result.sent + 1
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
+			-- the window was closed and opened again meanwhile: this batch no longer counts
+			if batch ~= result.batch then return end
 			if success then
 				result.ok = result.ok + 1
 			else
@@ -861,6 +874,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
 	engine_react_util.useStepState(function() return enoughMoney(shownPrice) end)
 	local affordable = enoughMoney(shownPrice)
+	-- redraw when the last callback of a batch arrives, so the button comes back
+	engine_react_util.useStepState(pending)
+	local busy = pending()
 	if e and neuInfo then
 		summary = { count("mvr_will_replace", e.vehicles), string.format(_("mvr_price"), money(shownPrice)) }
 	elseif #neus == 0 and altInfo then
@@ -894,7 +910,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
 		meta = {
 			class = "primary, mvr-replace-btn" .. (affordable and "" or ", mvr-no-money"),
-			enabled = affordable,
+			-- disabled while the previous batch is still being replaced (issue #9)
+			enabled = affordable and not busy,
 			tooltip = not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
@@ -902,7 +919,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(affordable and _("mvr_replace") or _("mvr_not_enough_money")),
+					text(not affordable and _("mvr_not_enough_money") or busy and _("mvr_replacing") or _("mvr_replace")),
 				},
 			},
 		},
@@ -978,6 +995,9 @@ local function openWindow(carrier, locked)
 	local wc = windowApi()
 	if not wc then log("kein Fensterzugang"); return end
 	result.text = ""
+	-- a new window starts without pending commands, like the game's counter that lives with its component
+	result.batch = result.batch + 1
+	result.sent, result.ok, result.failed = 0, 0, 0
 	sel.carrier, sel.locked, sel.alt, sel.neu = carrier, locked and carrier ~= nil or false, nil, nil
 	log("Fenster", "Fahrzeugart", tostring(carrier), type(carrier), "Depot", tostring(locked))
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })

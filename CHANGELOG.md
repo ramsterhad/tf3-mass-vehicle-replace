@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vehicles owned by someone else were listed and replaced at the player's cost (#1). Every campaign mission with vehicles hands some of them to an AI player. Only the player's own vehicles are listed and replaced now.
 - A new model that expired while the window was open (turn of the year) could still be bought (#3). The window now updates at a year change, and Replace checks availability again.
 - Multiple units where one part has no end year expired too early (#3). Like the game's store, such a unit now stays available.
+- Clicking Replace again before the game had carried out the first replacement could replace the same vehicles twice (#9). The button now shows "Replacing …" and stays disabled until the game has answered every command.
 
 ## [1.0.2] - 2026-10-16
 

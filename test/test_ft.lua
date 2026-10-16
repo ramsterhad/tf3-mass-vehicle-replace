@@ -264,6 +264,14 @@ local CARGO_NAMES = { "Fahrgäste", "Kohle", "Eisenerz", "Getreide", "Holz", "Ö
 for k = 8, 20 do CARGO["C" .. k] = k; CARGO_NAMES[k] = "Fracht " .. k end
 local sent = {}
 local costPerCommand = 560000
+-- commands waiting for the next simulation step; holdSteps keeps them waiting (game paused, slow step)
+local queuedCommands = {}
+local commandSucceeds, holdSteps = true, false
+local function step()
+	local q = queuedCommands
+	queuedCommands = {}
+	for _i, run in ipairs(q) do run() end
+end
 api = {
 	type = {
 		ComponentType = CT,
@@ -323,8 +331,16 @@ api = {
 	util = { formatMoney = function(v) return "$" .. tostring(v) end },
 	cmd = {
 		makeVehicleReplaceCmd = function(e, conf) return { e = e, conf = conf } end,
-		-- jeder Tausch bucht hier pro Befehl einen festen Betrag ab; geprueft wird nur die Rechnung im Protokoll
-		sendCommand = function(c, cb) sent[#sent + 1] = c; if bankBalance then bankBalance = bankBalance - costPerCommand end; if cb then cb(nil, true) end end,
+		-- like the game in the GUI state (api/tealdef/api/cmd.d.tl:2-10): the command runs in the next
+		-- simulation step and its callback comes a frame later; step() below plays that out.
+		-- Each executed command books a fixed amount.
+		sendCommand = function(c, cb)
+			sent[#sent + 1] = c
+			queuedCommands[#queuedCommands + 1] = function()
+				if bankBalance then bankBalance = bankBalance - costPerCommand end
+				if cb then cb(c, commandSucceeds, {}) end
+			end
+		end,
 	},
 }
 
@@ -474,6 +490,8 @@ local function openAndRender(label, carrier, locked)
 end
 
 local function content(label)
+	-- a frame passes before the window is drawn again: commands sent so far have run
+	if not holdSteps then step() end
 	local t = render("MvrContent", { onClose = function() end })
 	rules(t, label)
 	sameShapes(t, label)
@@ -1083,6 +1101,57 @@ combos(t)[1].props.onValueChange("u900")
 t = content("mixed end years, ET 420")
 check(offered(t, "ET 404"), "ET 404 not offered in 1995 although the game still sells it")
 currentYear = 1980
+
+print("== No second batch while the first is still running (issue #9)")
+-- the vehicles only change in the next simulation step; until then a second batch would replace them again
+holdSteps = true
+t = chooseKasten("double click", nil)
+sent = {}
+local firstBtn = replaceButton(t)
+firstBtn.props.onClick()
+check(#sent == 8, "first click: 8 commands expected, " .. #sent)
+firstBtn.props.onClick() -- fast double click on the same button
+check(#sent == 8, "second click on the same button sent again: " .. #sent)
+t = content("double click, redrawn")
+check(replaceButton(t).props.meta.enabled == false, "button enabled while the batch is running")
+check(buttonText(replaceButton(t)) == "Wird ersetzt …", "button text while running: " .. tostring(buttonText(replaceButton(t))))
+combos(t)[2].props.onValueChange("m11") -- the user picks the new model again
+t = content("double click, chosen again")
+replaceButton(t).props.onClick()
+check(#sent == 8, "second batch sent while the first was running: " .. #sent)
+holdSteps = false
+t = content("double click, step done")
+check(replaceButton(t).props.meta.enabled == true, "button stays disabled after the batch finished")
+check(buttonText(replaceButton(t)) == "Ersetzen", "button text after the batch: " .. tostring(buttonText(replaceButton(t))))
+
+print("== Failed commands also end the batch (issue #9)")
+holdSteps, commandSucceeds = true, false
+t = chooseKasten("failing commands", nil)
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 8, "failing commands: 8 sent expected, " .. #sent)
+holdSteps = false
+t = content("failing commands, step done")
+check(hasText(t, "Ersetzt: 0 von 8, Fehler: 8"), "failure count not shown")
+check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
+commandSucceeds = true
+
+print("== Callbacks of a closed window do not count (issue #9)")
+-- like the game's counter, which lives with its UI component (engine_react_util.tl:36-55)
+holdSteps = true
+t = chooseKasten("reopen", nil)
+sent = {}
+replaceButton(t).props.onClick()
+t = chooseKasten("reopen, new window", nil)
+check(replaceButton(t).props.meta.enabled == true, "new window blocked by the batch of the closed one")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 8, "new window: 8 commands expected, " .. #sent)
+step() -- the callbacks of the closed window and of the new one arrive in the same step
+t = content("reopen, done")
+check(hasText(t, "Ersetzt: 8 von 8"), "old callbacks mixed into the new batch")
+holdSteps = false
+bankBalance = 5000000
 
 print("== Depot window is not replaced, depot comes from the plugin condition")
 check(_react.recipeReplace.MaintenanceStationWindow == nil, "MaintenanceStationWindow is replaced although the plugin condition gives the depot")
