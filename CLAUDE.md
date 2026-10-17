@@ -49,9 +49,13 @@ Check for answers at the start of a session.
   mock first; a new test must fail against the old code.
 - Staging folder (what the game loads and uploads):
   `C:\Program Files (x86)\Steam\userdata\17526841\3493540\local\staging_area\mass_vehicle_replace_1`.
-  Only mirror it from the repo, never patch it:
-  `rsync -a --delete --exclude _metadata/mod.io_fileid.txt mass_vehicle_replace_1/ "<staging>/"` (WSL).
+  Only mirror it from the repo, never patch it, with the private tf3-sdk script (WSL):
+  `~/projekte/tf3-sdk/tools/stage.sh <repo> mass_vehicle_replace_1` for a dev build. It stamps the
+  description in the staging copy only ("DEV-BUILD ..., branch, commit, time"), so the user sees in the
+  mod hub under "My mods" which build the game loaded. Lint rejects the stamp in the repo.
 - PR titles carry no version; each PR adds its entry under `## [Unreleased]` in the CHANGELOG.
 - Release: its own commit `Release X.Y.Z` straight on `main` after the user's game test and OK: bump
   `revision` in `mod.json`, version line in `_metadata/modinfo.json` (both languages), turn `Unreleased`
-  into `## [X.Y.Z] - date`; tag `vX.Y.Z`. The user uploads from the game; mod.io release notes in English only.
+  into `## [X.Y.Z] - date`; tag `vX.Y.Z`. Before the upload, ALWAYS mirror with
+  `stage.sh --release <repo> mass_vehicle_replace_1`: plain mirror, fails if a DEV-BUILD stamp is left.
+  The user uploads from the game; mod.io release notes in English only.

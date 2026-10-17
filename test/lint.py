@@ -54,6 +54,9 @@ for root, _dirs, files in os.walk(mod):
             continue
         if not f.endswith(ALLOWED):
             error(p, 0, "file type not allowed in a mod (game validation fails): " + f)
+        # the dev build stamp (tf3-sdk tools/stage.sh) belongs in the staging copy only, never in the repo
+        if f.endswith((".lua", ".json")) and "DEV-BUILD" in open(p, encoding="utf-8").read():
+            error(p, 0, "dev build stamp (DEV-BUILD) in the mod; it must only exist in the staging copy")
 
 lua_files = []
 for root, _dirs, files in os.walk(os.path.join(mod, "content")):
