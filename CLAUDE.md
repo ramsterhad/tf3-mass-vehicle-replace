@@ -45,7 +45,9 @@ Check for answers at the start of a session.
 - Code changes on a branch, PR into `main` (squash), merge only after the user's game test and OK.
   Texts (README, CHANGELOG, description) may go straight to `main`. `main` is protected
   against force pushes and deletion.
-- Tests: `bash test/run.sh` in WSL (metadata, lint, translations, mock test). Add game facts to the
+- Tests: `bash test/run.sh` in WSL (metadata, lint, luacheck, text check, Lua syntax, translations, mock test).
+  luacheck runs from an unpacked Ubuntu package via `~/.local/bin/luacheck` (no sudo in WSL); CI installs `lua-check`.
+  Code comments are plain ASCII (`test/textcheck.py`). Add game facts to the
   mock first; a new test must fail against the old code.
 - Staging folder (what the game loads and uploads):
   `C:\Program Files (x86)\Steam\userdata\17526841\3493540\local\staging_area\mass_vehicle_replace_1`.

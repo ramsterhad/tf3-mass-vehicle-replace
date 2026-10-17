@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internal names (recipes, CSS classes, translation keys) carry the prefix "mvr", so they cannot clash with other mods.
 - The money check counts the residual value of the old vehicles, like the game's purchase window (#26): the window shows the cost after residual value and keeps it up to date while the game runs. Trains where some vehicles stay (e.g. a new locomotive in front of the old wagons) are priced like the game's "Modify" window: the residual value of the replaced vehicles is credited.
 - Development log lines are no longer written to `stdout.txt` (#19). Errors, warnings and the startup line about other mods' replacements stay.
+- Code comments, log lines and tests are in English, dead code is removed (#11, #12). No change in behaviour.
 
 ### Fixed
 

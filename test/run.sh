@@ -7,6 +7,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 MOD="${MOD:-$(cd "$HERE/.." && pwd)/mass_vehicle_replace_1}"
 LUA="${LUA:-$HOME/.local/lua52/root/usr/bin/lua5.2}"
 LUAC="${LUAC:-$HOME/.local/bin/luac52}"
+LUACHECK="${LUACHECK:-$HOME/.local/bin/luacheck}"
 # a Lua unpacked into ~/.local needs its shared library
 if [ -d "$HOME/.local/lua52/root/usr/lib/x86_64-linux-gnu" ]; then
 	export LD_LIBRARY_PATH="$HOME/.local/lua52/root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -26,6 +27,8 @@ print("metadata ok: revision %d, summary %d characters" % (conf["revision"], len
 PY
 # compatibility rules (tf3-mod-compat): no overwritten game modules, chained replacements, mod prefix
 python3 "$HERE/lint.py" "$MOD" mvr
+# static analysis: undefined or misspelt globals, unused variables, shadowing (config in .luacheckrc)
+"$LUACHECK" --config "$HERE/../.luacheckrc" --no-color -q "$MOD"
 
 # translations: same keys and placeholders in both languages; the German strings feed the test
 python3 - "$MOD/strings.json" "$HERE/strings_de.lua" <<'PY'
@@ -41,5 +44,9 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
     f.write("}\n")
 PY
 
-"$LUAC" -p "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua"
+# text hygiene of the whole repo: no broken encoding, Lua comments in ASCII
+python3 "$HERE/textcheck.py" "$HERE/.."
+
+# syntax of every Lua file of the mod, with the game's Lua version (5.2)
+find "$MOD" -name '*.lua' -print0 | xargs -0 "$LUAC" -p
 "$LUA" "$HERE/test_ft.lua" "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua" "$HERE/strings_de.lua"

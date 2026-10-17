@@ -4,8 +4,6 @@
 
 Replaces all vehicles of one model with another, across all lines. Adds a "Replace Vehicles" button to the depot window.
 
-Ersetzt alle Fahrzeuge eines Modells durch ein anderes, auf allen Linien. Fügt im Depotfenster einen Button „Fahrzeuge ersetzen“ hinzu.
-
 ![Mass Vehicle Replace](mass_vehicle_replace_1/_metadata/0.png)
 
 ## Features
