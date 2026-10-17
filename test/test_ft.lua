@@ -276,7 +276,7 @@ local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
-local residualReads = 0
+local residualReads, deadReads = 0, 0
 local gameTimeNow = 123 -- game time of the mock; advancing it means the game runs
 -- value per existing part, set with partValue(vehicle, index, value); 0 by default (#26)
 local partValues, partValueThrows = {}, false
@@ -341,6 +341,7 @@ api = {
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
 			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
 			vehicle = { getDepreciatedValue = function(v)
+				if not vehicles[v] then deadReads = deadReads + 1 end
 				assert(vehicles[v], "residual value of an unknown vehicle")
 				residualReads = residualReads + 1
 				if residualThrows then error("no residual value") end
@@ -1233,6 +1234,13 @@ gameTimeNow = gameTimeNow + 1 -- the game runs
 check(wouldRedraw(), "live cost: window not redrawn when the residual value dropped")
 t = content("live cost, aged")
 check(hasText(t, "Kosten nach Restwert: $480800"), "live cost: cost line after aging")
+-- a truck is sold while the window is open: the next step must not value the vanished vehicle (review finding)
+local soldTruck = vehicles[117]
+vehicles[117] = nil
+gameTimeNow = gameTimeNow + 1
+check(wouldRedraw(), "live cost: a sold truck's credit did not go")
+check(deadReads == 0, "live cost: residual value read for a vehicle that no longer exists")
+vehicles[117] = soldTruck
 residuals = {}
 step()
 bankBalance = 5000000

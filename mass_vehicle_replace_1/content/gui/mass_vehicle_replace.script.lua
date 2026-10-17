@@ -475,7 +475,10 @@ end
 local function residual(e, key)
 	local sum = 0
 	for __, use in ipairs(e and e.uses or {}) do
-		local credit = readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle)
+		-- the window reads this every step, so a vehicle may be gone since fleet() saw it; the game also checks
+		-- its vehicles before valuing them (vehicle_store_window.tl:3496-3503). Gone: nothing to credit.
+		local okE, exists = pcall(api.engine.entityExists, use.vehicle)
+		local credit = okE and exists and readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle) or nil
 		for j, part in ipairs(use.parts) do
 			if credit and use.keys[j] ~= key then
 				local kept = readValue(api.engine.util.vehicle.getPartPrice, part)
