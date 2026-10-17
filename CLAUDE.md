@@ -61,3 +61,13 @@ Check for answers at the start of a session.
   into `## [X.Y.Z] - date`; tag `vX.Y.Z`. Before the upload, ALWAYS mirror with
   `stage.sh --release <repo> mass_vehicle_replace_1`: plain mirror, fails if a DEV-BUILD stamp is left.
   The user uploads from the game; mod.io release notes in English only.
+- Release notes for players (decided 17.10.2026; mod.io lists every upload as version "1.0", so the
+  version must be in the texts). Claude prepares all of them, the user uploads:
+  - `CHANGELOG.md`: the full entry (Keep a Changelog), the complete history lives here.
+  - Top of the description in `_metadata/modinfo.json`, in both languages: the version line, then
+    "Neu in X.Y.Z (Details unten)" / "What's new in X.Y.Z (see below)" with the main points.
+  - Bottom of the description, once, in English: "Changelog", newest version first, every bug fix and
+    feature a player notices (no internal changes such as comments, tests, tooling), then a link to
+    `CHANGELOG.md` on GitHub.
+  - Changelog field of the upload dialog: English, version first, short summary of the new version.
+  The game overwrites the mod.io description from `modinfo.json` on every upload, so edit it there only.
