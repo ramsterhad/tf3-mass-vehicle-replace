@@ -105,6 +105,15 @@ for p in lua_files:
         if not m.group(1).startswith(prefix + "_"):
             error(p, lineno(m.start()), "translation key '%s' without prefix '%s_'" % (m.group(1), prefix))
 
+    # rule: no integer conversions in format strings. In the game's Lua 5.2 they fail with "not a number in
+    # proper range" beyond 2^63, on inf and on nan (1.0.2: money log with a huge balance). Translations are
+    # not checked: they are formatted with vehicle counts only (count(), updateText()).
+    for m in re.finditer(r"string\.format\(\s*(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')", src):
+        fmt = m.group(1).replace("%%", "")
+        conv = re.search(r"%[-+ #0]*\d*(?:\.\d+)?([diouxXc])", fmt)
+        if conv:
+            error(p, lineno(m.start()), "'%%%s' in string.format fails beyond 2^63, on inf and nan in Lua 5.2; use %%s or %%.0f" % conv.group(1))
+
     # rule: replacement configs state their order explicitly
     if p.endswith(".res.lua") and "react-replacement-config" in src and not re.search(r"\border\s*=", src):
         error(p, 0, "react-replacement-config without explicit order")

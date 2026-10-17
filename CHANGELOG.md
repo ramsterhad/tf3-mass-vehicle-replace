@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The depot is now read through the game's extension point for the depot window. The depot window itself is no longer replaced, so mods that change it no longer conflict with this one (#8).
 - Internal names (recipes, CSS classes, translation keys) carry the prefix "mvr", so they cannot clash with other mods.
 - The money check counts the residual value of the old vehicles, like the game's purchase window (#26): the window shows the cost after residual value and keeps it up to date while the game runs. Trains where some vehicles stay (e.g. a new locomotive in front of the old wagons) are priced like the game's "Modify" window: the residual value of the replaced vehicles is credited.
+- Development log lines are no longer written to `stdout.txt` (#19). Errors, warnings and the startup line about other mods' replacements stay.
 
 ### Fixed
 

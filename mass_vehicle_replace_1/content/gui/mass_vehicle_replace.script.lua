@@ -16,13 +16,6 @@ local function log(...)
 	debugPrint("[MassVehicleReplace]", ...)
 end
 
--- Number as whole-number text for the log. Never use %d: in the game's Lua 5.2 it fails with
--- "not a number in proper range" on values beyond 2^63, inf and nan.
-local function num(v)
-	if type(v) == "number" then return string.format("%.0f", v) end
-	return tostring(v)
-end
-
 -- Modelldaten ------------------------------------------------------------------------------------
 -- Zwei Arten von Eintraegen, beide mit Schluessel key:
 --   "m<id>": einzelnes Modell (Lok, Wagen, Bus, Schiff ...), id aus modelRep
@@ -205,23 +198,17 @@ local function buildCatalog()
 	end
 	local okAll, all = pcall(function() return api.res.multipleUnitRep.getAll() end)
 	if not okAll then log("Triebzuege nicht abrufbar", tostring(all)) end
-	local muCount, muTags = 0, 0
 	for id in pairs(okAll and all or {}) do
 		local ok, i = pcall(muInfo, id)
 		if ok and i then
 			catalog[i.key] = i
 			muByPath[i.path] = i
-			muCount = muCount + 1
-			if not i.noTags then muTags = muTags + 1 end
 			-- Teile eines Triebzugs gibt es nur mit ihm zusammen; einzeln werden sie nicht angeboten
 			for __, part in ipairs(i.parts) do part.info.muPart = true; if catalog[part.info.key] then catalog[part.info.key].muPart = true end end
 		elseif not ok then
 			log("Triebzug nicht lesbar", tostring(id), tostring(i))
 		end
 	end
-	local classes = { loco = 0, self = 0, wagon = 0 }
-	for __, i in pairs(catalog) do if not i.mu and classes[i.class] then classes[i.class] = classes[i.class] + 1 end end
-	log("Katalog:", "Triebzuege geladen", muCount, "davon mit Tags", muTags, "Loks", classes.loco, "Triebwagen", classes.self, "Wagen", classes.wagon)
 	return catalog
 end
 
@@ -508,21 +495,6 @@ local function shownCost()
 	return shown.cost
 end
 
--- Ausrichtung zum Pruefen gedrehter Triebzuege: Modell-ID je Teil, ">" vorwaerts, "<" gedreht, "|" trennt Gruppen
-local function orientation(c)
-	local out, k = {}, 1
-	for __, size in ipairs(c.vehicleGroups) do
-		local g = {}
-		for j = k, k + size - 1 do
-			local p = c.vehicles[j]
-			g[#g + 1] = tostring(p.part.modelId) .. (p.part.reversed and "<" or ">")
-		end
-		out[#out + 1] = table.concat(g, " ")
-		k = k + size
-	end
-	return table.concat(out, " | ")
-end
-
 -- Ersetzt in jedem Fahrzeug alt durch neu; die uebrigen Teile bleiben, wie sie sind.
 local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
@@ -543,7 +515,7 @@ local function replaceAll(altKey, neuKey)
 		local conf, n = nil, 0
 		if cfg then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
-			jobs[#jobs + 1] = { entity = v, cfg = cfg, conf = conf }
+			jobs[#jobs + 1] = { entity = v, conf = conf }
 			units = units + n
 		end
 	end
@@ -557,7 +529,6 @@ local function replaceAll(altKey, neuKey)
 	local batch = result.batch
 	result.sent, result.ok, result.failed = 0, 0, 0
 	for __, job in ipairs(jobs) do
-		pcall(function() log("Ausrichtung", job.entity, "alt:", orientation(job.cfg), "neu:", orientation(job.conf)) end)
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
 			-- the window was closed and opened again meanwhile: this batch no longer counts
@@ -575,7 +546,6 @@ local function replaceAll(altKey, neuKey)
 		result.sent = result.sent + 1
 	end
 	updateText()
-	log(string.format("alt=%s neu=%s geschickt=%s", altKey, neuKey, num(result.sent)))
 end
 
 -- Fenster ---------------------------------------------------------------------------------------------
@@ -756,13 +726,12 @@ local function depotCarrier(depot)
 	local okC, c = pcall(function() return d.carrier end)
 	if okC and c ~= nil then return c end
 	-- Verkehrsarten: eindeutig, wenn alle zur selben Fahrzeugart gehoeren
-	local found, modes = nil, {}
-	local okM = pcall(function()
+	local found = nil
+	pcall(function()
 		for mode, enabled in pairs(d.transportModes) do
 			if enabled then
 				for key, carrierKey in pairs(MODE_TO_CARRIER) do
 					if enumValue("TransportMode", key) == mode then
-						modes[#modes + 1] = key
 						local v = enumValue("Carrier", carrierKey)
 						if found == nil then found = v elseif found ~= v then found = false end
 					end
@@ -770,7 +739,6 @@ local function depotCarrier(depot)
 			end
 		end
 	end)
-	log("Depot", tostring(depot), "carrier", tostring(c), "Verkehrsarten", okM and table.concat(modes, ",") or "?", "ergibt", tostring(found))
 	if found then return found end
 	-- Fahrzeuge im Depot
 	local okV, list = pcall(api.engine.system.transportVehicleSystem.getDepotVehicles, depot)
@@ -959,8 +927,6 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	for k, i in ipairs(neus) do neuContent[k] = i.key end
 	neuContent[#neuContent + 1] = sel.sameCargo and "fracht" or "alle"
 	local altCombo = combo(altInfo and altInfo.key, altItems, _("mvr_no_vehicles"), function(v)
-		local i = info(v)
-		if i then log("Auswahl alt", tostring(i.key), oneLine(i.name), "Klasse", tostring(i.class), "Motor", tostring(i.engine), "Ladung", tostring(i.load), "Triebzugteil", tostring(i.muPart or false), "Pfad", tostring(i.path)) end
 		update(function() sel.alt, sel.neu = v, nil; result.text = "" end)
 	end, table.concat(altContent, ","))
 	local neuCombo = combo(neuInfo and neuInfo.key, neuItems,
@@ -1066,7 +1032,6 @@ local function openWindow(carrier, locked)
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed = 0, 0, 0
 	sel.carrier, sel.locked, sel.alt, sel.neu = carrier, locked and carrier ~= nil or false, nil, nil
-	log("Fenster", "Fahrzeugart", tostring(carrier), type(carrier), "Depot", tostring(locked))
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("Fenster fehlgeschlagen", tostring(err)) end
 end
@@ -1106,7 +1071,6 @@ local function replaceButton(depot)
 		meta = { class = "primary", tag = "mass_vehicle_replace.replaceVehicles" },
 		onClick = function()
 			if windowOpen then closeWindow() end
-			log("Depotknopf", tostring(depot))
 			openWindow(depotCarrier(depot), true)
 		end,
 		content = builtin.Component{
