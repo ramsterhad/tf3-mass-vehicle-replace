@@ -111,15 +111,17 @@ local function modelInfo(id)
 	if not name or name == "" then name = path:match("([^/]+)%.mdl$") or tostring(id) end
 	-- Loks, Busse, Triebwagen haben einen Motor, Wagen nicht; Schiffe und Flugzeuge zaehlen als Motor
 	local engine = (not land) or #land.engines > 0
+	local load = carriesLoad(tv)
 	return {
 		key = "m" .. id,
 		id = id,
 		path = path,
-		load = carriesLoad(tv),
+		load = load,
 		cargos = cargoList(tv),
-		class = classOf(engine, carriesLoad(tv)),
-		-- Varianten nennen in groupFileName ihr Kopfmodell; ein Kopf ohne filterTags ist nur Gruppe
-		group = tv.groupFileName or "",
+		class = classOf(engine, load),
+		-- like the purchase list (vehicle_store_util.depotMatchesVehicleFilterTags): without filterTags not for sale.
+		-- This also covers the game's pure variant group heads (vehicle_store_window.tl:4814 variantGroupOnly:
+		-- has variants and no filterTags).
 		noTags = #(tv.filterTags or {}) == 0,
 		name = name,
 		carrier = tv.carrier,
@@ -183,18 +185,9 @@ end
 local function buildCatalog()
 	if catalog then return catalog end
 	catalog, muByPath = {}, {}
-	local heads = {}
 	for id in pairs(api.res.modelRep.getAll()) do
 		local ok, i = pcall(modelInfo, id)
-		if ok and i then
-			catalog[i.key] = i
-			if i.group ~= "" then heads[i.group] = true end
-		end
-	end
-	-- wie die Kaufliste (vehicle_store_window variantGroupOnly): reine Gruppenkoepfe nicht anbieten,
-	-- sie haben oft kein eigenes Bild und stehen sonst doppelt neben ihrer Variante
-	for __, i in pairs(catalog) do
-		if heads[i.path] and i.noTags then i.groupOnly = true end
+		if ok and i then catalog[i.key] = i end
 	end
 	local okAll, all = pcall(function() return api.res.multipleUnitRep.getAll() end)
 	if not okAll then log("Triebzuege nicht abrufbar", tostring(all)) end
@@ -559,8 +552,6 @@ end
 -- styleutil.makeStyle kennt nur size, keine minSize/maxSize/gravity/padding; die stehen daher in Klassen.
 
 local ITEM_NAME_CHARS = 42 -- laengere Namen werden gekuerzt, voller Name als Tooltip
--- Umschalter der Fahrzeugart: bleibt sichtbar, das Depot waehlt seine Art nur vor (ersetzt wird ohnehin ueberall)
-local SHOW_CARRIER_BAR = true
 
 local function text(s, class)
 	return builtin.TextView{ meta = { class = class or "font-scale-body" }, text = s }
@@ -775,24 +766,22 @@ end
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- Auswahl im Fenster; liegt ausserhalb des Rezepts, damit jedes Oeffnen frisch beginnt
-local sel = { carrier = nil, locked = false, alt = nil, neu = nil, sort = "name", sameCargo = true }
+local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true }
 
 local function topBar(update)
 	local children = {}
-	if SHOW_CARRIER_BAR or not sel.locked then
-		for __, c in ipairs(CARRIERS) do
-			children[#children + 1] = builtin.ToggleButton{
-				meta = { class = "mvr-filter", tooltip = _(c.tooltip) },
-				content = builtin.ImageView{ meta = { class = "mvr-filter-icon" }, path = c.icon, scaling = builtin.type.ImageViewScaling.AutoFit },
-				value = sel.carrier == c.value and 1 or 0,
-				onValueChange = function(v)
-					update(function()
-						sel.carrier = v == 1 and c.value or nil
-						sel.alt, sel.neu = nil, nil
-					end)
-				end,
-			}
-		end
+	for __, c in ipairs(CARRIERS) do
+		children[#children + 1] = builtin.ToggleButton{
+			meta = { class = "mvr-filter", tooltip = _(c.tooltip) },
+			content = builtin.ImageView{ meta = { class = "mvr-filter-icon" }, path = c.icon, scaling = builtin.type.ImageViewScaling.AutoFit },
+			value = sel.carrier == c.value and 1 or 0,
+			onValueChange = function(v)
+				update(function()
+					sel.carrier = v == 1 and c.value or nil
+					sel.alt, sel.neu = nil, nil
+				end)
+			end,
+		}
 	end
 	children[#children + 1] = gui_react_util.makeHorizontalSpacer()
 	-- Frachtfilter abschaltbar: an = rechts nur Modelle, die alles laden koennen, was das alte konnte
@@ -837,7 +826,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		if i and i.class ~= "dummy" and (carrier == nil or e.carrier == carrier) then alts[#alts + 1] = { i = i, e = e } end
 	end
 	-- Triebzuege zuerst, dann Fahrzeuge mit Antrieb, dann Wagen
-	local RANK = { self = 0, loco = 1, dummy = 2, wagon = 3 }
+	local RANK = { self = 0, loco = 1, wagon = 2 }
 	local function rank(i) return RANK[i.class] or 4 end
 	table.sort(alts, function(a, b)
 		if rank(a.i) ~= rank(b.i) then return rank(a.i) < rank(b.i) end
@@ -865,7 +854,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		for __, i in pairs(buildCatalog()) do
 			-- wie die Kaufliste: ohne filterTags nicht kaufbar (vehicle_store_util.depotMatchesVehicleFilterTags),
 			-- z. B. Deko-Kopien anderer Mods ohne Bild; Gruppenkoepfe und Triebzugteile ebenfalls nicht
-			if i and not i.noTags and not i.groupOnly and not i.muPart and fits(i) and available(i, year) then neus[#neus + 1] = i end
+			if i and not i.noTags and not i.muPart and fits(i) and available(i, year) then neus[#neus + 1] = i end
 		end
 	end
 	table.sort(neus, function(a, b) return compareModels(a, b, sel.sort) end)
@@ -1023,15 +1012,14 @@ local function closeWindow()
 	if wc then pcall(wc.removeWindow, MvrWindow, WINDOW_KEY) end
 end
 -- carrier: Fahrzeugart, auf die das Fenster beim Oeffnen eingestellt wird (nil = alle)
--- locked: aus dem Depot geoeffnet; ohne Umschalter (SHOW_CARRIER_BAR aus) bleibt es bei dieser Art
-local function openWindow(carrier, locked)
+local function openWindow(carrier)
 	local wc = windowApi()
 	if not wc then log("kein Fensterzugang"); return end
 	result.text = ""
 	-- a new window starts without pending commands, like the game's counter that lives with its component
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed = 0, 0, 0
-	sel.carrier, sel.locked, sel.alt, sel.neu = carrier, locked and carrier ~= nil or false, nil, nil
+	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("Fenster fehlgeschlagen", tostring(err)) end
 end
@@ -1071,7 +1059,7 @@ local function replaceButton(depot)
 		meta = { class = "primary", tag = "mass_vehicle_replace.replaceVehicles" },
 		onClick = function()
 			if windowOpen then closeWindow() end
-			openWindow(depotCarrier(depot), true)
+			openWindow(depotCarrier(depot))
 		end,
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
