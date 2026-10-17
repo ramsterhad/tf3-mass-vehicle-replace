@@ -4,7 +4,6 @@
 -- Loop variables without `_`, that is the translation function here.
 local react = ug_require "::/gui/main/react.lua"
 local builtin = ug_require "::/gui/main/builtin.lua"
-local styleutil = ug_require "::/gui/main/styleutil.tl"
 local gui_react_util = ug_require "::/gui/main/gui_react_util.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local okGlobals, game_react_globals = pcall(ug_require, "::/gui/main/game_react_globals.tl")

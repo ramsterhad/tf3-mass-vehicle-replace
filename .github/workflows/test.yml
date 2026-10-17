@@ -12,10 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Lua 5.2
-        run: sudo apt-get update && sudo apt-get install -y lua5.2
+      - name: Install Lua 5.2 and luacheck
+        run: sudo apt-get update && sudo apt-get install -y lua5.2 lua-check
       - name: Run offline tests
         run: bash test/run.sh
         env:
           LUA: lua5.2
           LUAC: luac5.2
+          LUACHECK: luacheck
