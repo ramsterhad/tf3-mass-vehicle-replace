@@ -1223,6 +1223,8 @@ local function partlyReplacedValues()
 	partValue(102, 2, 300000); partValue(102, 3, 300000) -- credits 400000
 	partValue(107, 2, 400000); partValue(107, 3, 450000) -- credits 150000
 	partValue(108, 2, 200000); partValue(108, 3, 200000) -- credits 100000 (dummy locomotive and wagon stay)
+	-- the replaced locomotives carry a value too: charging a replaced part as kept must show (review finding)
+	for _i, v in ipairs({ 102, 107, 108 }) do partValue(v, 1, 9000000) end
 end
 partlyReplacedValues()
 t = chooseBr103("partly replaced, exactly enough", 3850000) -- 4500000 - 650000
@@ -1265,12 +1267,37 @@ t = chooseBr103("part value nan", 4250000)
 check(replaceButton(t).props.meta.enabled == true, "part value nan: the other trains lost their credit")
 t = chooseBr103("part value nan, one short", 4249999)
 check(replaceButton(t).props.meta.enabled == false, "part value nan: train 102 credited anyway")
+partlyReplacedValues()
+partValue(107, 2, -1); partValue(108, 2, math.huge) -- 107 and 108 count at the full price, 102 credits 400000
+t = chooseBr103("part value negative and infinite", 4100000)
+check(replaceButton(t).props.meta.enabled == true, "part value negative/infinite: train 102 lost its credit")
+t = chooseBr103("part value negative and infinite, one short", 4099999)
+check(replaceButton(t).props.meta.enabled == false, "part value negative/infinite: trains 107 or 108 credited anyway")
+
+print("== A train with an unknown multiple unit: its parts stay and are charged (issue #26)")
+-- the multiple unit's mod is missing: rebuild keeps the group, so it counts as kept like any other part
+vehicle(140, { 5, 50, 51, 50 }, { { 1, "" }, { 3, "multiple_unit/unknown.mdl" } })
+partlyReplacedValues()
+residuals[140] = 2000000
+partValue(140, 1, 9000000)
+for j = 2, 4 do partValue(140, j, 500000) end -- credits 500000
+t = chooseBr103("unknown multiple unit, exactly enough", 4850000) -- 4 x 1500000 - 650000 - 500000
+check(hasText(t, "Kosten nach Restwert: $4850000"), "unknown multiple unit: cost line")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 4, "unknown multiple unit: 4 commands expected, " .. #sent)
+t = chooseBr103("unknown multiple unit, one short", 4849999)
+check(replaceButton(t).props.meta.enabled == false, "unknown multiple unit: its parts were not charged")
+vehicles[140] = nil
 
 print("== Multiple units: whole and partly replaced trains (issue #26)")
 -- train 104 is one ET 420 alone, train 103 has two ET 420 and a wagon that stays
 residuals, partValues = {}, {}
 residuals[103], residuals[104] = 1000000, 1000000
 partValue(103, 7, 300000)
+-- the replaced multiple unit parts carry a value too: charging them as kept must show (review finding)
+for j = 1, 6 do partValue(103, j, 9000000) end
+for j = 1, 3 do partValue(104, j, 9000000) end
 local function chooseEt423(label, b)
 	step()
 	bankBalance = b
@@ -1286,6 +1313,15 @@ check(hasText(t, "Kosten nach Restwert: $4900000"), "multiple units: cost line m
 check(replaceButton(t).props.meta.enabled == true, "multiple units: residual value not counted")
 t = chooseEt423("multiple units, one short", 4899999)
 check(replaceButton(t).props.meta.enabled == false, "multiple units: the kept wagon was not charged")
+-- an ET 420 end car standing alone is a single model, not the multiple unit: not replaced, not credited
+vehicle(141, { 50 })
+residuals[141] = 5000000
+t = chooseEt423("loose multiple unit car", 4900000)
+check(hasText(t, "Kosten nach Restwert: $4900000"), "loose multiple unit car credited")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 2, "loose multiple unit car: 2 commands expected, " .. #sent)
+vehicles[141] = nil
 residuals, partValues = {}, {}
 
 print("== Residual value unreadable counts as none (issue #26)")

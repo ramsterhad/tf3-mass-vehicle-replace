@@ -470,7 +470,7 @@ end
 -- the purchase window subtracts getDepreciatedValue of each replaced vehicle (vehicle_store_window.tl:3525-3547);
 -- its "Modify" mode, which keeps some parts of a vehicle, also charges the kept parts at getPartPrice
 -- (vehicle_store_window.tl:3758-3768). Per vehicle: residual value minus the value of the parts that stay.
--- A vehicle with an unreadable value credits nothing (full price), so the check is never looser than the game's.
+-- A vehicle with an unreadable value credits nothing: it counts at the full price of its new parts.
 local function residual(e, key)
 	local sum = 0
 	for __, use in ipairs(e and e.uses or {}) do
