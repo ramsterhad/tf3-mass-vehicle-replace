@@ -54,6 +54,9 @@ for root, _dirs, files in os.walk(mod):
             continue
         if not f.endswith(ALLOWED):
             error(p, 0, "file type not allowed in a mod (game validation fails): " + f)
+        # the dev build stamp (tf3-sdk tools/stage.sh) belongs in the staging copy only, never in the repo
+        if f.endswith((".lua", ".json")) and "DEV-BUILD" in open(p, encoding="utf-8").read():
+            error(p, 0, "dev build stamp (DEV-BUILD) in the mod; it must only exist in the staging copy")
 
 lua_files = []
 for root, _dirs, files in os.walk(os.path.join(mod, "content")):
@@ -104,6 +107,15 @@ for p in lua_files:
     for m in re.finditer(r"_\(\s*\"([^\"]+)\"\s*\)", src):
         if not m.group(1).startswith(prefix + "_"):
             error(p, lineno(m.start()), "translation key '%s' without prefix '%s_'" % (m.group(1), prefix))
+
+    # rule: no integer conversions in format strings. In the game's Lua 5.2 they fail with "not a number in
+    # proper range" beyond 2^63, on inf and on nan (1.0.2: money log with a huge balance). Translations are
+    # not checked: they are formatted with vehicle counts only (count(), updateText()).
+    for m in re.finditer(r"string\.format\(\s*(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')", src):
+        fmt = m.group(1).replace("%%", "")
+        conv = re.search(r"%[-+ #0]*\d*(?:\.\d+)?([diouxXc])", fmt)
+        if conv:
+            error(p, lineno(m.start()), "'%%%s' in string.format fails beyond 2^63, on inf and nan in Lua 5.2; use %%s or %%.0f" % conv.group(1))
 
     # rule: replacement configs state their order explicitly
     if p.endswith(".res.lua") and "react-replacement-config" in src and not re.search(r"\border\s*=", src):
