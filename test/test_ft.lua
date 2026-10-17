@@ -124,7 +124,6 @@ originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:
 local modules = {
 	["::/gui/main/react.lua"] = react,
 	["::/gui/main/builtin.lua"] = builtin,
-	["::/gui/main/styleutil.tl"] = { makeStyle = function(t) return t end },
 	["::/gui/main/gui_react_util.tl"] = gui_react_util,
 	["::/gui/main/engine_react_util.tl"] = engine_react_util,
 	["::/gui/main/game_react_globals.tl"] = game_react_globals,
