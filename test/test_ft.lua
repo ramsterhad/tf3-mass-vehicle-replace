@@ -1,18 +1,18 @@
--- Lokaler Test fuer mass_vehicle_replace.script.lua ohne Spiel (Lua 5.2 wie im Spiel).
--- Bildet api, react, builtin usw. nach, baut das Fenster in mehreren Lagen auf und prueft die Regeln,
--- an denen das Spiel bisher abgestuerzt ist oder falsch gezeichnet hat.
--- Aufruf: lua5.2 test_ft.lua <script.lua> <css.lua> <strings_de.lua>
+-- Local test for mass_vehicle_replace.script.lua without the game (Lua 5.2 like in the game).
+-- Mocks api, react, builtin etc., builds the window in several situations and checks the rules
+-- the game has crashed on or drawn wrongly so far.
+-- Usage: lua5.2 test_ft.lua <script.lua> <css.lua> <strings_de.lua>
 
 local SCRIPT, CSS, STRINGS = arg[1], arg[2], arg[3]
 local failures, checks = 0, 0
-local function fail(msg) failures = failures + 1; print("FEHLER: " .. msg) end
+local function fail(msg) failures = failures + 1; print("FAIL: " .. msg) end
 local function check(cond, msg) checks = checks + 1; if not cond then fail(msg) end end
 
--- Uebersetzungen ---------------------------------------------------------------------------------------
+-- Translations -----------------------------------------------------------------------------------------
 local strings = dofile(STRINGS)
 function _(key)
 	local s = strings[key]
-	if s == nil then fail("Uebersetzung fehlt: " .. tostring(key)); return tostring(key) end
+	if s == nil then fail("translation missing: " .. tostring(key)); return tostring(key) end
 	return s
 end
 local logs = {}
@@ -24,7 +24,7 @@ function debugPrint(...)
 end
 local bankBalance = 5000000
 
--- builtin: jeder Aufruf liefert einen Knoten -----------------------------------------------------------
+-- builtin: every call returns a node -------------------------------------------------------------------
 local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true }
 local builtin = setmetatable({
 	type = {
@@ -136,18 +136,18 @@ local modules = {
 }
 function ug_require(path)
 	local m = modules[path]
-	if m == nil then error("ug_require unbekannt: " .. path) end
+	if m == nil then error("ug_require unknown: " .. path) end
 	return m
 end
 
--- Spielwelt --------------------------------------------------------------------------------------------
+-- Game world -------------------------------------------------------------------------------------------
 local Carrier = { ROAD = 0, RAIL = 1, TRAM = 2, AIR = 3, WATER = 4 }
 local CT = { TRANSPORT_VEHICLE = "TV", GAME_TIME = "GT", VEHICLE_DEPOT = "VD" }
 
 local models = {}
 local function model(id, name, carrier, engine, yearFrom, yearTo, price, icons, group, noTags)
 	models[id] = { metadata = {
-		transportVehicle = { carrier = "meta_" .. carrier, compartments = { {} }, -- bewusst andere Form als das Enum
+		transportVehicle = { carrier = "meta_" .. carrier, compartments = { {} }, -- deliberately a different form than the enum
 			groupFileName = group or "", filterTags = noTags and {} or { "passenger" } },
 		landVehicle = (carrier ~= Carrier.WATER and carrier ~= Carrier.AIR) and { engines = engine and { {} } or {} } or nil,
 		availability = { yearFrom = yearFrom, yearTo = yearTo },
@@ -171,13 +171,13 @@ model(14, "Lkw 9", Carrier.ROAD, true, 1920, 0, 63000)
 model(15, "Lkw Auslauf", Carrier.ROAD, true, 1920, 1981, 64000)
 model(20, "Tram alt", Carrier.TRAM, true, 1900, 0, 100000)
 model(30, "Schiff", Carrier.WATER, true, 1900, 0, 500000)
--- Gruppenkopf ohne Tags (Kaufliste blendet ihn aus, im Spiel ohne Bild) und seine Variante
+-- group head without tags (the purchase list hides it, in the game without image) and its variant
 model(40, "Reihe 1042", Carrier.RAIL, true, 1960, 0, 1300000, false, nil, true)
 model(41, "Reihe 1042", Carrier.RAIL, true, 1960, 0, 1300000, nil, "vehicle/40.mdl")
--- Deko-Kopie einer anderen Mod (pileouface_rail_vehicle_assets): gleiche Daten, keine Tags, kein Bild
+-- decoration copy from another mod (pileouface_rail_vehicle_assets): same data, no tags, no image
 model(42, "Reihe 1042", Carrier.RAIL, true, 1960, 0, 1300000, false, nil, true)
--- Triebzug ohne Tags waere ebenso nicht kaufbar
--- Triebzugteile
+-- a multiple unit without tags would not be for sale either
+-- multiple unit parts
 model(50, "ET 420 Endwagen", Carrier.RAIL, true, 1969, 0, 400000)
 model(51, "ET 420 Mittelwagen", Carrier.RAIL, true, 1969, 0, 300000)
 model(52, "ET 423 Endwagen", Carrier.RAIL, true, 1975, 0, 600000)
@@ -186,7 +186,7 @@ model(54, "ET 999 Zukunft", Carrier.RAIL, true, 2050, 0, 900000)
 -- multiple unit with mixed end years: one part ends 1993, the other never (issue #3)
 model(56, "ET 404 Endwagen", Carrier.RAIL, true, 1990, 1993, 500000)
 model(57, "ET 404 Mittelwagen", Carrier.RAIL, true, 1990, 0, 400000)
--- Triebwagen: Motor und Fahrgaeste (wie ACF M-300); Loks tragen nur Personal ohne Frachtart (wie im Spiel)
+-- railcars: engine and passengers (like ACF M-300); locomotives carry only crew without cargo type (like in the game)
 model(60, "ACF M-300", Carrier.RAIL, true, 1924, 0, 1582128)
 model(61, "Roter Pfeil", Carrier.RAIL, true, 1935, 0, 1200000)
 local function load(id, classes, cap)
@@ -195,7 +195,7 @@ local function load(id, classes, cap)
 end
 load(60, { "PASSENGERS" }, 80)
 load(61, { "PASSENGERS" }, 60)
-load(1, {}, 4) -- Ae 4/7 mit Personal
+load(1, {}, 4) -- Ae 4/7 with crew
 model(7, "Universalwagen", Carrier.RAIL, false, 1960, 0, 200000)
 load(7, { "COAL", "IRON_ORE", "GRAIN", "LOGS", "OIL", "STONE" }, 40)
 model(8, "Sammelwagen", Carrier.RAIL, false, 1960, 0, 210000)
@@ -213,7 +213,7 @@ load(57, { "PASSENGERS" }, 110)
 model(55, "EMD F A-Einheit", Carrier.RAIL, true, 1949, 0, 3000000)
 load(55, {}, 4)
 load(6, { "COAL" }, 40)
--- Lok-Attrappe wie in Mod 6157450: kein Motor, nur Personal ohne Frachtart
+-- dummy locomotive like in mod 6157450: no engine, only crew without cargo type
 model(70, "Fake - BR 246", Carrier.RAIL, false, 2006, 0, 0)
 load(70, {}, 4)
 local mus = {
@@ -225,7 +225,7 @@ local mus = {
 }
 
 local vehicles = {}
--- groups: nil = jedes Teil eine Gruppe; sonst { {Groesse, Dateiname}, ... } wie im Spiel
+-- groups: nil = each part its own group; otherwise { {size, file name}, ... } like in the game
 local function vehicle(id, parts, groups)
 	local list = {}
 	local carrier = tonumber(models[parts[1]].metadata.transportVehicle.carrier:match("%d+"))
@@ -241,13 +241,13 @@ end
 vehicle(100, { 1, 2, 2, 2, 3 })
 vehicle(101, { 1, 2, 2, 6 })
 vehicle(102, { 5, 3, 3 })
--- Doppeltraktion ET 420 plus ein loser Wagen 2 dahinter
+-- double traction ET 420 plus a loose wagon 2 behind it
 vehicle(103, { 50, 51, 50, 50, 51, 50, 2 }, { { 3, "multiple_unit/et420.mdl" }, { 3, "multiple_unit/et420.mdl" }, { 1, "" } })
 vehicle(104, { 50, 51, 50 }, { { 3, "multiple_unit/et420.mdl" } })
 vehicle(105, { 4 })
 vehicle(106, { 60 })
 vehicle(107, { 5, 7, 8 })
-vehicle(108, { 5, 70, 7 }) -- Zug mit Lok-Attrappe
+vehicle(108, { 5, 70, 7 }) -- train with a dummy locomotive
 for v = 110, 117 do vehicle(v, { 10 }) end
 vehicle(120, { 20 })
 -- owner per vehicle (PLAYER_OWNED.player); the player is 7. Campaign missions hand vehicles to AI
@@ -258,12 +258,12 @@ vehicle(130, { 10 })
 owners[130] = 99
 local currentYear = 1980
 local TransportMode = { CAR = 10, BUS = 11, TRUCK = 12, TRAM = 13, ELECTRIC_TRAM = 14, TRAIN = 15, ELECTRIC_TRAIN = 16, SHIP = 17, SMALL_SHIP = 18, AIRCRAFT = 19, SMALL_AIRCRAFT = 20, HELICOPTER = 21, TRAM_TRACK = 22, ELECTRIC_TRAM_TRACK = 23 }
--- wie im Spiel beobachtet: carrier leer, die Art steckt in den Verkehrsarten
+-- as observed in the game: carrier empty, the type is in the transport modes
 local depots = {
 	[500] = { transportModes = { [TransportMode.TRAIN] = true, [TransportMode.ELECTRIC_TRAIN] = true } },
 	[501] = { transportModes = { [TransportMode.BUS] = true, [TransportMode.TRUCK] = true, [TransportMode.CAR] = false } },
 	[502] = { carrier = Carrier.TRAM, transportModes = {} },
-	[503] = { transportModes = { [TransportMode.BUS] = true, [TransportMode.TRAM] = true } }, -- gemischt
+	[503] = { transportModes = { [TransportMode.BUS] = true, [TransportMode.TRAM] = true } }, -- mixed
 }
 
 local CARGO = { PASSENGERS = 1, COAL = 2, IRON_ORE = 3, GRAIN = 4, LOGS = 5, OIL = 6, STONE = 7 }
@@ -296,13 +296,13 @@ api = {
 	},
 	res = {
 		cargoTypeRep = {
-			-- wie im Spiel: Frachtklassen und einzelne Frachtarten des Sets ergeben die Frachtarten
+			-- like in the game: the cargo classes and single cargo types of the set make up the cargo types
 			forEachCargoType = function(set, cb)
 				local seen = {}
 				for _i, c in ipairs(set.cargoClassesIncluded or {}) do if CARGO[c] and not seen[CARGO[c]] then seen[CARGO[c]] = true; cb(CARGO[c]) end end
 				for _i, c in ipairs(set.cargoTypesIncluded or {}) do if CARGO[c] and not seen[CARGO[c]] then seen[CARGO[c]] = true; cb(CARGO[c]) end end
 			end,
-			-- Reihenfolge des Spiels absichtlich anders als die Nummern: Oel vor Kohle
+			-- the game's order deliberately differs from the numbers: oil before coal
 			get = function(id) CARGO_GETS = (CARGO_GETS or 0) + 1; return { name = CARGO_NAMES[id], icon = "cargo/" .. id .. ".tga", order = id == 6 and 0 or id } end,
 		},
 		modelRep = {
@@ -376,13 +376,13 @@ api = {
 	},
 }
 
--- Skript laden ------------------------------------------------------------------------------------------
+-- Load the script ---------------------------------------------------------------------------------------
 -- the game's GUI Lua has no rawget (crashed at startup in 1.0.1 testing)
 rawget = nil
 local chunk = assert(loadfile(SCRIPT))
 chunk()
 local exports = data()
-check(type(exports.doReplace) == "function", "doReplace fehlt in data()")
+check(type(exports.doReplace) == "function", "doReplace missing in data()")
 
 -- another mod (like Manage Line From Vehicle) replaced the button bar before us and calls the
 -- original through the module field
@@ -393,12 +393,12 @@ _react.recipeReplace.ActionButtonBar = function(ref, p)
 	return react.CallOriginalRecipe(entity_window_util.ActionButtonBar, ref, p)
 end
 
--- CSS-Klassen einlesen ----------------------------------------------------------------------------------
+-- Read the CSS classes ----------------------------------------------------------------------------------
 local cssText = io.open(CSS):read("*a")
 local cssClasses = {}
 for c in cssText:gmatch("!(mvr%-[%w%-]+)") do cssClasses[c] = true end
 
--- Regeln ------------------------------------------------------------------------------------------------
+-- Rules -------------------------------------------------------------------------------------------------
 local COMPONENTS = { Component = true, TextView = true, ImageView = true }
 
 local function walk(node, path, visit)
@@ -408,7 +408,7 @@ local function walk(node, path, visit)
 	if p.children then
 		local n = 0
 		for k in pairs(p.children) do if type(k) == "number" and k > n then n = k end end
-		check(n == #p.children, path .. ": Kinderliste mit Luecke (nil) in " .. node.kind)
+		check(n == #p.children, path .. ": child list with a gap (nil) in " .. node.kind)
 		for i = 1, n do walk(p.children[i], path .. "/" .. node.kind .. "[" .. i .. "]", visit) end
 	end
 	for _k, key in ipairs({ "child", "content", "layout" }) do
@@ -418,38 +418,38 @@ local function walk(node, path, visit)
 end
 
 local function rules(tree, label)
-	check(tree and tree.kind == "BoxLayout", label .. ": Rezept muss ein Layout liefern, liefert " .. tostring(tree and tree.kind))
+	check(tree and tree.kind == "BoxLayout", label .. ": recipe must return a layout, returns " .. tostring(tree and tree.kind))
 	walk(tree, label, function(n, path)
 		local p = n.props or {}
 		local cls = p.meta and p.meta.class
 		if cls then
 			for c in tostring(cls):gmatch("mvr%-[%w%-]+") do
-				check(cssClasses[c], path .. ": CSS-Klasse fehlt: " .. c)
+				check(cssClasses[c], path .. ": CSS class missing: " .. c)
 			end
 		end
 		check(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
-			path .. ": makeStyle kennt nur size; minSize/maxSize/gravity/padding wirken nicht")
+			path .. ": makeStyle only knows size; minSize/maxSize/gravity/padding have no effect")
 		if n.kind == "ComboBoxItem" then
-			check(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content muss Komponente sein, ist " .. tostring(p.content and p.content.kind))
+			check(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
 		elseif n.kind == "ComboBox" then
-			check(p.items and #p.items > 0, path .. ": ComboBox ohne Eintraege")
+			check(p.items and #p.items > 0, path .. ": ComboBox without entries")
 			check(p.meta and type(p.meta.localKey) == "string" and p.meta.localKey:find("combo:" .. tostring(p.value) .. "|", 1, true) == 1,
-				path .. ": ComboBox ohne localKey zu ihrem Wert (Anzeige bliebe nach Aenderungen stehen)")
+				path .. ": ComboBox without a localKey for its value (the display would not update after changes)")
 			local found = false
 			for _i, it in ipairs(p.items or {}) do if it.props.value == p.value then found = true end end
-			check(found, path .. ": ComboBox-Wert " .. tostring(p.value) .. " ist kein Eintrag (Anzeige waere leer)")
+			check(found, path .. ": ComboBox value " .. tostring(p.value) .. " is not an entry (the display would be empty)")
 		elseif n.kind == "Component" and p.layout then
-			check(LAYOUTS[p.layout.kind], path .. ": Component.layout muss ein Layout sein")
+			check(LAYOUTS[p.layout.kind], path .. ": Component.layout must be a layout")
 		elseif n.kind == "ImageView" then
-			check(type(p.path) == "string" and p.path ~= "", path .. ": ImageView ohne Pfad")
+			check(type(p.path) == "string" and p.path ~= "", path .. ": ImageView without path")
 		elseif n.kind == "TextView" then
-			check(type(p.text) == "string", path .. ": TextView ohne Text")
-			check(not tostring(p.text):find("\n"), path .. ": Zeilenumbruch im Text: " .. tostring(p.text))
+			check(type(p.text) == "string", path .. ": TextView without text")
+			check(not tostring(p.text):find("\n"), path .. ": line break in text: " .. tostring(p.text))
 		end
 	end)
 end
 
--- Hilfen zum Bedienen -----------------------------------------------------------------------------------
+-- Helpers to operate the window -------------------------------------------------------------------------
 local function find(tree, pred)
 	local hits = {}
 	walk(tree, "", function(n) if pred(n) then hits[#hits + 1] = n end end)
@@ -462,10 +462,10 @@ local function itemTexts(itemNode)
 	return t
 end
 local function itemCount(c) return #c.props.items end
--- jede Liste hat gleich viele Zeilen und gleich aufgebaute Eintraege (feste Hoehe/Breite)
+-- every list has the same number of lines and identically built entries (fixed height/width)
 local function shapeOf(itemNode)
 	local s = {}
-	-- Bild oder leere Flaeche zaehlen gleich, wenn die Klasse gleich ist
+	-- an image or an empty area count the same if the class is the same
 	walk(itemNode, "", function(n)
 		local cls = n.props.meta and n.props.meta.class
 		local kind = (cls == "mvr-item-image") and "Bild" or (tostring(cls):find("mvr%-cargo%-icon") and "Fracht") or n.kind
@@ -479,45 +479,45 @@ local function sameShapes(tree, label)
 		for _i, it in ipairs(c.props.items) do
 			local s = shapeOf(it)
 			shape = shape or s
-			check(s == shape, label .. ": Eintraege unterschiedlich aufgebaut:\n  " .. shape .. "\n  " .. s)
+			check(s == shape, label .. ": entries built differently:\n  " .. shape .. "\n  " .. s)
 		end
 	end
 end
 
 local lastWindow
 local function openAndRender(label, carrier, locked)
-	-- vorheriges Fenster schliessen wie der Nutzer (X)
+	-- close the previous window like the user does (X)
 	if lastWindow then lastWindow.params.onClose() end
 	windows = {}
-	-- wie die Knoepfe: oeffnen ueber die Fenster-API
+	-- like the buttons: open through the window API
 	local opened
 	if locked then
-		-- Depotknopf ueber die Knopfleiste
+		-- depot button through the button bar
 		exports.doReplace(replacementApi)
 		local bar = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
-		check(#bar.props.secondaryButtons == 1, label .. ": Depotknopf fehlt in der Knopfleiste")
+		check(#bar.props.secondaryButtons == 1, label .. ": depot button missing in the button bar")
 		check(exports.depotProbeCondition({ entityId = carrier }) == false, label .. ": depot probe must never show its plugin")
 		local bar2 = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
 		bar2.props.secondaryButtons[1].customItem.props.onClick()
 		opened = true
 	else
-		-- Kopfleiste der Fahrzeugverwaltung bleibt wie im Spiel (Knopf dort ausgebaut)
+		-- the top bar of the vehicle management stays as in the game (the button there was removed)
 		exports.doReplace(replacementApi)
 		currentRecipe = "LineVehicleManagerTopBar"
 		local sp = gui_react_util.makeHorizontalSpacer()
 		currentRecipe = nil
-		check(sp.kind == "Spacer", label .. ": Kopfleiste der Verwaltung wurde veraendert")
-		-- Depot ohne Daten: keine Vorauswahl, alle Arten
+		check(sp.kind == "Spacer", label .. ": top bar of the vehicle management was changed")
+		-- depot without data: no preselection, all types
 		exports.depotProbeCondition({ entityId = 999 })
 		local bar = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "entityWindow.maintenanceStation.manageVehicle" } }, secondaryButtons = {} })
 		bar.props.secondaryButtons[1].customItem.props.onClick()
 		opened = true
 	end
 	local w = windows["mass_vehicle_replace.window"]
-	check(opened and w, label .. ": Fenster nicht geoeffnet")
+	check(opened and w, label .. ": window not opened")
 	lastWindow = w
 	local win = render("MvrWindow", w.params)
-	check(win.kind == "Window", label .. ": MvrWindow liefert kein Window")
+	check(win.kind == "Window", label .. ": MvrWindow returns no Window")
 	return w
 end
 
@@ -531,173 +531,173 @@ local function content(label)
 	return t
 end
 
--- Lagen -------------------------------------------------------------------------------------------------
-print("== Zugdepot")
-openAndRender("Zugdepot", 500, true)
-local t = content("Zugdepot")
+-- Scenarios ---------------------------------------------------------------------------------------------
+print("== Train depot")
+openAndRender("train depot", 500, true)
+local t = content("train depot")
 local on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
-check(#on == 1 and on[1].props.meta.tooltip == "Schiene: Loks und Wagen", "Zugdepot: Schiene nicht vorausgewaehlt")
+check(#on == 1 and on[1].props.meta.tooltip == "Schiene: Loks und Wagen", "train depot: rail not preselected")
 local cs = combos(t)
-check(#cs == 2, "zwei Listen erwartet, gefunden " .. #cs)
--- alte Modelle: nur Schiene, Antrieb zuerst, dann Wagen; natuerlich sortiert (BR 50 vor BR 103)
+check(#cs == 2, "two lists expected, found " .. #cs)
+-- old models: rail only, powered first, then wagons; natural sort (BR 50 before BR 103)
 local names = {}
 for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
-print("  alt: " .. table.concat(names, " | "))
-check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "Sortierung Name: Triebwagen/Triebzug, dann Loks, BR 50 vor BR 103")
-for _i, n in ipairs(names) do check(not n:find("Endwagen") and not n:find("Mittelwagen"), "Triebzugteil einzeln gelistet: " .. n) end
-for _i, n in ipairs(names) do check(not n:find("Benz") and not n:find("Tram"), "Zugdepot zeigt fremde Art: " .. n) end
-for _i, n in ipairs(names) do check(not n:find("Fake"), "Lok-Attrappe links gelistet: " .. n) end
--- zweite Zeile Wagen
+print("  old: " .. table.concat(names, " | "))
+check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "sort by name: railcar/multiple unit, then locomotives, BR 50 before BR 103")
+for _i, n in ipairs(names) do check(not n:find("Endwagen") and not n:find("Mittelwagen"), "multiple unit part listed on its own: " .. n) end
+for _i, n in ipairs(names) do check(not n:find("Benz") and not n:find("Tram"), "train depot shows another vehicle type: " .. n) end
+for _i, n in ipairs(names) do check(not n:find("Fake"), "dummy locomotive listed on the left: " .. n) end
+-- second line of wagons
 local secondLines = {}
 for i = 2, itemCount(cs[1]) do secondLines[#secondLines + 1] = itemTexts(cs[1].props.items[i])[2] end
-print("  zweite Zeilen: " .. table.concat(secondLines, " | "))
--- gekuerzter Name
+print("  second lines: " .. table.concat(secondLines, " | "))
+-- shortened name
 local long = find(t, function(n) return n.kind == "TextView" and n.props.text:find("…") end)
-check(#long > 0, "langer Name wird nicht gekuerzt")
-check(long[1] and long[1].props.meta.tooltip ~= nil, "gekuerzter Name ohne Tooltip")
--- Platzhalter in der neuen Liste ausgewaehlt
-check(cs[2].props.value == "none", "neue Liste ohne Auswahl soll Platzhalter zeigen")
+check(#long > 0, "long name is not shortened")
+check(long[1] and long[1].props.meta.tooltip ~= nil, "shortened name without tooltip")
+-- placeholder selected in the new list
+check(cs[2].props.value == "none", "new list without selection should show the placeholder")
 
-print("== Zugdepot: Wagen waehlen, neues Modell waehlen")
+print("== Train depot: choose a wagon, choose a new model")
 cs[1].props.onValueChange("m2")
-t = content("Wagen gewaehlt")
+t = content("wagon chosen")
 cs = combos(t)
-check(cs[1].props.value == "m2", "Auswahl alt bleibt nicht")
+check(cs[1].props.value == "m2", "old selection does not stay")
 local neuNames = {}
 for i = 2, itemCount(cs[2]) do neuNames[#neuNames + 1] = itemTexts(cs[2].props.items[i])[1] end
-print("  neu: " .. table.concat(neuNames, " | "))
-for _i, n in ipairs(neuNames) do check(not n:find("BR ") and n ~= "Ae 4/7", "Wagen-Ersatz zeigt Lok: " .. n) end
--- Frachtfilter: Personenwagen nur gegen Wagen, die Fahrgaeste laden
+print("  new: " .. table.concat(neuNames, " | "))
+for _i, n in ipairs(neuNames) do check(not n:find("BR ") and n ~= "Ae 4/7", "wagon replacement shows a locomotive: " .. n) end
+-- cargo filter: passenger cars only for wagons that carry passengers
 local function neuList()
-	local c = combos(content("Frachtfilter"))
+	local c = combos(content("cargo filter"))
 	local l = {}
 	for i = 2, itemCount(c[2]) do l[#l + 1] = (itemTexts(c[2].props.items[i])[1]:gsub("\n.*", "")) end
 	return table.concat(l, " | "), c
 end
 local nl = neuList()
-check(nl:find("Bm 235") and not nl:find("Universalwagen") and not nl:find("Sammelwagen") and not nl:find("Überlänge"), "Frachtfilter Personenwagen: " .. nl)
+check(nl:find("Bm 235") and not nl:find("Universalwagen") and not nl:find("Sammelwagen") and not nl:find("Überlänge"), "cargo filter for passenger car: " .. nl)
 cs[1].props.onValueChange("m7")
 nl = neuList()
-print("  neu fuer Universalwagen: " .. nl)
-check(nl == "Sammelwagen", "Universalwagen: nur Sammelwagen kann alles laden: " .. nl)
+print("  new for Universalwagen: " .. nl)
+check(nl == "Sammelwagen", "Universalwagen: only Sammelwagen can load everything: " .. nl)
 cs[1].props.onValueChange("m8")
 nl = neuList()
-print("  neu fuer Sammelwagen: " .. nl)
-check(not nl:find("Universalwagen") and not nl:find("Avmz"), "Sammelwagen: kein Wagen mit weniger Fracht: " .. nl)
+print("  new for Sammelwagen: " .. nl)
+check(not nl:find("Universalwagen") and not nl:find("Avmz"), "Sammelwagen: no wagon with less cargo: " .. nl)
 cs[1].props.onValueChange("m2")
--- Schalter "Gleiche Fracht": aus zeigt alle Wagen, an wieder nur passende
+-- "Same cargo" toggle: off shows all wagons, on only matching ones again
 local function cargoToggle()
-	local tg = find(content("Schalter"), function(n) return n.kind == "ToggleButton" and n.props.meta and n.props.meta.class == "mvr-cargo-filter" end)
-	check(#tg == 1, "Schalter Gleiche Fracht fehlt")
+	local tg = find(content("toggle"), function(n) return n.kind == "ToggleButton" and n.props.meta and n.props.meta.class == "mvr-cargo-filter" end)
+	check(#tg == 1, "Same cargo toggle missing")
 	return tg[1]
 end
-check(cargoToggle().props.value == 1, "Schalter Gleiche Fracht soll anfangs an sein")
+check(cargoToggle().props.value == 1, "Same cargo toggle should be on at first")
 cargoToggle().props.onValueChange(0)
 nl = neuList()
-print("  neu fuer Avmz ohne Frachtfilter: " .. nl)
-check(cargoToggle().props.value == 0, "Schalter bleibt nicht aus")
-check(nl:find("Universalwagen") and nl:find("Sammelwagen") and nl:find("Bm 235"), "ohne Frachtfilter fehlen Wagen: " .. nl)
-check(not nl:find("Fake"), "ohne Frachtfilter erscheint Lok-Attrappe bei Personenwagen: " .. nl)
+print("  new for Avmz without cargo filter: " .. nl)
+check(cargoToggle().props.value == 0, "toggle does not stay off")
+check(nl:find("Universalwagen") and nl:find("Sammelwagen") and nl:find("Bm 235"), "without cargo filter wagons are missing: " .. nl)
+check(not nl:find("Fake"), "without cargo filter the dummy locomotive appears for passenger cars: " .. nl)
 cargoToggle().props.onValueChange(1)
 nl = neuList()
-check(not nl:find("Universalwagen"), "Frachtfilter wieder an wirkt nicht: " .. nl)
+check(not nl:find("Universalwagen"), "cargo filter switched on again has no effect: " .. nl)
 nl, cs = neuList()
 cs[2].props.onValueChange("m3")
-t = content("neu gewaehlt")
+t = content("new chosen")
 local big = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-big-image" end)
-check(#big == 2, "zwei grosse Bilder erwartet, " .. #big)
+check(#big == 2, "two large images expected, " .. #big)
 local summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
-check(#summary == 1, "Zusammenfassung fehlt")
+check(#summary == 1, "summary missing")
 print("  " .. (summary[1] and summary[1].props.text or "?"))
--- Wagen 2: 6 Stueck in 3 Zuegen (einer haengt hinter dem Triebzug); neues Modell 3 kostet 280000
+-- wagon 2: 6 pieces in 3 trains (one runs behind the multiple unit); new model 3 costs 280000
 local price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
-check(price[1] and price[1].props.text == "Kaufpreis: $1680000", "Kaufpreis falsch: " .. tostring(price[1] and price[1].props.text))
-check(summary[1] and summary[1].props.text == "3 Fahrzeuge werden ersetzt.", "Anzahl falsch")
--- Platzhalter darf nichts ausloesen
+check(price[1] and price[1].props.text == "Kaufpreis: $1680000", "purchase price wrong: " .. tostring(price[1] and price[1].props.text))
+check(summary[1] and summary[1].props.text == "3 Fahrzeuge werden ersetzt.", "count wrong")
+-- the placeholder must not trigger anything
 cs = combos(t)
 cs[2].props.onValueChange("none")
-t = content("Platzhalter geklickt")
-check(combos(t)[2].props.value == "m3", "Platzhalter hat Auswahl geloescht")
+t = content("placeholder clicked")
+check(combos(t)[2].props.value == "m3", "placeholder cleared the selection")
 
-print("== Sortierung nach Jahr")
+print("== Sort by year")
 local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-check(#sorts == 2, "zwei Sortierknoepfe erwartet")
+check(#sorts == 2, "two sort buttons expected")
 sorts[2].props.onValueChange(1)
-t = content("Jahr")
+t = content("year")
 cs = combos(t)
 names = {}
 for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
-print("  alt: " .. table.concat(names, " | "))
-check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "Jahr: 1924, 1969, dann Loks 1927, 1939, 1970")
+print("  old: " .. table.concat(names, " | "))
+check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "year: 1924, 1969, then locomotives 1927, 1939, 1970")
 
-print("== Ersetzen")
+print("== Replace")
 sent = {}
 local btn = find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1]
 btn.props.onClick()
-print("  Befehle: " .. #sent)
-check(#sent == 3, "Wagen 2 steckt in 3 Fahrzeugen, Befehle: " .. #sent)
+print("  commands: " .. #sent)
+check(#sent == 3, "wagon 2 is in 3 vehicles, commands: " .. #sent)
 for _i, c in ipairs(sent) do
 	if c.e == 103 then
-		-- Triebzuege bleiben, nur der lose Wagen wird getauscht
+		-- the multiple units stay, only the loose wagon is swapped
 		local ids = {}
 		for _j, part in ipairs(c.conf.vehicles) do ids[#ids + 1] = part.part.modelId end
-		check(table.concat(ids, ",") == "50,51,50,50,51,50,3", "Zug 103 falsch: " .. table.concat(ids, ","))
-		check(table.concat(c.conf.vehicleGroups, ",") == "3,3,1", "Gruppen 103 falsch")
+		check(table.concat(ids, ",") == "50,51,50,50,51,50,3", "train 103 wrong: " .. table.concat(ids, ","))
+		check(table.concat(c.conf.vehicleGroups, ",") == "3,3,1", "groups 103 wrong")
 	end
 end
 for _i, c in ipairs(sent) do
-	for _j, part in ipairs(c.conf.vehicles) do check(part.part.modelId ~= 2, "altes Modell nicht ersetzt in " .. c.e) end
+	for _j, part in ipairs(c.conf.vehicles) do check(part.part.modelId ~= 2, "old model not replaced in " .. c.e) end
 end
--- Ergebnis erscheint unten links, sobald das Fenster neu gezeichnet wird (neues Modell ist dann weg)
+-- the result appears bottom left as soon as the window is redrawn (the new model is gone then)
 sel_reset = true
-t = content("nach Ersetzen")
+t = content("after replace")
 local res = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Ersetzt:") end)
 print("  " .. tostring(res[1] and res[1].props.text))
-check(#res == 1, "Ergebnis des Ersetzens wird nicht angezeigt")
+check(#res == 1, "result of the replacement is not shown")
 local ic = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-btn-icon" end)
-check(#ic == 1, "Symbol im Ersetzen-Knopf fehlt")
+check(#ic == 1, "icon in the replace button missing")
 
-print("== Triebzug als Ganzes tauschen")
-openAndRender("Zugdepot 2", 500, true)
-t = content("Zugdepot 2")
+print("== Swap a multiple unit as a whole")
+openAndRender("train depot 2", 500, true)
+t = content("train depot 2")
 cs = combos(t)
-check(cs[1].props.value == "m60", "Triebwagen steht nicht oben: " .. tostring(cs[1].props.value))
+check(cs[1].props.value == "m60", "railcar is not at the top: " .. tostring(cs[1].props.value))
 cs[1].props.onValueChange("u900")
-t = content("ET 420 gewaehlt")
+t = content("ET 420 chosen")
 cs = combos(t)
-check(itemTexts(cs[1].props.items[3])[2] == "3 Triebzüge in 2 Zügen", "Triebzug zweite Zeile: " .. tostring(itemTexts(cs[1].props.items[3])[2]))
+check(itemTexts(cs[1].props.items[3])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[3])[2]))
 local muNeu = {}
 for i = 2, itemCount(cs[2]) do muNeu[#muNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
-print("  neu fuer ET 420: " .. table.concat(muNeu, " | "))
+print("  new for ET 420: " .. table.concat(muNeu, " | "))
 local secondEt423
 for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
-check(secondEt423 == "$2200000 · 1975 · 4-teilig", "zweite Zeile ET 423: " .. tostring(secondEt423))
-check(table.concat(muNeu, "|") == "ACF M-300|Roter Pfeil|ET 423", "fuer ET 420 (nach Jahr, ohne Lok-Paar): Triebwagen und ET 423, keine Loks, keine Einzelteile: " .. table.concat(muNeu, "|"))
+check(secondEt423 == "$2200000 · 1975 · 4-teilig", "second line ET 423: " .. tostring(secondEt423))
+check(table.concat(muNeu, "|") == "ACF M-300|Roter Pfeil|ET 423", "for ET 420 (by year, without locomotive pair): railcars and ET 423, no locomotives, no single parts: " .. table.concat(muNeu, "|"))
 bankBalance = 10000000
 cs[2].props.onValueChange("u901")
-t = content("ET 423 gewaehlt")
+t = content("ET 423 chosen")
 price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
-check(price[1] and price[1].props.text == "Kaufpreis: $6600000", "Triebzug-Preis (3 x 2200000): " .. tostring(price[1] and price[1].props.text))
+check(price[1] and price[1].props.text == "Kaufpreis: $6600000", "multiple unit price (3 x 2200000): " .. tostring(price[1] and price[1].props.text))
 summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
-check(summary[1] and summary[1].props.text == "2 Fahrzeuge werden ersetzt.", "Triebzug-Anzahl: " .. tostring(summary[1] and summary[1].props.text))
+check(summary[1] and summary[1].props.text == "2 Fahrzeuge werden ersetzt.", "multiple unit count: " .. tostring(summary[1] and summary[1].props.text))
 sent = {}
 costPerCommand = 3300000
 bankBalance = 10000000
 find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
-check(#sent == 2, "Triebzug: 2 Befehle erwartet, " .. #sent)
+check(#sent == 2, "multiple unit: 2 commands expected, " .. #sent)
 for _i, c in ipairs(sent) do
 	local ids, rev = {}, {}
 	for _j, part in ipairs(c.conf.vehicles) do ids[#ids + 1] = part.part.modelId; rev[#rev + 1] = tostring(part.part.reversed) end
 	if c.e == 103 then
-		check(table.concat(ids, ",") == "52,53,53,52,52,53,53,52,2", "Zug 103 nach Triebzugtausch: " .. table.concat(ids, ","))
-		check(table.concat(c.conf.vehicleGroups, ",") == "4,4,1", "Gruppen 103: " .. table.concat(c.conf.vehicleGroups, ","))
-		check(table.concat(c.conf.muFileNames, ",") == "multiple_unit/et423.mdl,multiple_unit/et423.mdl,", "Dateinamen 103: " .. table.concat(c.conf.muFileNames, ","))
-		check(rev[4] == "true" and rev[1] == "false", "Richtung der Endwagen falsch")
-		check(c.conf.vehicles[1].part.color == "farbe103", "Lackierung nicht uebernommen")
+		check(table.concat(ids, ",") == "52,53,53,52,52,53,53,52,2", "train 103 after multiple unit swap: " .. table.concat(ids, ","))
+		check(table.concat(c.conf.vehicleGroups, ",") == "4,4,1", "groups 103: " .. table.concat(c.conf.vehicleGroups, ","))
+		check(table.concat(c.conf.muFileNames, ",") == "multiple_unit/et423.mdl,multiple_unit/et423.mdl,", "file names 103: " .. table.concat(c.conf.muFileNames, ","))
+		check(rev[4] == "true" and rev[1] == "false", "direction of the end cars wrong")
+		check(c.conf.vehicles[1].part.color == "farbe103", "paint not carried over")
 	elseif c.e == 104 then
-		check(table.concat(ids, ",") == "52,53,53,52", "Zug 104 nach Triebzugtausch: " .. table.concat(ids, ","))
+		check(table.concat(ids, ",") == "52,53,53,52", "train 104 after multiple unit swap: " .. table.concat(ids, ","))
 	else
-		fail("Triebzugtausch trifft fremden Zug " .. tostring(c.e))
+		fail("multiple unit swap hits another train " .. tostring(c.e))
 	end
 end
 
@@ -709,7 +709,7 @@ do
 	local flags = { false, false, true, false, true, true }
 	for k, f in ipairs(flags) do vehicles[109].transportVehicleConfig.vehicles[k].part.reversed = f end
 end
-openAndRender("Zugdepot 2", 500, true)
+openAndRender("train depot 2", 500, true)
 t = content("reversed unit")
 cs = combos(t)
 cs[1].props.onValueChange("u900")
@@ -825,57 +825,57 @@ do
 end
 vehicles[118] = nil
 
-print("== Triebwagen gegen Triebzug")
-openAndRender("Zugdepot 4", 500, true)
-t = content("Zugdepot 4")
+print("== Railcar for multiple unit")
+openAndRender("train depot 4", 500, true)
+t = content("train depot 4")
 cs = combos(t)
-check(cs[1].props.value == "m60", "M-300 nicht vorgewaehlt")
+check(cs[1].props.value == "m60", "M-300 not preselected")
 local rcNeu = {}
 for i = 2, itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
-print("  neu fuer M-300: " .. table.concat(rcNeu, " | "))
-check(table.concat(rcNeu, "|") == "Roter Pfeil|ET 420|ET 423", "fuer M-300 (nach Jahr): Triebzuege und Triebwagen, keine Loks: " .. table.concat(rcNeu, "|"))
+print("  new for M-300: " .. table.concat(rcNeu, " | "))
+check(table.concat(rcNeu, "|") == "Roter Pfeil|ET 420|ET 423", "for M-300 (by year): multiple units and railcars, no locomotives: " .. table.concat(rcNeu, "|"))
 bankBalance = 10000000
 cs[2].props.onValueChange("u901")
-t = content("M-300 gegen ET 423")
+t = content("M-300 for ET 423")
 sent = {}
 costPerCommand = 2200000
 bankBalance = 10000000
 find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
-check(#sent == 1 and sent[1].e == 106, "M-300: ein Befehl fuer Zug 106 erwartet")
+check(#sent == 1 and sent[1].e == 106, "M-300: one command for train 106 expected")
 if sent[1] then
 	local ids = {}
 	for _j, part in ipairs(sent[1].conf.vehicles) do ids[#ids + 1] = part.part.modelId end
-	check(table.concat(ids, ",") == "52,53,53,52", "Zug 106: " .. table.concat(ids, ","))
-	check(table.concat(sent[1].conf.vehicleGroups, ",") == "4", "Gruppen 106")
-	check(table.concat(sent[1].conf.muFileNames, ",") == "multiple_unit/et423.mdl", "Dateiname 106")
+	check(table.concat(ids, ",") == "52,53,53,52", "train 106: " .. table.concat(ids, ","))
+	check(table.concat(sent[1].conf.vehicleGroups, ",") == "4", "groups 106")
+	check(table.concat(sent[1].conf.muFileNames, ",") == "multiple_unit/et423.mdl", "file name 106")
 end
-print("== Triebzug gegen Triebwagen")
-openAndRender("Zugdepot 5", 500, true)
-t = content("Zugdepot 5")
+print("== Multiple unit for railcar")
+openAndRender("train depot 5", 500, true)
+t = content("train depot 5")
 cs = combos(t)
 cs[1].props.onValueChange("u900")
 t = content("ET 420")
 cs = combos(t)
 cs[2].props.onValueChange("m61")
-t = content("ET 420 gegen Roter Pfeil")
+t = content("ET 420 for Roter Pfeil")
 sent = {}
 find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1].props.onClick()
-check(#sent == 2, "ET 420 gegen Roter Pfeil: 2 Befehle")
+check(#sent == 2, "ET 420 for Roter Pfeil: 2 commands")
 for _i, c in ipairs(sent) do
 	local ids = {}
 	for _j, part in ipairs(c.conf.vehicles) do ids[#ids + 1] = part.part.modelId end
 	if c.e == 103 then
-		check(table.concat(ids, ",") == "61,61,2", "Zug 103: " .. table.concat(ids, ","))
-		check(table.concat(c.conf.vehicleGroups, ",") == "1,1,1", "Gruppen 103: " .. table.concat(c.conf.vehicleGroups, ","))
-		check(table.concat(c.conf.muFileNames, ",") == ",,", "Dateinamen 103 leer erwartet")
+		check(table.concat(ids, ",") == "61,61,2", "train 103: " .. table.concat(ids, ","))
+		check(table.concat(c.conf.vehicleGroups, ",") == "1,1,1", "groups 103: " .. table.concat(c.conf.vehicleGroups, ","))
+		check(table.concat(c.conf.muFileNames, ",") == ",,", "file names 103 expected empty")
 	elseif c.e == 104 then
-		check(table.concat(ids, ",") == "61", "Zug 104: " .. table.concat(ids, ","))
+		check(table.concat(ids, ",") == "61", "train 104: " .. table.concat(ids, ","))
 	end
 end
 
-print("== Gruppenkopf ohne Bild nicht anbieten")
-openAndRender("Zugdepot 3", 500, true)
-t = content("Zugdepot 3")
+print("== Do not offer a group head without image")
+openAndRender("train depot 3", 500, true)
+t = content("train depot 3")
 cs = combos(t)
 cs[1].props.onValueChange("m1")
 t = content("Ae 4/7")
@@ -883,17 +883,17 @@ cs = combos(t)
 local n1042 = 0
 for i = 2, itemCount(cs[2]) do
 	local it = cs[2].props.items[i]
-	if itemTexts(it)[1] == "Reihe 1042" then n1042 = n1042 + 1; check(it.props.value == "m41", "falsche 1042 angeboten: " .. it.props.value) end
+	if itemTexts(it)[1] == "Reihe 1042" then n1042 = n1042 + 1; check(it.props.value == "m41", "wrong 1042 offered: " .. it.props.value) end
 end
-check(n1042 == 1, "Reihe 1042 soll genau einmal erscheinen, " .. n1042)
+check(n1042 == 1, "Reihe 1042 should appear exactly once, " .. n1042)
 local hasEmd = false
 for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "EMD F-Serie" then hasEmd = true end end
-check(hasEmd, "Lok-Paar (Triebzug nur aus Loks) fehlt bei den Loks")
-for i = 2, itemCount(cs[2]) do local n = itemTexts(cs[2].props.items[i])[1]; check(not n:find("ET 4"), "Triebzugteil einzeln angeboten: " .. n) end
+check(hasEmd, "locomotive pair (multiple unit of locomotives only) missing among the locomotives")
+for i = 2, itemCount(cs[2]) do local n = itemTexts(cs[2].props.items[i])[1]; check(not n:find("ET 4"), "multiple unit part offered on its own: " .. n) end
 
-print("== Frachtsymbole")
-openAndRender("Zugdepot 6", 500, true)
-t = content("Zugdepot 6")
+print("== Cargo icons")
+openAndRender("train depot 6", 500, true)
+t = content("train depot 6")
 cs = combos(t)
 local function cargoOf(itemNode)
 	local icons, more, tip = {}, nil, nil
@@ -908,90 +908,90 @@ end
 local byName = {}
 for i = 2, itemCount(cs[1]) do byName[itemTexts(cs[1].props.items[i])[1]] = cs[1].props.items[i] end
 local ic, more, tip = cargoOf(byName["ACF M-300"])
-check(#ic == 1 and ic[1] == "cargo/1.tga" and more == nil and tip == "Fahrgäste", "M-300: ein Fahrgastsymbol erwartet: " .. table.concat(ic, ",") .. " " .. tostring(tip))
+check(#ic == 1 and ic[1] == "cargo/1.tga" and more == nil and tip == "Fahrgäste", "M-300: one passenger icon expected: " .. table.concat(ic, ",") .. " " .. tostring(tip))
 ic, more, tip = cargoOf(byName["Ae 4/7"])
-check(#ic == 0 and more == nil and tip == nil, "Lok ohne Frachtsymbol erwartet")
+check(#ic == 0 and more == nil and tip == nil, "locomotive without cargo icon expected")
 ic, more, tip = cargoOf(byName["Universalwagen"])
 print("  Universalwagen: " .. table.concat(ic, ",") .. " " .. tostring(more) .. " | " .. tostring(tip))
-check(#ic == 6 and ic[1] == "cargo/6.tga" and ic[2] == "cargo/2.tga" and more == nil, "Universalwagen: alle 6 Symbole (Oel zuerst) erwartet")
+check(#ic == 6 and ic[1] == "cargo/6.tga" and ic[2] == "cargo/2.tga" and more == nil, "Universalwagen: all 6 icons (oil first) expected")
 local ic8, more8, tip8 = cargoOf(byName["Sammelwagen"])
-print("  Sammelwagen: " .. #ic8 .. " Symbole, " .. tostring(more8))
-check(#ic8 == 15 and more8 == "+4", "Sammelwagen: 15 Symbole und +4 erwartet")
-check(select(2, tip8:gsub(",", ",")) == 18, "Sammelwagen: alle 19 Frachten im Tooltip")
-check(tip == "Öl, Kohle, Eisenerz, Getreide, Holz, Stein", "Universalwagen Tooltip: " .. tostring(tip))
+print("  Sammelwagen: " .. #ic8 .. " icons, " .. tostring(more8))
+check(#ic8 == 15 and more8 == "+4", "Sammelwagen: 15 icons and +4 expected")
+check(select(2, tip8:gsub(",", ",")) == 18, "Sammelwagen: all 19 cargo types in the tooltip")
+check(tip == "Öl, Kohle, Eisenerz, Getreide, Holz, Stein", "Universalwagen tooltip: " .. tostring(tip))
 ic, more, tip = cargoOf(byName["ET 420"])
-check(#ic == 1 and tip == "Fahrgäste", "Triebzug: Frachten aus seinen Teilen erwartet: " .. tostring(tip))
--- rechte Liste zeigt ebenfalls Frachten
+check(#ic == 1 and tip == "Fahrgäste", "multiple unit: cargo from its parts expected: " .. tostring(tip))
+-- the right list shows cargo too
 cs[1].props.onValueChange("m2")
-t = content("Wagen 2 fuer Frachten")
+t = content("wagon 2 for cargo")
 cs = combos(t)
 local anyCargo = false
 for i = 2, itemCount(cs[2]) do local icx = cargoOf(cs[2].props.items[i]); if #icx > 0 then anyCargo = true end end
-check(anyCargo, "rechte Liste ohne Frachtsymbole")
+check(anyCargo, "right list without cargo icons")
 
-print("== Frachtarten werden nur einmal nachgeschlagen")
+print("== Cargo types are looked up only once")
 local getsBefore = CARGO_GETS or 0
-content("erneut zeichnen 1"); content("erneut zeichnen 2")
-check((CARGO_GETS or 0) == getsBefore, "Frachtarten werden bei jedem Zeichnen neu abgefragt: " .. ((CARGO_GETS or 0) - getsBefore))
+content("redraw 1"); content("redraw 2")
+check((CARGO_GETS or 0) == getsBefore, "cargo types are queried again on every draw: " .. ((CARGO_GETS or 0) - getsBefore))
 
-print("== Liste wird nach dem Ersetzen frisch aufgebaut")
-openAndRender("Zugdepot 7", 500, true)
-t = content("vor Tausch")
+print("== List is built afresh after replacing")
+openAndRender("train depot 7", 500, true)
+t = content("before swap")
 local keyBefore = combos(t)[1].props.meta.localKey
--- wie nach einem Tausch: Zug 106 faehrt nun mit Roter Pfeil statt M-300
+-- like after a swap: train 106 now runs with Roter Pfeil instead of M-300
 local saved = vehicles[106]
 vehicle(106, { 61 })
-t = content("nach Tausch")
+t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
-check(keyBefore ~= keyAfter, "localKey der linken Liste aendert sich nach dem Tausch nicht")
-check(combos(t)[1].props.value == "m61", "nach dem Tausch steht oben der Rote Pfeil: " .. tostring(combos(t)[1].props.value))
+check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")
+check(combos(t)[1].props.value == "m61", "after the swap Roter Pfeil is at the top: " .. tostring(combos(t)[1].props.value))
 vehicles[106] = saved
 
-print("== Strassendepot")
-openAndRender("Strassendepot", 501, true)
-t = content("Strassendepot")
+print("== Road depot")
+openAndRender("road depot", 501, true)
+t = content("road depot")
 on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
-check(#on == 1 and on[1].props.meta.tooltip == "Straße: Busse und Lkw", "Strassendepot: Strasse nicht vorausgewaehlt")
+check(#on == 1 and on[1].props.meta.tooltip == "Straße: Busse und Lkw", "road depot: road not preselected")
 cs = combos(t)
 names = {}
 for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
-print("  alt: " .. table.concat(names, " | "))
-check(#names == 1 and names[1] == "Benz Dreitonner Kipper", "Strassendepot: nur Kipper im Bestand")
-check(cs[1].props.value == "m10", "Strassendepot: erster Eintrag vorgewaehlt")
+print("  old: " .. table.concat(names, " | "))
+check(#names == 1 and names[1] == "Benz Dreitonner Kipper", "road depot: only Kipper in the fleet")
+check(cs[1].props.value == "m10", "road depot: first entry preselected")
 local roadNew = {}
 for i = 2, itemCount(cs[2]) do roadNew[#roadNew + 1] = itemTexts(cs[2].props.items[i])[1] end
-print("  neu: " .. table.concat(roadNew, " | "))
+print("  new: " .. table.concat(roadNew, " | "))
 local pos9, posLong
 for i, n in ipairs(roadNew) do
 	if n == "Lkw 9" then pos9 = i elseif n:find("Lkw 1234", 1, true) then posLong = i end
 end
 check(pos9 and posLong and pos9 < posLong, "long digit run sorts by value, Lkw 9 first: " .. table.concat(roadNew, "|"))
 
-print("== Strassenbahndepot (carrier gesetzt) und gemischtes Depot")
+print("== Tram depot (carrier set) and mixed depot")
 local function preselected(depot, label, tooltip)
 	openAndRender(label, depot, true)
 	local tt = content(label)
 	local hit = find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" and n.props.value == 1 end)
-	check(#hit == 1 and hit[1].props.meta.tooltip == tooltip, label .. ": falsche Vorauswahl " .. tostring(hit[1] and hit[1].props.meta.tooltip))
+	check(#hit == 1 and hit[1].props.meta.tooltip == tooltip, label .. ": wrong preselection " .. tostring(hit[1] and hit[1].props.meta.tooltip))
 end
-preselected(502, "Strassenbahndepot", "Straßenbahnen")
--- gemischt: Verkehrsarten uneindeutig, Fahrzeug 120 im Depot ist eine Strassenbahn
-preselected(503, "gemischtes Depot", "Straßenbahnen")
+preselected(502, "tram depot", "Straßenbahnen")
+-- mixed: transport modes ambiguous, vehicle 120 in the depot is a tram
+preselected(503, "mixed depot", "Straßenbahnen")
 
-print("== Depot ohne Daten, dann Schiffe ohne Bestand")
-openAndRender("Depot ohne Daten", nil, false)
-t = content("Verwaltung alle")
+print("== Depot without data, then ships without a fleet")
+openAndRender("depot without data", nil, false)
+t = content("management all")
 local filters = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-filter" end)
-check(#filters == 5, "fuenf Fahrzeugarten erwartet")
+check(#filters == 5, "five vehicle types expected")
 filters[4].props.onValueChange(1)
-t = content("Schiffe")
+t = content("ships")
 cs = combos(t)
-check(itemCount(cs[1]) == 1 and cs[1].props.value == "none", "ohne Schiffe: nur Platzhalter")
-check(itemCount(cs[2]) == 1, "ohne altes Modell: neue Liste nur Platzhalter")
+check(itemCount(cs[1]) == 1 and cs[1].props.value == "none", "without ships: placeholder only")
+check(itemCount(cs[2]) == 1, "without an old model: new list placeholder only")
 
-print("== Andere Fenster bleiben unveraendert")
+print("== Other windows stay unchanged")
 local plain = entity_window_util.ActionButtonBar(nil, { primaryButtons = { { tag = "x" } }, secondaryButtons = {} })
-check(#plain.props.secondaryButtons == 0, "Knopf taucht in fremdem Fenster auf")
+check(#plain.props.secondaryButtons == 0, "button appears in another window")
 
 print("== Other mods replacing the button bar")
 check(entity_window_util.ActionButtonBar == barRecipe, "ActionButtonBar field was overwritten, CallOriginalRecipe of other mods breaks")
@@ -1027,7 +1027,7 @@ bankBalance = 5000000
 
 print("== Not enough money")
 -- the replace command does not check the balance; the full purchase price must be covered
--- (Strassendepot: 8 Kipper, Kasten costs 61000 each, 488000 in total)
+-- (road depot: 8 Kipper, Kasten costs 61000 each, 488000 in total)
 local function replaceButton(tt)
 	return find(tt, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1]
 end
@@ -1430,5 +1430,5 @@ check(okLoad, "doReplace fails when ActionButtonBar is not a recipe")
 check(_react.recipeReplace.ActionButtonBar == nil, "a plain function was passed to ReplaceRecipe")
 _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar = savedReplace, savedField
 
-print(string.format("\n%d Pruefungen, %d Fehler", checks, failures))
+print(string.format("\n%d checks, %d errors", checks, failures))
 os.exit(failures == 0 and 0 or 1)

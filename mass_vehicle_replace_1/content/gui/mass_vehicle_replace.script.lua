@@ -1,7 +1,7 @@
--- Mass Vehicle Replace: ersetzt alle Fahrzeugteile eines Modells durch ein anderes Modell, auf allen Linien und im Depot.
--- Knopf "Fahrzeuge ersetzen" im Depotfenster, Fenster mit zwei Auswahllisten. Der Tausch nutzt makeVehicleReplaceCmd wie der
--- Ersetzen-Dialog des Spiels (gui/line_vehicle_mgmt/vehicle_util.tl makePart, vehicle_react_util.tl).
--- Schleifenvariablen ohne `_`, das ist hier die Uebersetzungsfunktion.
+-- Mass Vehicle Replace: replaces all vehicle parts of one model with another model, on all lines and in the depot.
+-- "Replace Vehicles" button in the depot window, window with two selection lists. The swap uses makeVehicleReplaceCmd like
+-- the game's replace dialog (gui/line_vehicle_mgmt/vehicle_util.tl makePart, vehicle_react_util.tl).
+-- Loop variables without `_`, that is the translation function here.
 local react = ug_require "::/gui/main/react.lua"
 local builtin = ug_require "::/gui/main/builtin.lua"
 local styleutil = ug_require "::/gui/main/styleutil.tl"
@@ -16,19 +16,19 @@ local function log(...)
 	debugPrint("[MassVehicleReplace]", ...)
 end
 
--- Modelldaten ------------------------------------------------------------------------------------
--- Zwei Arten von Eintraegen, beide mit Schluessel key:
---   "m<id>": einzelnes Modell (Lok, Wagen, Bus, Schiff ...), id aus modelRep
---   "u<id>": Triebzug als Ganzes, id aus multipleUnitRep; im Zug steht er als Gruppe mit seinem Dateinamen
---            (TransportVehicleConfig.vehicleGroups und muFileNames, wie im Kauffenster des Spiels)
+-- Model data -------------------------------------------------------------------------------------
+-- Two kinds of entries, both with the key key:
+--   "m<id>": single model (locomotive, wagon, bus, ship ...), id from modelRep
+--   "u<id>": multiple unit as a whole, id from multipleUnitRep; in a train it is a group with its file name
+--            (TransportVehicleConfig.vehicleGroups and muFileNames, like in the game's purchase window)
 
 local catalog -- key -> Info
-local muByPath -- Dateiname des Triebzugs -> Info
--- carrier ist hier der Wert aus den Modelldaten. Er wird nur mit anderen Modelldaten verglichen; ob er
--- dieselbe Form hat wie die Fahrzeugart von Depot und Fahrzeug (api.type.enum.Carrier), ist nicht sicher.
+local muByPath -- file name of the multiple unit -> Info
+-- carrier here is the value from the model data. It is only compared with other model data; whether it
+-- has the same form as the vehicle type of depot and vehicle (api.type.enum.Carrier) is not certain.
 
--- Traegt das Modell Fahrgaeste oder Fracht? Loks haben auch eine Ladung (4, Personal), aber ohne Frachtart;
--- Triebwagen nennen eine Frachtklasse (z. B. PASSENGERS). Gezaehlt wird nur eine Ladung mit Frachtart.
+-- Does the model carry passengers or cargo? Locomotives also have a load (4, crew), but without a cargo type;
+-- railcars name a cargo class (e.g. PASSENGERS). Only a load with a cargo type counts.
 local function carriesLoad(tv)
 	local ok, res = pcall(function()
 		for __, c in ipairs(tv.compartments) do
@@ -43,10 +43,10 @@ local function carriesLoad(tv)
 	return ok and res or false
 end
 
--- Frachtarten, die das Modell laden kann, wie im Kauffenster (vehicle_store_util): je Ladung mit Kapazitaet
--- alle Frachtarten ihres cargoTypeSet; sortiert nach der Reihenfolge des Spiels
--- Frachtart einmal nachschlagen und merken (Symbol, Name, Reihenfolge); die Liste fragt sonst bei jedem
--- Neuzeichnen je Eintrag und Feld erneut nach. false: unbekannte Frachtart
+-- Cargo types the model can load, like in the purchase window (vehicle_store_util): for each load with capacity
+-- all cargo types of its cargoTypeSet; sorted by the game's order
+-- Look up a cargo type once and remember it (icon, name, order); otherwise the list asks again on every
+-- redraw for each entry and slot. false: unknown cargo type
 local cargoCache = {}
 local function cargoType(id)
 	local c = cargoCache[id]
@@ -89,9 +89,9 @@ local function cargoList(tv)
 	return sortCargos(list)
 end
 
--- Klasse fuer den Tausch: Loks nur gegen Loks, Wagen nur gegen Wagen; Triebwagen (Motor und Ladung, z. B.
--- ACF M-300, Roter Pfeil, auch Busse) und Triebzuege untereinander. Ohne Motor und ohne Fracht: Attrappen, etwa
--- die "Fake"-Loks mancher Mods (engines leer, nur Personal ohne Frachtart); das Fenster zeigt sie nirgends
+-- Class for the swap: locomotives only for locomotives, wagons only for wagons; railcars (engine and load, e.g.
+-- ACF M-300, Roter Pfeil, also buses) and multiple units among each other. Without engine and without cargo: dummies,
+-- such as the "Fake" locomotives of some mods (engines empty, only crew without cargo type); the window shows them nowhere
 local function classOf(engine, load)
 	if not engine then return load and "wagon" or "dummy" end
 	return load and "self" or "loco"
@@ -109,7 +109,7 @@ local function modelInfo(id)
 	local name = desc and desc.name
 	local path = tostring(api.res.modelRep.getName(id))
 	if not name or name == "" then name = path:match("([^/]+)%.mdl$") or tostring(id) end
-	-- Loks, Busse, Triebwagen haben einen Motor, Wagen nicht; Schiffe und Flugzeuge zaehlen als Motor
+	-- locomotives, buses, railcars have an engine, wagons do not; ships and aircraft count as having an engine
 	local engine = (not land) or #land.engines > 0
 	local load = carriesLoad(tv)
 	return {
@@ -130,13 +130,13 @@ local function modelInfo(id)
 		yearTo = av and av.yearTo or 0,
 		price = cost and cost.price or 0,
 		compartments = #tv.compartments,
-		-- Seitenansichten: klein in Listenhoehe (icon20), gross wie in der Kaufliste (iconSmall)
+		-- side views: small at list height (icon20), large like in the purchase list (iconSmall)
 		icon = desc and ((desc.icon20 ~= nil and desc.icon20 ~= "") and desc.icon20 or desc.iconSmall) or nil,
 		iconBig = desc and ((desc.iconSmall ~= nil and desc.iconSmall ~= "") and desc.iconSmall or desc.icon20) or nil,
 	}
 end
 
--- Triebzug wie vehicle_store_util.makeVehicleData: Preis ist die Summe der Teile, Bild und Fahrzeugart vom ersten Teil.
+-- Multiple unit like vehicle_store_util.makeVehicleData: price is the sum of the parts, image and vehicle type from the first part.
 -- Years exactly like the game (vehicle_store_util.tl:160-161, 315-320): start at -1 / 5000, max yearFrom and
 -- min yearTo over the parts, skipping only -1. A part without an end year (0) makes the whole unit unlimited.
 local function muInfo(id)
@@ -148,7 +148,7 @@ local function muInfo(id)
 		local mid = api.res.modelRep.find(v.name)
 		local mi = mid and mid >= 0 and modelInfo(mid) or nil
 		if not mi then
-			log("Triebzug", tostring(api.res.multipleUnitRep.getName(id)), "Teil nicht gefunden:", tostring(v.name), tostring(mid))
+			log("multiple unit", tostring(api.res.multipleUnitRep.getName(id)), "part not found:", tostring(v.name), tostring(mid))
 			return nil
 		end
 		parts[k] = { info = mi, forward = v.forward }
@@ -165,7 +165,7 @@ local function muInfo(id)
 		key = "u" .. id,
 		id = id,
 		mu = true,
-		-- Triebzug mit Fahrgaesten oder Fracht wie ein Triebwagen; nur aus Loks (EMD F-Serie, SS4G) wie eine Lok
+		-- multiple unit with passengers or cargo like a railcar; made of locomotives only (EMD F series, SS4G) like a locomotive
 		class = load and "self" or "loco",
 		path = api.res.multipleUnitRep.getName(id),
 		name = (mu.name ~= nil and mu.name ~= "") and mu.name or first.name,
@@ -190,16 +190,16 @@ local function buildCatalog()
 		if ok and i then catalog[i.key] = i end
 	end
 	local okAll, all = pcall(function() return api.res.multipleUnitRep.getAll() end)
-	if not okAll then log("Triebzuege nicht abrufbar", tostring(all)) end
+	if not okAll then log("multiple units not retrievable", tostring(all)) end
 	for id in pairs(okAll and all or {}) do
 		local ok, i = pcall(muInfo, id)
 		if ok and i then
 			catalog[i.key] = i
 			muByPath[i.path] = i
-			-- Teile eines Triebzugs gibt es nur mit ihm zusammen; einzeln werden sie nicht angeboten
+			-- parts of a multiple unit only exist together with it; they are not offered on their own
 			for __, part in ipairs(i.parts) do part.info.muPart = true; if catalog[part.info.key] then catalog[part.info.key].muPart = true end end
 		elseif not ok then
-			log("Triebzug nicht lesbar", tostring(id), tostring(i))
+			log("multiple unit unreadable", tostring(id), tostring(i))
 		end
 	end
 	return catalog
@@ -222,14 +222,14 @@ local function muOfPath(path)
 	return muByPath[path]
 end
 
--- wie vehicle_store_util: yearFrom > 0 und Jahr davor = noch nicht, yearTo > 0 und Jahr ab dann = nicht mehr
+-- like vehicle_store_util: yearFrom > 0 and a year before it = not yet, yearTo > 0 and that year or later = no longer
 local function available(i, year)
 	if i.yearFrom > 0 and year < i.yearFrom then return false end
 	if i.yearTo > 0 and year >= i.yearTo then return false end
 	return true
 end
 
--- Text mit Zahl, Einzahl ueber eigenen Schluessel (key_1), sonst Mehrzahl (key)
+-- text with a number, singular via its own key (key_1), otherwise plural (key)
 local function count(key, n)
 	if n == 1 then return _(key .. "_1") end
 	return string.format(_(key), n)
@@ -240,10 +240,10 @@ local function money(v)
 	return ok and s or tostring(v)
 end
 
--- Fahrzeuge im Spiel --------------------------------------------------------------------------------
+-- Vehicles in the game ------------------------------------------------------------------------------
 
--- Gruppen eines Fahrzeugs: { from, to, path } mit path = Dateiname des Triebzugs oder "" fuer Einzelteile.
--- Ohne Gruppenangabe zaehlt jedes Teil einzeln.
+-- Groups of a vehicle: { from, to, path } with path = file name of the multiple unit or "" for single parts.
+-- Without group data each part counts on its own.
 local function groupsOf(cfg)
 	local groups, from = {}, 1
 	local sizes = cfg.vehicleGroups or {}
@@ -261,10 +261,10 @@ local function groupsOf(cfg)
 	return groups
 end
 
--- Bestand je Eintrag: parts = Stueck (Einzelteile bzw. Triebzuege), vehicles = Fahrzeuge (Zuege), in denen er
--- steckt, dazu die Fahrzeugart aus der Fahrzeug-Komponente; die laesst sich wie im Spiel mit dem Depot vergleichen.
--- Teile eines Triebzugs zaehlen nur beim Triebzug, nicht einzeln.
-local unknownMu = {} -- nur einmal melden
+-- Fleet per entry: parts = pieces (single parts or multiple units), vehicles = vehicles (trains) it is
+-- in, plus the vehicle type from the vehicle component; that one can be compared with the depot like in the game.
+-- Parts of a multiple unit count only with the multiple unit, not on their own.
+local unknownMu = {} -- report only once
 -- only the player's vehicles: campaign missions hand lines and vehicles to AI players
 -- (mission.zip transfer_ownership_util.tl), the game filters its own lists the same way (statistic_vehicles.tl:322)
 local function ownVehicles()
@@ -289,8 +289,8 @@ local function fleet()
 			for __, g in ipairs(groupsOf(cfg)) do
 				if g.path ~= "" then
 					local mi = muOfPath(g.path)
-					if mi then add(mi.key, tv, seen) -- unbekannter Triebzug (Mod fehlt): nicht anbieten
-					elseif not unknownMu[g.path] then unknownMu[g.path] = true; log("Triebzug im Zug unbekannt", tostring(g.path)) end
+					if mi then add(mi.key, tv, seen) -- unknown multiple unit (mod missing): do not offer
+					elseif not unknownMu[g.path] then unknownMu[g.path] = true; log("unknown multiple unit in train", tostring(g.path)) end
 					for j = g.from, g.to do keys[j] = mi and mi.key or false end
 				else
 					for j = g.from, g.to do
@@ -306,7 +306,7 @@ local function fleet()
 	return byKey
 end
 
--- neues Teil: Lackierung vom alten Teil; reversed vom alten Teil oder, im Triebzug, aus dessen Vorgabe
+-- new part: paint from the old part; reversed from the old part or, in a multiple unit, from its definition
 local function newPart(model, reversed, color, t)
 	local p = api.type.TransportVehiclePart.new()
 	p.part.modelId = model.id
@@ -345,9 +345,9 @@ local function updateText()
 	result.text = s
 end
 
--- Baut die neue Zusammenstellung eines Fahrzeugs; nil, wenn alt darin nicht vorkommt.
--- Einzelmodell: jedes Einzelteil alt wird zu neu, Triebzuege im selben Zug bleiben.
--- Triebzug: jede Gruppe alt wird durch die Teile von neu ersetzt, Gruppengroesse und Dateiname passen sich an.
+-- Builds the new consist of a vehicle; nil if alt does not occur in it.
+-- Single model: every single part alt becomes neu, multiple units in the same train stay.
+-- Multiple unit: every group alt is replaced by the parts of neu, group size and file name adapt.
 -- The game reverses a multiple unit by reversing the order of its parts and flipping each part's
 -- reversed flag (vehicle_store_window.tl, reverse). A group in a train is reversed when its parts
 -- match the definition read backwards with flipped flags; a group that matches neither (unknown
@@ -405,7 +405,7 @@ local function rebuild(cfg, altInfo, neuInfo, t)
 				paths[#paths + 1] = g.path
 			end
 		else
-			-- Einzelteile stehen wie im Kauffenster je in einer eigenen Gruppe
+			-- single parts each sit in a group of their own, like in the purchase window
 			for j = g.from, g.to do
 				local p = cfg.vehicles[j]
 				if not altInfo.mu and p.part.modelId == altInfo.id then
@@ -488,7 +488,7 @@ local function shownCost()
 	return shown.cost
 end
 
--- Ersetzt in jedem Fahrzeug alt durch neu; die uebrigen Teile bleiben, wie sie sind.
+-- Replaces alt with neu in every vehicle; the other parts stay as they are.
 local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if pending() then return end
@@ -530,7 +530,7 @@ local function replaceAll(altKey, neuKey)
 				result.ok = result.ok + 1
 			else
 				result.failed = result.failed + 1
-				log("Ersetzen fehlgeschlagen", entity)
+				log("replace failed", entity)
 			end
 			updateText()
 		end)
@@ -541,28 +541,28 @@ local function replaceAll(altKey, neuKey)
 	updateText()
 end
 
--- Fenster ---------------------------------------------------------------------------------------------
--- Aufbau in Zeilen aus Zellen fester Breite (Klassen in mass_vehicle_replace.css.lua):
---   Fahrzeugart und Sortierung
---   [Altes Modell]   [    ]   [Neues Modell]
---   [Auswahlliste]   [Pfeil]  [Auswahlliste]   <- Pfeil steht mittig zu den Listen
---   [grosses Bild]   [    ]   [grosses Bild]
---   Anzahl und Kaufpreis                 [Ersetzen]
--- Feste Breiten und Hoehen: Liste, Popup und Fenster aendern ihre Groesse nicht, egal was gewaehlt ist.
--- styleutil.makeStyle kennt nur size, keine minSize/maxSize/gravity/padding; die stehen daher in Klassen.
+-- Window ----------------------------------------------------------------------------------------------
+-- Built from rows of fixed-width cells (classes in mass_vehicle_replace.css.lua):
+--   vehicle type and sorting
+--   [Old model]      [     ]  [New model]
+--   [select list]    [arrow]  [select list]    <- arrow is centered on the lists
+--   [large image]    [     ]  [large image]
+--   count and purchase price             [Replace]
+-- Fixed widths and heights: list, popup and window do not change size, whatever is selected.
+-- styleutil.makeStyle only knows size, no minSize/maxSize/gravity/padding; so those are in classes.
 
-local ITEM_NAME_CHARS = 42 -- laengere Namen werden gekuerzt, voller Name als Tooltip
+local ITEM_NAME_CHARS = 42 -- longer names are shortened, full name as tooltip
 
 local function text(s, class)
 	return builtin.TextView{ meta = { class = class or "font-scale-body" }, text = s }
 end
 
--- Modellnamen enthalten teils Zeilenumbrueche (Name und Lackierung); im Eintrag steht alles in einer Zeile
+-- model names sometimes contain line breaks (name and livery); in the entry everything is on one line
 local function oneLine(s)
 	return (tostring(s or ""):gsub("%s*\n%s*", " "))
 end
 
--- kuerzt nach Zeichen, nicht nach Bytes, damit Umlaute heil bleiben
+-- shortens by characters, not bytes, so umlauts stay intact
 local function shorten(s, n)
 	local chars = {}
 	for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
@@ -578,9 +578,9 @@ local function itemLine(s)
 	}
 end
 
--- Frachten als eigene Zeile unter Bild und Text: Felder fester Groesse, immer gleich viele, damit alle Eintraege
--- gleich hoch sind. Passen nicht alle Frachten, zeigt das letzte Feld "+n"; alle Namen stehen im Tooltip.
--- Ohne Fracht (Loks) bleibt die Zeile leer.
+-- Cargo as its own row below image and text: fixed-size slots, always the same number, so all entries
+-- are the same height. If not all cargo fits, the last slot shows "+n"; all names are in the tooltip.
+-- Without cargo (locomotives) the row stays empty.
 local CARGO_SLOTS = 16
 
 local function cargoInfo(id)
@@ -614,9 +614,9 @@ local function cargoRow(cargos)
 	}
 end
 
--- Eintrag: kleines Bild links, rechts Name und zweite Zeile. Immer zwei Zeilen und ein Bildfeld gleicher
--- Groesse, auch ohne Bild; so sind alle Eintraege gleich gross und Liste wie Popup springen nicht.
--- Der Inhalt muss eine Komponente sein, ein Layout allein laesst das Spiel abstuerzen.
+-- Entry: small image on the left, name and second line on the right. Always two lines and an image slot of the
+-- same size, even without an image; so all entries are the same size and neither list nor popup jumps.
+-- The content must be a component, a layout alone crashes the game.
 local function item(value, name, second, icon, cargos)
 	local img = (icon and icon ~= "")
 		and builtin.ImageView{ meta = { class = "mvr-item-image", mouseTransparent = true }, path = icon, scaling = builtin.type.ImageViewScaling.AutoFit }
@@ -639,11 +639,11 @@ local function item(value, name, second, icon, cargos)
 	} }
 end
 
--- Liste mit Platzhalter als erstem Eintrag: ohne Auswahl zeigt sie ihn, statt leer und schmaler zu werden
-local NONE = "none" -- nicht leer: ein leerer Wert gilt im Spiel womoeglich als keine Auswahl
--- content: kurze Beschreibung von Auswahl und Eintraegen. Die Liste des Spiels behaelt ihre Anzeige, wenn sich
--- ihre Eintraege aendern (nach dem Ersetzen stand links noch das alte Modell, darunter schon das neue Bild).
--- Aendert sich content, bekommt sie einen neuen localKey und wird frisch aufgebaut (wie construction.tl).
+-- List with a placeholder as first entry: without a selection it shows that instead of becoming empty and narrower
+local NONE = "none" -- not empty: the game may treat an empty value as no selection
+-- content: short description of selection and entries. The game's list keeps its display when its
+-- entries change (after replacing, the old model was still shown on the left, the new image already below it).
+-- When content changes, the list gets a new localKey and is built afresh (like construction.tl).
 local function combo(value, items, placeholder, onChange, content)
 	local all = { item(NONE, placeholder, " ", nil) }
 	for __, it in ipairs(items) do all[#all + 1] = it end
@@ -655,7 +655,7 @@ local function combo(value, items, placeholder, onChange, content)
 	}
 end
 
--- Zelle fester Breite; kind "cell" fuer die Spalten, "mid" fuer die schmale Mitte
+-- fixed-width cell; kind "cell" for the columns, "mid" for the narrow middle
 local function cell(kind, child)
 	return builtin.Component{
 		meta = { class = kind == "mid" and "mvr-mid" or "mvr-cell" },
@@ -671,7 +671,7 @@ local function empty()
 	return builtin.Component{}
 end
 
--- grosses Bild des gewaehlten Modells in fester Flaeche; ohne Modell bleibt die Flaeche leer
+-- large image of the selected model in a fixed area; without a model the area stays empty
 local function bigPicture(i)
 	if i and i.iconBig and i.iconBig ~= "" then
 		return builtin.ImageView{ meta = { class = "mvr-big-image", tooltip = oneLine(i.name) }, path = i.iconBig, scaling = builtin.type.ImageViewScaling.AutoFit }
@@ -679,7 +679,7 @@ local function bigPicture(i)
 	return builtin.Component{ meta = { class = "mvr-big-image" } }
 end
 
--- Fahrzeugarten mit den Symbolen der Fahrzeugverwaltung; nil = alle
+-- vehicle types with the icons of the vehicle management; nil = all
 local CARRIERS = {}
 for __, c in ipairs({
 	{ key = "ROAD", icon = "::/gui/line_vehicle_mgmt/icons/vehicle_bus_18.tga", tooltip = "mvr_carrier_road" },
@@ -695,8 +695,8 @@ end
 local okRail, RAIL = pcall(function() return api.type["enum"].Carrier.RAIL end)
 if not okRail then RAIL = nil end
 
--- Fahrzeugart eines Depots. Das Feld carrier ist im Spiel teils leer (Log: nil); dann aus den Verkehrsarten
--- des Depots, zuletzt aus den Fahrzeugen, die gerade darin stehen.
+-- Vehicle type of a depot. The carrier field is sometimes empty in the game (log: nil); then from the transport
+-- modes of the depot, last from the vehicles standing in it right now.
 local MODE_TO_CARRIER = {
 	CAR = "ROAD", BUS = "ROAD", TRUCK = "ROAD",
 	TRAM = "TRAM", ELECTRIC_TRAM = "TRAM", TRAM_TRACK = "TRAM", ELECTRIC_TRAM_TRACK = "TRAM",
@@ -713,10 +713,10 @@ end
 local function depotCarrier(depot)
 	if not depot then return nil end
 	local ok, d = pcall(api.engine.getComponent, depot, CT.VEHICLE_DEPOT)
-	if not ok or not d then log("Depot ohne VehicleDepot", tostring(depot), tostring(d)); return nil end
+	if not ok or not d then log("depot without VehicleDepot", tostring(depot), tostring(d)); return nil end
 	local okC, c = pcall(function() return d.carrier end)
 	if okC and c ~= nil then return c end
-	-- Verkehrsarten: eindeutig, wenn alle zur selben Fahrzeugart gehoeren
+	-- transport modes: unambiguous if they all belong to the same vehicle type
 	local found = nil
 	pcall(function()
 		for mode, enabled in pairs(d.transportModes) do
@@ -731,7 +731,7 @@ local function depotCarrier(depot)
 		end
 	end)
 	if found then return found end
-	-- Fahrzeuge im Depot
+	-- vehicles in the depot
 	local okV, list = pcall(api.engine.system.transportVehicleSystem.getDepotVehicles, depot)
 	if okV and list then
 		for __, v in ipairs(list) do
@@ -742,10 +742,10 @@ local function depotCarrier(depot)
 	return nil
 end
 
--- Sortierung ------------------------------------------------------------------------------------------
--- "name": alphabetisch, Zahlen nach ihrem Wert (BR 50 vor BR 103), ohne Gross-/Kleinschreibung.
--- "year": nach Jahr der Einfuehrung, aelteste zuerst, bei gleichem Jahr nach Name.
--- In der Liste der alten Modelle stehen bei beiden zuerst die Fahrzeuge mit Antrieb, dann die Wagen.
+-- Sorting ---------------------------------------------------------------------------------------------
+-- "name": alphabetical, numbers by their value (BR 50 before BR 103), ignoring case.
+-- "year": by year of introduction, oldest first, same year by name.
+-- In the list of old models both put the powered vehicles first, then the wagons.
 
 local function naturalKey(s)
 	-- pad digit runs as text: %d on tonumber(d) fails for runs of 19 or more digits
@@ -765,7 +765,7 @@ end
 
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
--- Auswahl im Fenster; liegt ausserhalb des Rezepts, damit jedes Oeffnen frisch beginnt
+-- selection in the window; lives outside the recipe so every opening starts fresh
 local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true }
 
 local function topBar(update)
@@ -784,7 +784,7 @@ local function topBar(update)
 		}
 	end
 	children[#children + 1] = gui_react_util.makeHorizontalSpacer()
-	-- Frachtfilter abschaltbar: an = rechts nur Modelle, die alles laden koennen, was das alte konnte
+	-- cargo filter can be switched off: on = on the right only models that can load everything the old one could
 	children[#children + 1] = builtin.ToggleButton{
 		meta = { class = "mvr-cargo-filter", tooltip = _("mvr_same_cargo_tip") },
 		content = text(_("mvr_same_cargo"), "font-scale-annotation"),
@@ -804,7 +804,7 @@ end
 
 local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	react.useInputAction("IA_MENU_BACK", react.iaHandler(p.onClose))
-	-- Zaehler nur zum Neuzeichnen; die Auswahl selbst steht in sel
+	-- counter only for redrawing; the selection itself is in sel
 	local tick = react.useState(0)
 	local function update(change)
 		change()
@@ -818,14 +818,14 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local year = api.engine.util.getYear()
 	local carrier = sel.carrier
 
-	-- alt: alles, was gerade im Spiel ist (Einzelmodelle und Triebzuege), auf die gewaehlte Fahrzeugart beschraenkt
+	-- alt: everything in the game right now (single models and multiple units), limited to the selected vehicle type
 	local alts = {}
 	for key, e in pairs(byKey) do
 		local i = info(key)
-		-- Attrappen (ohne Motor und Fracht) behandelt das Fenster gar nicht; im Zug bleiben sie beim Tausch stehen
+		-- the window ignores dummies (without engine and cargo) entirely; in a train they stay in place during the swap
 		if i and i.class ~= "dummy" and (carrier == nil or e.carrier == carrier) then alts[#alts + 1] = { i = i, e = e } end
 	end
-	-- Triebzuege zuerst, dann Fahrzeuge mit Antrieb, dann Wagen
+	-- multiple units first, then powered vehicles, then wagons
 	local RANK = { self = 0, loco = 1, wagon = 2 }
 	local function rank(i) return RANK[i.class] or 4 end
 	table.sort(alts, function(a, b)
@@ -837,7 +837,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	if altInfo and carrier ~= nil and byKey[altInfo.key].carrier ~= carrier then altInfo = nil end
 	if not altInfo and alts[1] then altInfo = alts[1].i end
 
-	-- neu passt zu alt: gleiche Fahrzeugart, gleiche Klasse, und neu kann mindestens jede Fracht laden, die alt konnte
+	-- neu fits alt: same vehicle type, same class, and neu can load at least every cargo alt could
 	local altCargo = {}
 	for __, c in ipairs(altInfo and altInfo.cargos or {}) do altCargo[#altCargo + 1] = c end
 	local function carriesAll(i)
@@ -852,8 +852,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local neus = {}
 	if altInfo then
 		for __, i in pairs(buildCatalog()) do
-			-- wie die Kaufliste: ohne filterTags nicht kaufbar (vehicle_store_util.depotMatchesVehicleFilterTags),
-			-- z. B. Deko-Kopien anderer Mods ohne Bild; Gruppenkoepfe und Triebzugteile ebenfalls nicht
+			-- like the purchase list: without filterTags not for sale (vehicle_store_util.depotMatchesVehicleFilterTags),
+			-- e.g. decoration copies from other mods without an image; group heads and multiple unit parts neither
 			if i and not i.noTags and not i.muPart and fits(i) and available(i, year) then neus[#neus + 1] = i end
 		end
 	end
@@ -866,11 +866,11 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	for k, x in ipairs(alts) do
 		local second = count("mvr_n_vehicles", x.e.vehicles)
 		if x.i.mu then
-			-- Triebzuege: Zahl der Einheiten, bei Mehrfachtraktion dazu die Zahl der Zuege
+			-- multiple units: number of units, with multiple traction also the number of trains
 			second = count("mvr_n_mus", x.e.parts)
 			if x.e.parts ~= x.e.vehicles then second = second .. " " .. count("mvr_in_trains", x.e.vehicles) end
 		elseif x.e.parts ~= x.e.vehicles and x.e.carrier == RAIL then
-			-- Wagen und Loks kommen oft mehrfach in einem Zug vor: Stueckzahl und Zahl der Zuege
+			-- wagons and locomotives often occur several times in one train: piece count and number of trains
 			second = count(x.i.engine and "mvr_n_locos" or "mvr_n_wagons", x.e.parts) .. " " .. count("mvr_in_trains", x.e.vehicles)
 		end
 		altItems[k] = item(x.i.key, x.i.name, second, x.i.icon, x.i.cargos)
@@ -879,12 +879,12 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	for k, i in ipairs(neus) do
 		local second = money(i.price)
 		if i.yearFrom > 0 then second = second .. " · " .. tostring(i.yearFrom) end
-		-- Triebzuege gleichen Namens gibt es in mehreren Laengen
+		-- multiple units of the same name come in several lengths
 		if i.mu then second = second .. " · " .. count("mvr_n_parts", #i.parts) end
 		neuItems[k] = item(i.key, i.name, second, i.icon, i.cargos)
 	end
 
-	-- ohne neues Modell bleibt der Platz leer; zwei Zeilen, damit nichts springt
+	-- without a new model the space stays empty; two lines so nothing jumps
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
 	local price = e and neuInfo and neuInfo.price * e.parts or 0
@@ -908,7 +908,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	elseif not altInfo then
 		summary = { _("mvr_no_vehicles"), " " }
 	end
-	-- Ergebnis des letzten Ersetzens steht an derselben Stelle, bis ein neues Modell gewaehlt wird
+	-- the result of the last replacement stays in the same place until a new model is selected
 	if not neuInfo and resultState:old() ~= "" then summary = { resultState:old(), " " } end
 
 	local altContent, neuContent = {}, {}
@@ -950,9 +950,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key)
 			if not ok then
 				result.text = _("mvr_error") .. " " .. tostring(err)
-				log("Fehler", tostring(err))
+				log("error", tostring(err))
 			end
-			-- Auswahl leeren: unten steht nun das Ergebnis
+			-- clear the selection: the result is now shown below
 			update(function() sel.alt, sel.neu = nil, nil end)
 		end,
 	}
@@ -965,7 +965,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		row({ cell("cell", text(_("mvr_old_model"))), cell("mid", empty()), cell("cell", text(_("mvr_new_model"))) }),
 		row({ cell("cell", altCombo), cell("mid", swap), cell("cell", neuCombo) }),
 		row({ cell("cell", bigPicture(altInfo)), cell("mid", empty()), cell("cell", bigPicture(neuInfo)) }),
-		-- Abstand zwischen Bildern und Text; der Knopf bleibt mittig zum Textblock
+		-- gap between images and text; the button stays centered on the text block
 		builtin.Component{ meta = { class = "mvr-gap" } },
 		row({
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
@@ -974,10 +974,10 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		}),
 	}
 
-	-- ein Rezept muss ein Layout liefern, keine Komponente
+	-- a recipe must return a layout, not a component
 	return builtin.BoxLayout{ children = {
 		builtin.Component{
-			meta = { class = "mvr-content" }, -- feste Breite ergibt sich aus den Zellen
+			meta = { class = "mvr-content" }, -- the fixed width comes from the cells
 			layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = children },
 		},
 	} }
@@ -990,8 +990,8 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 	return builtin.Window{
 		meta = { class = "mvr-window" },
 		id = "mass_vehicle_replace.window",
-		-- 0 bis 1 ueber den Bildschirm wie die mittigen Fenster des Spiels (main_page 0.5/0.5);
-		-- mittig steht es erst mit dem Anker der CSS-Klasse mvr-window
+		-- 0 to 1 across the screen like the game's centered windows (main_page 0.5/0.5);
+		-- it is only centered with the anchor of the CSS class mvr-window
 		initialX = 0.5,
 		initialY = 0.5,
 		title = _("mvr_title"),
@@ -1011,17 +1011,17 @@ local function closeWindow()
 	local wc = windowApi()
 	if wc then pcall(wc.removeWindow, MvrWindow, WINDOW_KEY) end
 end
--- carrier: Fahrzeugart, auf die das Fenster beim Oeffnen eingestellt wird (nil = alle)
+-- carrier: vehicle type the window is set to when it opens (nil = all)
 local function openWindow(carrier)
 	local wc = windowApi()
-	if not wc then log("kein Fensterzugang"); return end
+	if not wc then log("no window access"); return end
 	result.text = ""
 	-- a new window starts without pending commands, like the game's counter that lives with its component
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed = 0, 0, 0
 	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
-	if ok then windowOpen = true else log("Fenster fehlgeschlagen", tostring(err)) end
+	if ok then windowOpen = true else log("opening window failed", tostring(err)) end
 end
 
 -- "Replace Vehicles" button in the depot window, to the right of "Manage Vehicles".
