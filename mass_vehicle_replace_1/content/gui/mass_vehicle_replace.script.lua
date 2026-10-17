@@ -293,35 +293,34 @@ end
 
 local function fleet()
 	local byKey = {}
-	-- whole: vehicles made of this entry alone, replaced completely (residual value, #26)
+	-- uses: every vehicle this entry is in, with the entry of each of its parts, so the residual value can
+	-- tell replaced parts from kept ones (#26). keys[j] is false for parts of an unknown multiple unit.
 	local function add(key, tv, seen)
 		local e = byKey[key]
-		if not e then e = { parts = 0, vehicles = 0, carrier = tv.carrier, whole = {} }; byKey[key] = e end
+		if not e then e = { parts = 0, vehicles = 0, carrier = tv.carrier, uses = {} }; byKey[key] = e end
 		e.parts = e.parts + 1
-		if not seen[key] then seen[key] = true; seen.n = seen.n + 1; e.vehicles = e.vehicles + 1 end
+		if not seen[key] then seen[key] = true; e.vehicles = e.vehicles + 1 end
 	end
 	for __, v in ipairs(ownVehicles()) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
-			local seen, unknown = { n = 0 }, false
+			local seen, keys = {}, {}
 			for __, g in ipairs(groupsOf(cfg)) do
 				if g.path ~= "" then
 					local mi = muOfPath(g.path)
 					if mi then add(mi.key, tv, seen) -- unbekannter Triebzug (Mod fehlt): nicht anbieten
-					else
-						unknown = true
-						if not unknownMu[g.path] then unknownMu[g.path] = true; log("Triebzug im Zug unbekannt", tostring(g.path)) end
-					end
+					elseif not unknownMu[g.path] then unknownMu[g.path] = true; log("Triebzug im Zug unbekannt", tostring(g.path)) end
+					for j = g.from, g.to do keys[j] = mi and mi.key or false end
 				else
-					for j = g.from, g.to do add("m" .. cfg.vehicles[j].part.modelId, tv, seen) end
+					for j = g.from, g.to do
+						keys[j] = "m" .. cfg.vehicles[j].part.modelId
+						add(keys[j], tv, seen)
+					end
 				end
 			end
-			if seen.n == 1 and not unknown then
-				for key in pairs(seen) do
-					if key ~= "n" then local w = byKey[key].whole; w[#w + 1] = v end
-				end
-			end
+			local use = { vehicle = v, parts = cfg.vehicles, keys = keys }
+			for key in pairs(seen) do local u = byKey[key].uses; u[#u + 1] = use end
 		end
 	end
 	return byKey
@@ -460,15 +459,30 @@ local function enoughMoney(cost)
 	return funds == nil or funds >= cost
 end
 
--- Residual value like the game's purchase window (vehicle_store_window.tl:3525-3547): getDepreciatedValue of
--- each replaced vehicle. The game knows it per whole vehicle only, and what it credits when some parts of a
--- vehicle stay is not known yet (#26), so only vehicles made of the old model alone count (fleet() whole).
-local function residual(vehicleIds)
+-- a value the game gave us that can be counted: a number, not nan (value == value), not negative, finite
+local function readValue(fn, arg)
+	local ok, value = pcall(fn, arg)
+	if ok and type(value) == "number" and value == value and value >= 0 and value < math.huge then return value end
+	return nil
+end
+
+-- Residual value credited when the entry key is replaced in the vehicles of fleet() entry e, like the game:
+-- the purchase window subtracts getDepreciatedValue of each replaced vehicle (vehicle_store_window.tl:3525-3547);
+-- its "Modify" mode, which keeps some parts of a vehicle, also charges the kept parts at getPartPrice
+-- (vehicle_store_window.tl:3758-3768). Per vehicle: residual value minus the value of the parts that stay.
+-- A vehicle with an unreadable value credits nothing (full price), so the check is never looser than the game's.
+local function residual(e, key)
 	local sum = 0
-	for __, v in ipairs(vehicleIds or {}) do
-		local ok, value = pcall(api.engine.util.vehicle.getDepreciatedValue, v)
-		-- value == value: not nan
-		if ok and type(value) == "number" and value == value and value > 0 and value < math.huge then sum = sum + value end
+	for __, use in ipairs(e and e.uses or {}) do
+		local credit = readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle)
+		for j, part in ipairs(use.parts) do
+			if credit and use.keys[j] ~= key then
+				local kept = readValue(api.engine.util.vehicle.getPartPrice, part)
+				credit = kept and credit - kept or nil
+			end
+		end
+		-- may be below 0 when the kept parts are worth more than the vehicle: the game charges that too
+		if credit then sum = sum + credit end
 	end
 	return sum
 end
@@ -514,8 +528,7 @@ local function replaceAll(altKey, neuKey)
 	end
 	-- checked again here: the balance may have changed since the window was drawn; residual value by the
 	-- same rule as the window
-	local e = fleet()[altKey]
-	if not enoughMoney(neuInfo.price * units - residual(e and e.whole)) then
+	if not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
 		result.text = _("mvr_not_enough_money")
 		return
 	end
@@ -897,7 +910,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
 	local price = e and neuInfo and neuInfo.price * e.parts or 0
-	local refund = (e and neuInfo) and residual(e.whole) or 0
+	local refund = (e and neuInfo) and residual(e, altInfo.key) or 0
 	shownCost = price - refund
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
 	engine_react_util.useStepState(function() return enoughMoney(shownCost) end)
@@ -907,7 +920,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local busy = pending()
 	if e and neuInfo then
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
-		local priceLine = refund > 0 and string.format(_("mvr_cost_net"), money(shownCost)) or string.format(_("mvr_price"), money(price))
+		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(shownCost)) or string.format(_("mvr_price"), money(price))
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }

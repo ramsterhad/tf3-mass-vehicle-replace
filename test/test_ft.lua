@@ -269,6 +269,9 @@ local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
+-- value per existing part, set with partValue(vehicle, index, value); 0 by default (#26)
+local partValues, partValueThrows = {}, false
+local function partValue(v, j, value) partValues[vehicles[v].transportVehicleConfig.vehicles[j]] = value end
 local function step()
 	local q = queuedCommands
 	queuedCommands = {}
@@ -332,6 +335,16 @@ api = {
 				assert(vehicles[v], "residual value of an unknown vehicle")
 				if residualThrows then error("no residual value") end
 				return residuals[v] or 0
+			end,
+			-- value of a part (api/tealdef/api/engine/util.d.tl:469-472); only parts of existing vehicles have one
+			getPartPrice = function(part)
+				local known = false
+				for _v, veh in pairs(vehicles) do
+					for _j, p in ipairs(veh.transportVehicleConfig.vehicles) do if p == part then known = true end end
+				end
+				assert(known, "part value of a part that is not in any vehicle")
+				if partValueThrows then error("no part value") end
+				return partValues[part] or 0
 			end } },
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
@@ -1190,25 +1203,74 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
 
-print("== Partly replaced vehicles count at the full price (issue #26)")
--- BR 50 pulls wagons in trains 102, 107 and 108; the wagons stay, so their residual value does not count
-residuals[102], residuals[107], residuals[108] = 1000000, 1000000, 1000000
-bankBalance = 4499999 -- BR 103: 3 x 1500000
-openAndRender("partly replaced", 500, true)
-t = content("partly replaced")
-combos(t)[1].props.onValueChange("m5")
-t = content("partly replaced, BR 50")
-combos(t)[2].props.onValueChange("m4")
-t = content("partly replaced, BR 103")
-check(priceText(t) == "Kaufpreis: $4500000", "partly replaced trains: price line " .. tostring(priceText(t)))
-check(replaceButton(t).props.meta.enabled == false, "residual value of partly replaced trains counted")
+print("== Partly replaced vehicles: the kept parts are charged, like the game's Modify window (issue #26)")
+-- the Modify window charges kept parts at getPartPrice and subtracts the residual value of the whole vehicle
+-- (vehicle_store_window.tl:3758-3768). BR 50 pulls wagons in trains 102, 107 and 108; replacing it by BR 103
+-- (3 x 1500000) credits per train its residual value minus the value of the wagons that stay.
+local function chooseBr103(label, b)
+	step()
+	bankBalance = b
+	openAndRender(label, 500, true)
+	local tt = content(label)
+	combos(tt)[1].props.onValueChange("m5")
+	tt = content(label .. ", BR 50")
+	combos(tt)[2].props.onValueChange("m4")
+	return content(label .. ", BR 103")
+end
+local function partlyReplacedValues()
+	residuals, partValues = {}, {}
+	residuals[102], residuals[107], residuals[108] = 1000000, 1000000, 500000
+	partValue(102, 2, 300000); partValue(102, 3, 300000) -- credits 400000
+	partValue(107, 2, 400000); partValue(107, 3, 450000) -- credits 150000
+	partValue(108, 2, 200000); partValue(108, 3, 200000) -- credits 100000 (dummy locomotive and wagon stay)
+end
+partlyReplacedValues()
+t = chooseBr103("partly replaced, exactly enough", 3850000) -- 4500000 - 650000
+check(hasText(t, "Kosten nach Restwert: $3850000"), "partly replaced trains: cost line " .. tostring(priceText(t)))
+check(replaceButton(t).props.meta.enabled == true, "partly replaced trains: residual value of the removed locomotives not counted")
 sent = {}
 replaceButton(t).props.onClick()
-check(#sent == 0, "partly replaced trains replaced below the full price: " .. #sent)
+check(#sent == 3, "partly replaced trains, exactly enough: 3 commands expected, " .. #sent)
+t = chooseBr103("partly replaced, one short", 3849999)
+check(replaceButton(t).props.meta.enabled == false, "partly replaced trains: button enabled one short")
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 0, "partly replaced trains replaced one short: " .. #sent)
+
+print("== Kept parts worth more than the vehicle's residual value cost extra, like the game (issue #26)")
+residuals, partValues = {}, {}
+residuals[102] = 100000
+partValue(102, 2, 300000); partValue(102, 3, 300000) -- credits -500000
+t = chooseBr103("kept parts worth more", 5000000)
+check(hasText(t, "Kosten nach Restwert: $5000000"), "kept parts worth more: cost line")
+check(replaceButton(t).props.meta.enabled == true, "kept parts worth more: button disabled with enough money")
+t = chooseBr103("kept parts worth more, one short", 4999999)
+check(replaceButton(t).props.meta.enabled == false, "kept parts worth more: button enabled below the game's cost")
+
+print("== Part value unreadable: that vehicle counts at the full price (issue #26)")
+partlyReplacedValues()
+partValueThrows = true
+t = chooseBr103("part value unreadable", 4500000)
+check(priceText(t) == "Kaufpreis: $4500000", "part value unreadable: price line " .. tostring(priceText(t)))
+t = chooseBr103("part value unreadable, one short", 4499999)
+check(replaceButton(t).props.meta.enabled == false, "part value unreadable: credited although the kept parts are unknown")
+-- vehicles without kept parts do not need a part value: the trucks still get their residual value
+for v = 110, 117 do residuals[v] = 1000 end
+t = chooseKasten("part value unreadable, whole trucks", 480000)
+check(replaceButton(t).props.meta.enabled == true, "part value unreadable: whole trucks lost their residual value")
+partValueThrows = false
+partlyReplacedValues()
+partValue(102, 2, 0 / 0) -- nan: train 102 counts at the full price, 107 and 108 still credit 250000
+t = chooseBr103("part value nan", 4250000)
+check(replaceButton(t).props.meta.enabled == true, "part value nan: the other trains lost their credit")
+t = chooseBr103("part value nan, one short", 4249999)
+check(replaceButton(t).props.meta.enabled == false, "part value nan: train 102 credited anyway")
 
 print("== Multiple units: whole and partly replaced trains (issue #26)")
--- train 104 is one ET 420 alone (counts), train 103 has two ET 420 and a wagon (does not count)
+-- train 104 is one ET 420 alone, train 103 has two ET 420 and a wagon that stays
+residuals, partValues = {}, {}
 residuals[103], residuals[104] = 1000000, 1000000
+partValue(103, 7, 300000)
 local function chooseEt423(label, b)
 	step()
 	bankBalance = b
@@ -1219,11 +1281,12 @@ local function chooseEt423(label, b)
 	combos(tt)[2].props.onValueChange("u901")
 	return content(label .. ", ET 423")
 end
-t = chooseEt423("multiple units, enough", 5600000) -- 3 units x 2200000 - 1000000 (train 104)
-check(hasText(t, "Kosten nach Restwert: $5600000"), "multiple units: cost line missing")
-check(replaceButton(t).props.meta.enabled == true, "multiple units: residual value of the whole train not counted")
-t = chooseEt423("multiple units, one short", 5599999)
-check(replaceButton(t).props.meta.enabled == false, "multiple units: residual value of the partly replaced train counted")
+t = chooseEt423("multiple units, enough", 4900000) -- 3 units x 2200000 - 1000000 (104) - 700000 (103)
+check(hasText(t, "Kosten nach Restwert: $4900000"), "multiple units: cost line missing")
+check(replaceButton(t).props.meta.enabled == true, "multiple units: residual value not counted")
+t = chooseEt423("multiple units, one short", 4899999)
+check(replaceButton(t).props.meta.enabled == false, "multiple units: the kept wagon was not charged")
+residuals, partValues = {}, {}
 
 print("== Residual value unreadable counts as none (issue #26)")
 residualThrows = true
