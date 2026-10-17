@@ -449,7 +449,8 @@ end
 -- The replace command does not check the balance (the game's purchase window does that itself,
 -- vehicle_store_window.tl hasEnoughMoney), so without this check the player could go into debt.
 -- Like the game, the cost is the purchase price minus the residual value of the replaced vehicles (#26).
-local shownCost = 0 -- cost shown in the window, read by its step state
+-- what the window shows, read by its step states: price of the new parts, fleet entry and model being replaced
+local shown = { price = 0, e = nil, key = nil, cost = 0, time = nil }
 
 local function enoughMoney(cost)
 	if cost <= 0 then return true end
@@ -485,6 +486,23 @@ local function residual(e, key)
 		if credit then sum = sum + credit end
 	end
 	return sum
+end
+
+local function gameTime()
+	local ok, t = pcall(function() return api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime end)
+	return ok and t or nil
+end
+
+-- Cost of what the window shows. Residual values drop as the vehicles age, and the game's purchase window reads
+-- the refund every step (vehicle_store_window.tl:3529-3547), so the window does too. Read again only once game
+-- time has passed (nothing ages while paused) or the window was drawn anew (shown.time reset).
+local function shownCost()
+	local t = gameTime()
+	if t == nil or t ~= shown.time then
+		shown.cost = shown.price - residual(shown.e, shown.key)
+		shown.time = t
+	end
+	return shown.cost
 end
 
 -- Ausrichtung zum Pruefen gedrehter Triebzuege: Modell-ID je Teil, ">" vorwaerts, "<" gedreht, "|" trennt Gruppen
@@ -910,17 +928,20 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
 	local price = e and neuInfo and neuInfo.price * e.parts or 0
-	local refund = (e and neuInfo) and residual(e, altInfo.key) or 0
-	shownCost = price - refund
+	shown.price, shown.e, shown.key, shown.time = price, (e and neuInfo) and e or nil, altInfo and altInfo.key, nil
+	-- redraw when the cost changes while the game runs
+	engine_react_util.useStepState(shownCost)
+	local cost = shownCost()
+	local refund = price - cost
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
-	engine_react_util.useStepState(function() return enoughMoney(shownCost) end)
-	local affordable = enoughMoney(shownCost)
+	engine_react_util.useStepState(function() return enoughMoney(shownCost()) end)
+	local affordable = enoughMoney(cost)
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
 	local busy = pending()
 	if e and neuInfo then
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
-		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(shownCost)) or string.format(_("mvr_price"), money(price))
+		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(cost)) or string.format(_("mvr_price"), money(price))
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }

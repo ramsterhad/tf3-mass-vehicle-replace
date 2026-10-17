@@ -101,7 +101,14 @@ local function render(name, params)
 	return out
 end
 
-local engine_react_util = { useStepState = function(f) local v = f(); return { old = function() return v end } end }
+-- like the game (engine_react_util.tl:66-98): the function runs every step and the window is redrawn when its
+-- value changes; stepStates keeps those of the last render, wouldRedraw() below plays a step
+local stepStates = {}
+local engine_react_util = { useStepState = function(f)
+	local v = f()
+	stepStates[#stepStates + 1] = { f = f, v = v }
+	return { old = function() return v end }
+end }
 local spacerOrig = function() return { kind = "Spacer", props = {} } end
 local gui_react_util = { makeHorizontalSpacer = spacerOrig }
 local windows = {}
@@ -269,6 +276,8 @@ local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
+local residualReads = 0
+local gameTimeNow = 123 -- game time of the mock; advancing it means the game runs
 -- value per existing part, set with partValue(vehicle, index, value); 0 by default (#26)
 local partValues, partValueThrows = {}, false
 local function partValue(v, j, value) partValues[vehicles[v].transportVehicleConfig.vehicles[j]] = value end
@@ -324,7 +333,7 @@ api = {
 		end,
 		getComponent = function(e, ct)
 			if ct == CT.TRANSPORT_VEHICLE then return vehicles[e] end
-			if ct == CT.GAME_TIME then return { gameTime = 123 } end
+			if ct == CT.GAME_TIME then return { gameTime = gameTimeNow } end
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
@@ -333,6 +342,7 @@ api = {
 			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
 			vehicle = { getDepreciatedValue = function(v)
 				assert(vehicles[v], "residual value of an unknown vehicle")
+				residualReads = residualReads + 1
 				if residualThrows then error("no residual value") end
 				return residuals[v] or 0
 			end,
@@ -513,6 +523,7 @@ end
 local function content(label)
 	-- a frame passes before the window is drawn again: commands sent so far have run
 	if not holdSteps then step() end
+	stepStates = {}
 	local t = render("MvrContent", { onClose = function() end })
 	rules(t, label)
 	sameShapes(t, label)
@@ -1202,6 +1213,29 @@ check(replaceButton(t).props.meta.enabled == false, "button enabled one short of
 sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
+
+print("== The cost follows the residual value while the game runs (issue #26)")
+-- in-game 17.10.2026: the line was read, the game ran on, the charge was 5120 higher
+local function wouldRedraw()
+	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	return false
+end
+residuals = {}
+for v = 110, 117 do residuals[v] = 1000 end
+t = chooseKasten("live cost", 5000000)
+check(hasText(t, "Kosten nach Restwert: $480000"), "live cost: cost line")
+check(not wouldRedraw(), "live cost: redraw without any change")
+for v = 110, 117 do residuals[v] = 900 end -- the trucks aged
+local reads = residualReads
+check(not wouldRedraw(), "live cost: redraw while paused")
+check(residualReads == reads, "live cost: residual values read while paused, " .. (residualReads - reads))
+gameTimeNow = gameTimeNow + 1 -- the game runs
+check(wouldRedraw(), "live cost: window not redrawn when the residual value dropped")
+t = content("live cost, aged")
+check(hasText(t, "Kosten nach Restwert: $480800"), "live cost: cost line after aging")
+residuals = {}
+step()
+bankBalance = 5000000
 
 print("== Partly replaced vehicles: the kept parts are charged, like the game's Modify window (issue #26)")
 -- the Modify window charges kept parts at getPartPrice and subtracts the residual value of the whole vehicle
