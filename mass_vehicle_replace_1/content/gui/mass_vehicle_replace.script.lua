@@ -141,12 +141,13 @@ local function modelInfo(id)
 	}
 end
 
--- Triebzug wie vehicle_store_util.makeVehicleData: Preis ist die Summe der Teile, kaufbar ab dem spaetesten
--- yearFrom und bis zum fruehesten yearTo der Teile (0 oder -1 = keine Grenze). Bild und Fahrzeugart vom ersten Teil.
+-- Triebzug wie vehicle_store_util.makeVehicleData: Preis ist die Summe der Teile, Bild und Fahrzeugart vom ersten Teil.
+-- Years exactly like the game (vehicle_store_util.tl:160-161, 315-320): start at -1 / 5000, max yearFrom and
+-- min yearTo over the parts, skipping only -1. A part without an end year (0) makes the whole unit unlimited.
 local function muInfo(id)
 	local mu = api.res.multipleUnitRep.get(id)
 	if not mu or #mu.vehicles == 0 then return nil end
-	local parts, price, yearFrom, yearTo, load = {}, 0, 0, 0, false
+	local parts, price, yearFrom, yearTo, load = {}, 0, -1, 5000, false
 	local cargos, seenCargo = {}, {}
 	for k, v in ipairs(mu.vehicles) do
 		local mid = api.res.modelRep.find(v.name)
@@ -161,8 +162,8 @@ local function muInfo(id)
 			if not seenCargo[c] then seenCargo[c] = true; cargos[#cargos + 1] = c end
 		end
 		price = price + mi.price
-		if mi.yearFrom > 0 then yearFrom = math.max(yearFrom, mi.yearFrom) end
-		if mi.yearTo > 0 then yearTo = yearTo > 0 and math.min(yearTo, mi.yearTo) or mi.yearTo end
+		if mi.yearFrom ~= -1 then yearFrom = math.max(yearFrom, mi.yearFrom) end
+		if mi.yearTo ~= -1 then yearTo = math.min(yearTo, mi.yearTo) end
 	end
 	local first = parts[1].info
 	return {
@@ -284,6 +285,12 @@ end
 -- steckt, dazu die Fahrzeugart aus der Fahrzeug-Komponente; die laesst sich wie im Spiel mit dem Depot vergleichen.
 -- Teile eines Triebzugs zaehlen nur beim Triebzug, nicht einzeln.
 local unknownMu = {} -- nur einmal melden
+-- only the player's vehicles: campaign missions hand lines and vehicles to AI players
+-- (mission.zip transfer_ownership_util.tl), the game filters its own lists the same way (statistic_vehicles.tl:322)
+local function ownVehicles()
+	return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE, { requireOwnedByPlayer = api.engine.util.getPlayer() })
+end
+
 local function fleet()
 	local byKey = {}
 	local function add(key, tv, seen)
@@ -292,7 +299,7 @@ local function fleet()
 		e.parts = e.parts + 1
 		if not seen[key] then seen[key] = true; e.vehicles = e.vehicles + 1 end
 	end
-	for __, v in ipairs(api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE)) do
+	for __, v in ipairs(ownVehicles()) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
@@ -456,10 +463,16 @@ local function replaceAll(altKey, neuKey)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
 	result.sent, result.ok, result.failed = 0, 0, 0
+	-- the window may have stayed open over a year change; the replace command itself does not check
+	-- availability (vehicle_react_util.tl HandleVehicleChanges), the game only filters its list
+	if not available(neuInfo, api.engine.util.getYear()) then
+		result.text = _("mvr_not_available")
+		return
+	end
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
 	-- build all first: either every vehicle is replaced or none, like the purchase window
 	local jobs, units = {}, 0
-	for __, v in ipairs(api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE)) do
+	for __, v in ipairs(ownVehicles()) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		local conf, n = nil, 0
@@ -770,6 +783,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local resultState = engine_react_util.useStepState(function() return result.text end)
 
 	local byKey = fleet()
+	-- redraw at a year change, so models that expire or appear update while the window is open
+	engine_react_util.useStepState(function() return api.engine.util.getYear() end)
 	local year = api.engine.util.getYear()
 	local carrier = sel.carrier
 
@@ -815,7 +830,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	table.sort(neus, function(a, b) return compareModels(a, b, sel.sort) end)
 
 	local neuInfo = sel.neu and info(sel.neu) or nil
-	if neuInfo and not fits(neuInfo) then neuInfo = nil end
+	if neuInfo and not (fits(neuInfo) and available(neuInfo, year)) then neuInfo = nil end
 
 	local altItems = {}
 	for k, x in ipairs(alts) do

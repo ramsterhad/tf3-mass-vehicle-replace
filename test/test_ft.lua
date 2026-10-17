@@ -160,6 +160,8 @@ model(12, "Citaro G", Carrier.ROAD, true, 1998, 0, 400000)
 -- digit runs beyond the integer range must still sort (Lua 5.2 %d fails on them)
 model(13, "Lkw 12345678901234567890123", Carrier.ROAD, true, 1920, 0, 62000)
 model(14, "Lkw 9", Carrier.ROAD, true, 1920, 0, 63000)
+-- expires at the turn to 1981 (issue #3)
+model(15, "Lkw Auslauf", Carrier.ROAD, true, 1920, 1981, 64000)
 model(20, "Tram alt", Carrier.TRAM, true, 1900, 0, 100000)
 model(30, "Schiff", Carrier.WATER, true, 1900, 0, 500000)
 -- Gruppenkopf ohne Tags (Kaufliste blendet ihn aus, im Spiel ohne Bild) und seine Variante
@@ -174,6 +176,9 @@ model(51, "ET 420 Mittelwagen", Carrier.RAIL, true, 1969, 0, 300000)
 model(52, "ET 423 Endwagen", Carrier.RAIL, true, 1975, 0, 600000)
 model(53, "ET 423 Mittelwagen", Carrier.RAIL, true, 1975, 0, 500000)
 model(54, "ET 999 Zukunft", Carrier.RAIL, true, 2050, 0, 900000)
+-- multiple unit with mixed end years: one part ends 1993, the other never (issue #3)
+model(56, "ET 404 Endwagen", Carrier.RAIL, true, 1990, 1993, 500000)
+model(57, "ET 404 Mittelwagen", Carrier.RAIL, true, 1990, 0, 400000)
 -- Triebwagen: Motor und Fahrgaeste (wie ACF M-300); Loks tragen nur Personal ohne Frachtart (wie im Spiel)
 model(60, "ACF M-300", Carrier.RAIL, true, 1924, 0, 1582128)
 model(61, "Roter Pfeil", Carrier.RAIL, true, 1935, 0, 1200000)
@@ -197,6 +202,7 @@ load(3, { "PASSENGERS" }, 70)
 load(51, { "PASSENGERS" }, 100)
 load(53, { "PASSENGERS" }, 120)
 load(54, { "PASSENGERS" }, 50)
+load(57, { "PASSENGERS" }, 110)
 model(55, "EMD F A-Einheit", Carrier.RAIL, true, 1949, 0, 3000000)
 load(55, {}, 4)
 load(6, { "COAL" }, 40)
@@ -208,6 +214,7 @@ local mus = {
 	[901] = { name = "ET 423", filterTags = { "default" }, vehicles = { { name = "vehicle/52.mdl", forward = true }, { name = "vehicle/53.mdl", forward = true }, { name = "vehicle/53.mdl", forward = true }, { name = "vehicle/52.mdl", forward = false } } },
 	[902] = { name = "ET 999", filterTags = { "default" }, vehicles = { { name = "vehicle/54.mdl", forward = true } } },
 	[903] = { name = "EMD F-Serie", filterTags = { "default" }, vehicles = { { name = "vehicle/55.mdl", forward = true }, { name = "vehicle/55.mdl", forward = false } } },
+	[904] = { name = "ET 404", filterTags = { "default" }, vehicles = { { name = "vehicle/56.mdl", forward = true }, { name = "vehicle/57.mdl", forward = true }, { name = "vehicle/56.mdl", forward = false } } },
 }
 
 local vehicles = {}
@@ -236,6 +243,13 @@ vehicle(107, { 5, 7, 8 })
 vehicle(108, { 5, 70, 7 }) -- Zug mit Lok-Attrappe
 for v = 110, 117 do vehicle(v, { 10 }) end
 vehicle(120, { 20 })
+-- owner per vehicle (PLAYER_OWNED.player); the player is 7. Campaign missions hand vehicles to AI
+-- players (tf3-sdk knowledge/ownership.md): truck 130 of the same model as 110-117 belongs to one.
+local PLAYER = 7
+local owners = setmetatable({}, { __index = function() return PLAYER end })
+vehicle(130, { 10 })
+owners[130] = 99
+local currentYear = 1980
 local TransportMode = { CAR = 10, BUS = 11, TRUCK = 12, TRAM = 13, ELECTRIC_TRAM = 14, TRAIN = 15, ELECTRIC_TRAIN = 16, SHIP = 17, SMALL_SHIP = 18, AIRCRAFT = 19, SMALL_AIRCRAFT = 20, HELICOPTER = 21, TRAM_TRACK = 22, ELECTRIC_TRAM_TRACK = 23 }
 -- wie im Spiel beobachtet: carrier leer, die Art steckt in den Verkehrsarten
 local depots = {
@@ -278,13 +292,20 @@ api = {
 		multipleUnitRep = {
 			getAll = function() local t = {}; for id in pairs(mus) do t[id] = true end; return t end,
 			get = function(id) return mus[id] end,
-			getName = function(id) return ({ [900] = "multiple_unit/et420.mdl", [901] = "multiple_unit/et423.mdl", [902] = "multiple_unit/et999.mdl", [903] = "multiple_unit/emd_f.mdl" })[id] end,
+			getName = function(id) return ({ [900] = "multiple_unit/et420.mdl", [901] = "multiple_unit/et423.mdl", [902] = "multiple_unit/et999.mdl", [903] = "multiple_unit/emd_f.mdl", [904] = "multiple_unit/et404.mdl" })[id] end,
 		},
 	},
 	engine = {
-		getEntitiesWithComponent = function(ct)
+		-- filters as in api/tealdef/api/engine.d.tl EntityFilters: requireOwnedByPlayer, filterFn
+		getEntitiesWithComponent = function(ct, filters)
+			for k in pairs(filters or {}) do assert(k == "requireOwnedByPlayer" or k == "filterFn", "unknown entity filter " .. tostring(k)) end
+			local owner = filters and filters.requireOwnedByPlayer
 			local t = {}
-			if ct == CT.TRANSPORT_VEHICLE then for id in pairs(vehicles) do t[#t + 1] = id end end
+			if ct == CT.TRANSPORT_VEHICLE then
+				for id in pairs(vehicles) do
+					if owner == nil or owners[id] == owner then t[#t + 1] = id end
+				end
+			end
 			table.sort(t)
 			return t
 		end,
@@ -294,8 +315,8 @@ api = {
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
-		util = { getYear = function() return 1980 end, getWorld = function() return 0 end, getPlayer = function() return 7 end,
-			finance = { getPlayersBalance = function(pl) assert(pl == 7); return bankBalance end },
+		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
+			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
 			vehicle = { getDepreciatedValue = function(v) assert(vehicles[v], "Restwert fuer unbekanntes Fahrzeug"); return 100000 end } },
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
@@ -1011,6 +1032,57 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 0, "click does not check the balance again: " .. #sent)
 bankBalance = 5000000
+
+local function hasText(tt, s)
+	return #find(tt, function(n) return n.kind == "TextView" and n.props.text == s end) > 0
+end
+local function offered(tt, name)
+	local c = combos(tt)[2]
+	for i = 2, itemCount(c) do if itemTexts(c.props.items[i])[1] == name then return true end end
+	return false
+end
+
+print("== Only the player's vehicles (issue #1)")
+-- truck 130 is a Kipper like 110-117 but belongs to an AI player
+t = chooseKasten("foreign vehicles", nil)
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "foreign truck counted in the summary")
+sent = {}
+replaceButton(t).props.onClick()
+local foreignSent = false
+for _i, c in ipairs(sent) do if c.e == 130 then foreignSent = true end end
+check(#sent == 8 and not foreignSent, "foreign truck replaced or commands missing: " .. #sent)
+
+print("== New model expires while the window is open (issue #3)")
+bankBalance = nil
+openAndRender("expiring model", 501, true)
+t = content("expiring model")
+check(offered(t, "Lkw Auslauf"), "Lkw Auslauf not offered before it expires")
+combos(t)[2].props.onValueChange("m15")
+t = content("expiring model chosen")
+local expiringBtn = replaceButton(t)
+check(expiringBtn.props.meta.enabled == true, "button disabled for an available model")
+currentYear = 1981 -- the year changes while the window is open
+sent = {}
+expiringBtn.props.onClick()
+check(#sent == 0, "expired model still replaced: " .. #sent .. " commands")
+t = content("expiring model after the click")
+check(hasText(t, "Das neue Modell ist nicht mehr erhältlich"), "no message for the expired model")
+check(not offered(t, "Lkw Auslauf"), "expired model still offered")
+combos(t)[2].props.onValueChange("m15") -- a stale selection must not come back either
+t = content("expired model selected again")
+check(not priceText(t), "expired model selected, price line shown: " .. tostring(priceText(t)))
+currentYear = 1980
+bankBalance = 5000000
+
+print("== Multiple unit with mixed end years follows the game (issue #3)")
+-- ET 404: one part ends 1993, the other never; the game's store keeps the unit for sale (yearTo 0 wins)
+currentYear = 1995
+openAndRender("mixed end years", 500, true)
+t = content("mixed end years")
+combos(t)[1].props.onValueChange("u900")
+t = content("mixed end years, ET 420")
+check(offered(t, "ET 404"), "ET 404 not offered in 1995 although the game still sells it")
+currentYear = 1980
 
 print("== Depot window is not replaced, depot comes from the plugin condition")
 check(_react.recipeReplace.MaintenanceStationWindow == nil, "MaintenanceStationWindow is replaced although the plugin condition gives the depot")
