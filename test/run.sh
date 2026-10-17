@@ -41,5 +41,9 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
     f.write("}\n")
 PY
 
-"$LUAC" -p "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua"
+# text hygiene of the whole repo: no broken encoding, Lua comments in ASCII
+python3 "$HERE/textcheck.py" "$HERE/.."
+
+# syntax of every Lua file of the mod, with the game's Lua version (5.2)
+find "$MOD" -name '*.lua' -print0 | xargs -0 "$LUAC" -p
 "$LUA" "$HERE/test_ft.lua" "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua" "$HERE/strings_de.lua"
