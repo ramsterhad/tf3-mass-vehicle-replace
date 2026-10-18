@@ -334,6 +334,31 @@ local function pending()
 	return result.sent > result.ok + result.failed
 end
 
+-- Fleet of the window (#10): reading every vehicle on every redraw is the expensive part, so the window keeps the
+-- last fleet and builds it again only when the player's vehicles change. fleetSig is cheap enough for every step
+-- (ids only, no components) and redraws the window when a vehicle is bought, sold or handed to another player.
+-- The ids may stay the same when vehicles are rebuilt, so the callbacks of our own batch count as a change too.
+-- Not seen: a vehicle changed in the game's own Modify window while ours is open (same id); reopening shows it.
+local cachedFleet = { sig = nil, byKey = nil }
+local function fleetSig()
+	local ids = ownVehicles()
+	-- order-free, so a different order of the same vehicles is no change
+	local sum, squares = 0, 0
+	for __, v in ipairs(ids) do
+		sum = sum + v
+		squares = (squares + v * v) % 2147483647
+	end
+	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(result.batch) .. ":" ..
+		tostring(result.ok + result.failed)
+end
+
+local function windowFleet(sig)
+	if cachedFleet.sig ~= sig or cachedFleet.byKey == nil then
+		cachedFleet.sig, cachedFleet.byKey = sig, fleet()
+	end
+	return cachedFleet.byKey
+end
+
 local function updateText()
 	if result.sent == 0 then
 		result.text = _("mvr_none_found")
@@ -811,7 +836,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	end
 	local resultState = engine_react_util.useStepState(function() return result.text end)
 
-	local byKey = fleet()
+	-- redraw when the player's vehicles change; the fleet itself is built again only then (#10)
+	local byKey = windowFleet(engine_react_util.useStepState(fleetSig):old())
 	-- redraw at a year change, so models that expire or appear update while the window is open
 	engine_react_util.useStepState(function() return api.engine.util.getYear() end)
 	local year = api.engine.util.getYear()

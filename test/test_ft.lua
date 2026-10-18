@@ -276,6 +276,7 @@ local commandSucceeds, holdSteps = true, false
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
 local residualReads, deadReads = 0, 0
+local fleetReads = 0 -- vehicle components read, to tell a fleet rebuild from a cached fleet (#10)
 local gameTimeNow = 123 -- game time of the mock; advancing it means the game runs
 -- value per existing part, set with partValue(vehicle, index, value); 0 by default (#26)
 local partValues, partValueThrows = {}, false
@@ -331,7 +332,7 @@ api = {
 			return t
 		end,
 		getComponent = function(e, ct)
-			if ct == CT.TRANSPORT_VEHICLE then return vehicles[e] end
+			if ct == CT.TRANSPORT_VEHICLE then fleetReads = fleetReads + 1; return vehicles[e] end
 			if ct == CT.GAME_TIME then return { gameTime = gameTimeNow } end
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
 		end,
@@ -937,9 +938,11 @@ print("== List is built afresh after replacing")
 openAndRender("train depot 7", 500, true)
 t = content("before swap")
 local keyBefore = combos(t)[1].props.meta.localKey
--- like after a swap: train 106 now runs with Roter Pfeil instead of M-300
+-- like after a swap: train 106 now runs with Roter Pfeil instead of M-300. The id stays, so the window sees it
+-- when it is opened again (or with the callbacks of its own batch, see issue #10 below), not on a plain redraw.
 local saved = vehicles[106]
 vehicle(106, { 61 })
+openAndRender("train depot 7, reopened", 500, true)
 t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
 check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")
@@ -1408,6 +1411,34 @@ check(typeA == "Schiene: Loks und Wagen", "button of the first depot window open
 local typeB = preselectedAfterClick(barB, "second depot window")
 check(typeB == "Straße: Busse und Lkw", "button of the second depot window opens another depot: " .. tostring(typeB))
 if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+
+print("== Fleet changes while the window is open (issue #10)")
+-- seen in the game: a vehicle bought or handed to another player while the window was open left the count stale
+t = chooseKasten("fleet change", 5000000)
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: start count")
+check(not wouldRedraw(), "fleet change: redraw without any change")
+local readsBefore = fleetReads
+t = content("fleet change, unchanged")
+check(fleetReads == readsBefore, "fleet change: fleet rebuilt on a redraw without changes, " .. (fleetReads - readsBefore) .. " vehicle reads")
+vehicle(118, { 10 }) -- bought
+check(wouldRedraw(), "fleet change: window not redrawn after a purchase")
+t = content("fleet change, bought")
+check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: count after a purchase")
+owners[118] = 99 -- handed to another player (makeEntitySetPlayerCmd)
+check(wouldRedraw(), "fleet change: window not redrawn after a handover")
+t = content("fleet change, handed over")
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: count after a handover")
+owners[118] = nil
+vehicles[118] = nil
+-- our own batch: the vehicles keep their ids, the callbacks make the window read the fleet again
+t = content("fleet change, before replacing")
+replaceButton(t).props.onClick() -- the click itself reads the vehicles; count only the redraw after it
+step() -- the commands run, their callbacks arrive
+readsBefore = fleetReads
+check(wouldRedraw(), "fleet change: window not redrawn after the callbacks of our own batch")
+t = content("fleet change, replaced")
+check(fleetReads > readsBefore, "fleet change: fleet not read again after our own batch")
+step()
 
 print("== Robust against mods that overwrite the module field")
 -- fresh copy of the mod without the other mod's replacement in front of it
