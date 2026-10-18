@@ -30,13 +30,16 @@ python3 "$HERE/lint.py" "$MOD" mvr
 # static analysis: undefined or misspelt globals, unused variables, shadowing (config in .luacheckrc)
 "$LUACHECK" --config "$HERE/../.luacheckrc" --no-color -q "$MOD"
 
-# translations: same keys and placeholders in both languages; the German strings feed the test
+# translations: every language has the keys of en and the same placeholders in the same order;
+# the German strings feed the test
 python3 - "$MOD/strings.json" "$HERE/strings_de.lua" <<'PY'
-import json, sys
+import json, re, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
-assert d["en"].keys() == d["de"].keys(), "en/de keys differ"
-for k in d["en"]:
-    assert d["en"][k].count("%") == d["de"][k].count("%"), "placeholders differ: " + k
+assert "en" in d and "de" in d, "en or de missing"
+for lang in d:
+    assert d["en"].keys() == d[lang].keys(), "en/%s keys differ" % lang
+    for k in d["en"]:
+        assert re.findall("%.", d["en"][k]) == re.findall("%.", d[lang][k]), "placeholders differ: %s %s" % (lang, k)
 with open(sys.argv[2], "w", encoding="utf-8") as f:
     f.write("return {\n")
     for k, v in d["de"].items():
