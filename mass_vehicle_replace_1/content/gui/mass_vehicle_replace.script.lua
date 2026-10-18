@@ -399,8 +399,9 @@ end
 
 local function windowFleet(sig)
 	if cachedFleet.sig ~= sig or cachedFleet.byKey == nil then
-		cachedFleet.sig = sig
+		-- sig only after a successful read: if fleet() throws, the next redraw tries again (as before #10)
 		cachedFleet.byKey, cachedFleet.parts = fleet()
+		cachedFleet.sig = sig
 	end
 	return cachedFleet.byKey
 end
@@ -1057,7 +1058,11 @@ end)
 local windowOpen = false
 
 local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, function(p)
-	react.onUnmount(function() windowOpen = false end)
+	react.onUnmount(function()
+		windowOpen = false
+		-- the fleet holds a copy of every vehicle's parts; the next window reads it afresh anyway (#10)
+		cachedFleet.byKey, cachedFleet.parts, cachedFleet.sig = nil, nil, nil
+	end)
 	return builtin.Window{
 		meta = { class = "mvr-window" },
 		id = "mass_vehicle_replace.window",
