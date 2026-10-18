@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- When the money does not cover the whole replacement, a second button "Replace 7 of 8" appears next to the disabled "Not enough money" button (#23). It replaces only the vehicles the balance covers now, oldest first; each vehicle (a whole train) is replaced completely or not at all. The result line says how many of all were replaced. Replacing all or nothing stays the default.
+- When the money does not cover the whole replacement, the button turns yellow and says "Replace 7 of 8" (#23). It replaces only the vehicles the balance covers now, oldest first; each vehicle (a whole train) is replaced completely or not at all. Count and cost next to it are those of the vehicles it replaces, the result line says how many of all were replaced. The red "Not enough money" stays for when not even one vehicle is covered.
 
 ### Changed
 

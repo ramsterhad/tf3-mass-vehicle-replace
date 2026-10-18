@@ -597,9 +597,11 @@ local function affordablePart(e, key, altInfo, neuInfo, funds)
 	return picked, n, sum
 end
 
+-- the balance for partial replacing: a real, finite number or nil; nan or inf would let every comparison pass
+-- (a test with a nan balance replaced all vehicles), so they count as unreadable
 local function balance()
 	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
-	if ok and type(funds) == "number" then return funds end
+	if ok and type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds end
 	return nil
 end
 
@@ -1051,14 +1053,17 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	-- not enough for all (#23): how many the balance covers, oldest first. Read when drawing (like the cost line, so
 	-- a new selection never shows the number of the last one); the timer only redraws when it changes, twice a second
 	local function someCount()
-		if not (shown.e and neuInfo) or enoughMoney(shownCost()) then return 0 end
+		if not (shown.e and neuInfo) or enoughMoney(shownCost()) then return 0, 0 end
 		local funds = balance()
-		if funds == nil then return 0 end
-		local __, n = affordablePart(shown.e, shown.key, altInfo, neuInfo, funds)
-		return n
+		if funds == nil then return 0, 0 end
+		local __, n, sum = affordablePart(shown.e, shown.key, altInfo, neuInfo, funds)
+		return n, sum
 	end
-	engine_react_util.useStepStateTimer(someCount, 0.5)
-	local some = (not affordable and e and neuInfo) and someCount() or 0
+	engine_react_util.useStepStateTimer(function() return (someCount()) end, 0.5)
+	local some, someCost = 0, 0
+	if not affordable and e and neuInfo then some, someCost = someCount() end
+	-- the button itself says "2 of 8" then (user decision 18.10.2026: no extra element, the label tells it)
+	local partial = some > 0
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
 	local busy = pending()
@@ -1067,6 +1072,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(cost)) or string.format(_("mvr_price"), money(price))
 		if free then priceLine = " " end
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
+		-- partial (#23): what the button does, so count, cost and label agree
+		if partial then summary = { count("mvr_will_replace", some), string.format(_("mvr_cost_net"), money(someCost)) } end
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }
 	elseif not altInfo then
@@ -1094,24 +1101,26 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	local button = builtin.Button{
 		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
+		-- not enough for all but for some (#23): enabled, labelled "2 of 8", tooltip explains which ones
 		meta = {
-			class = "primary, mvr-replace-btn" .. (affordable and "" or ", mvr-no-money"),
+			class = "primary, mvr-replace-btn" .. (affordable and "" or partial and ", mvr-partial" or ", mvr-no-money"),
 			-- disabled while the previous batch is still being replaced (issue #9)
-			enabled = affordable and not busy,
-			tooltip = not affordable and _("mvr_not_enough_money") or nil,
+			enabled = (affordable or partial) and not busy,
+			tooltip = partial and _("mvr_replace_some_tip") or not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(not affordable and _("mvr_not_enough_money") or busy and _("mvr_replacing") or _("mvr_replace")),
+					text(busy and _("mvr_replacing") or partial and string.format(_("mvr_replace_some"), some, e.vehicles)
+						or not affordable and _("mvr_not_enough_money") or _("mvr_replace")),
 				},
 			},
 		},
 		onClick = function()
 			if not (altInfo and neuInfo) then return end
-			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key)
+			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key, partial)
 			if not ok then
 				result.text = _("mvr_error") .. " " .. tostring(err)
 				log("error", tostring(err))
@@ -1121,31 +1130,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		end,
 	}
 
-	-- next to the disabled button: replace only what the balance covers (#23); all or nothing stays the default
-	local someButton = nil
-	if some > 0 and not busy then
-		someButton = builtin.Button{
-			meta = {
-				class = "secondary, mvr-some-btn",
-				tooltip = _("mvr_replace_some_tip"),
-			},
-			content = text(string.format(_("mvr_replace_some"), some, e.vehicles)),
-			onClick = function()
-				if not (altInfo and neuInfo) then return end
-				local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key, true)
-				if not ok then
-					result.text = _("mvr_error") .. " " .. tostring(err)
-					log("error", tostring(err))
-				end
-				update(function() sel.alt, sel.neu = nil, nil end)
-			end,
-		}
-	end
-
 	local summaryLines = {}
 	for k, line in ipairs(summary) do summaryLines[k] = text(line) end
-	local buttons = { button }
-	if someButton then buttons = { someButton, button } end
+
 
 	local children = {
 		topBar(update),
@@ -1157,7 +1144,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		row({
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
 			gui_react_util.makeHorizontalSpacer(),
-			builtin.BoxLayout{ meta = { class = "mvr-buttons" }, orientation = builtin.type.Orientation.Horizontal, children = buttons },
+			button,
 		}),
 	}
 
