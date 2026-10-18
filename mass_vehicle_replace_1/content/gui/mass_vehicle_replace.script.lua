@@ -343,10 +343,11 @@ end
 -- The callbacks of our own batch count as a change too, in case the revision is read before the change shows.
 local cachedFleet = { sig = nil, byKey = nil }
 -- the game returns userdata here, not a table (game test 18.10.2026: a type(r) == "table" check made every
--- revision 0), so the fields are read inside the pcall without type checks
+-- revision 0), so the fields are read inside the pcall without type checks; tostring first, in case the number
+-- itself is an engine value (the probe only showed its text "11")
 local function revisionOf(v)
 	local ok, n = pcall(function() return api.engine.getRevision(v).num[2] end)
-	return ok and tonumber(n) or 0
+	return ok and tonumber(tostring(n)) or 0
 end
 local function fleetSig()
 	local ids = ownVehicles()
