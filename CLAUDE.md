@@ -48,7 +48,11 @@ Check for answers at the start of a session.
 - Tests: `bash test/run.sh` in WSL (metadata, lint, luacheck, text check, Lua syntax, translations, mock test).
   luacheck runs from an unpacked Ubuntu package via `~/.local/bin/luacheck` (no sudo in WSL); CI installs `lua-check`.
   Code comments are plain ASCII (`test/textcheck.py`). Add game facts to the
-  mock first; a new test must fail against the old code.
+  mock first; a new test must fail against the old code. Engine records are userdata in the game: mock them as
+  userdata (`engineRecord` in `test_ft.lua`), never as tables.
+- Type check (local only, #31): `test/run.sh` also runs the private tf3-sdk `tools/tl_check.sh` against the game's
+  tealdefs when it exists; known inference noise is in `test/tl_baseline.txt` (keyed by message and line text).
+  New errors are printed; look at each, fix real ones, accept noise with `TL_BASELINE_WRITE=1`.
 - Staging folder (what the game loads and uploads):
   `C:\Program Files (x86)\Steam\userdata\17526841\3493540\local\staging_area\mass_vehicle_replace_1`.
   Only mirror it from the repo, never patch it, with the private tf3-sdk script (WSL):

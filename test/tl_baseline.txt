@@ -1,0 +1,36 @@
+argument 1: got {<invalid type>} (inferred at AT), expected {string | number} | function(v) update(function() sel.neu = v; result.text = "" end) end, table.concat(neuContent, ","))
+argument 2: got Recipe<ActionButtonBarParams>, expected interface IRecipe | local okId, id = pcall(react.GetRecipeId, ActionButtonBar)
+cannot index key 'cargos' in variable 'i' of type A | neuItems[k] = item(i.key, i.name, second, i.icon, i.cargos)
+cannot index key 'carrier' in variable 'tv' of type <any type> | carrier = tv.carrier,
+cannot index key 'compartments' in variable 'tv' of type <any type> | compartments = #tv.compartments,
+cannot index key 'engines' in variable 'land' of type <any type> | local engine = (not land) or #land.engines > 0
+cannot index key 'filterTags' in variable 'tv' of type <any type> | noTags = #(tv.filterTags or {}) == 0,
+cannot index key 'icon' in variable 'i' of type A | neuItems[k] = item(i.key, i.name, second, i.icon, i.cargos)
+cannot index key 'icon20' in variable 'desc' of type <any type> | icon = desc and ((desc.icon20 ~= nil and desc.icon20 ~= "") and desc.icon20 or desc.iconSmall) or nil,
+cannot index key 'icon20' in variable 'desc' of type <any type> | icon = desc and ((desc.icon20 ~= nil and desc.icon20 ~= "") and desc.icon20 or desc.iconSmall) or nil,
+cannot index key 'icon20' in variable 'desc' of type <any type> | icon = desc and ((desc.icon20 ~= nil and desc.icon20 ~= "") and desc.icon20 or desc.iconSmall) or nil,
+cannot index key 'icon20' in variable 'desc' of type <any type> | iconBig = desc and ((desc.iconSmall ~= nil and desc.iconSmall ~= "") and desc.iconSmall or desc.icon20) or nil,
+cannot index key 'iconSmall' in variable 'desc' of type <any type> | icon = desc and ((desc.icon20 ~= nil and desc.icon20 ~= "") and desc.icon20 or desc.iconSmall) or nil,
+cannot index key 'iconSmall' in variable 'desc' of type <any type> | iconBig = desc and ((desc.iconSmall ~= nil and desc.iconSmall ~= "") and desc.iconSmall or desc.icon20) or nil,
+cannot index key 'iconSmall' in variable 'desc' of type <any type> | iconBig = desc and ((desc.iconSmall ~= nil and desc.iconSmall ~= "") and desc.iconSmall or desc.icon20) or nil,
+cannot index key 'iconSmall' in variable 'desc' of type <any type> | iconBig = desc and ((desc.iconSmall ~= nil and desc.iconSmall ~= "") and desc.iconSmall or desc.icon20) or nil,
+cannot index key 'key' in variable 'i' of type A | for k, i in ipairs(neus) do neuContent[k] = i.key end
+cannot index key 'key' in variable 'i' of type A | neuItems[k] = item(i.key, i.name, second, i.icon, i.cargos)
+cannot index key 'mu' in variable 'i' of type A | if i.mu then second = second .. " · " .. count("mvr_n_parts", #i.parts) end
+cannot index key 'name' in variable 'desc' of type <any type> | local name = desc and desc.name
+cannot index key 'name' in variable 'i' of type A | neuItems[k] = item(i.key, i.name, second, i.icon, i.cargos)
+cannot index key 'parts' in variable 'i' of type A | if i.mu then second = second .. " · " .. count("mvr_n_parts", #i.parts) end
+cannot index key 'price' in variable 'cost' of type <any type> | price = cost and cost.price or 0,
+cannot index key 'price' in variable 'i' of type A | local second = money(i.price)
+cannot index key 'yearFrom' in variable 'av' of type <any type> | yearFrom = av and av.yearFrom or 0,
+cannot index key 'yearFrom' in variable 'i' of type A | if i.yearFrom > 0 then second = second .. " · " .. tostring(i.yearFrom) end
+cannot index key 'yearFrom' in variable 'i' of type A | if i.yearFrom > 0 then second = second .. " · " .. tostring(i.yearFrom) end
+cannot index key 'yearTo' in variable 'av' of type <any type> | yearTo = av and av.yearTo or 0,
+cannot index object of type {boolean} (inferred at AT) with number | add(keys[j], tv, seen)
+cannot index object of type {boolean} (inferred at AT) with number | keys[j] = "m" .. cfg.vehicles[j].part.modelId
+cannot use operator '+' for types <any type> and integer | tick:set(tick:old() + 1)
+in record field: from: got number, expected integer | for j = from, #cfg.vehicles do groups[#groups + 1] = { from = j, to = j, path = "" } end
+in record field: to: got number, expected integer | for j = from, #cfg.vehicles do groups[#groups + 1] = { from = j, to = j, path = "" } end
+invalid key 'value' in record 'c' of type record (key: string "ROAD"; icon: string "::/gui/line_vehicle_mgmt/icons/vehicle_bus_18.tga"; tooltip: string "mvr_carrier_road") | if ok and v ~= nil then c.value = v; CARRIERS[#CARRIERS + 1] = c end
+invalid key 'value' in record 'c' of type record (key: string "ROAD"; icon: string "::/gui/line_vehicle_mgmt/icons/vehicle_bus_18.tga"; tooltip: string "mvr_carrier_road") | sel.carrier = v == 1 and c.value or nil
+invalid key 'value' in record 'c' of type record (key: string "ROAD"; icon: string "::/gui/line_vehicle_mgmt/icons/vehicle_bus_18.tga"; tooltip: string "mvr_carrier_road") | value = sel.carrier == c.value and 1 or 0,

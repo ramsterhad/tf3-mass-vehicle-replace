@@ -50,3 +50,17 @@ python3 "$HERE/textcheck.py" "$HERE/.."
 # syntax of every Lua file of the mod, with the game's Lua version (5.2)
 find "$MOD" -name '*.lua' -print0 | xargs -0 "$LUAC" -p
 "$LUA" "$HERE/test_ft.lua" "$MOD/content/gui/mass_vehicle_replace.script.lua" "$MOD/content/gui/mass_vehicle_replace.css.lua" "$HERE/strings_de.lua"
+
+# optional, local only: type check against the game's own API definitions (Teal, private tf3-sdk tool; the game's
+# tealdefs must not be redistributed, so CI skips this). Known inference noise is accepted by test/tl_baseline.txt
+# (keyed by message and source line text). New errors are reported; TL_STRICT=1 makes them fail.
+TL_CHECK=${TL_CHECK:-/mnt/c/Users/micha/projekte/tf3-sdk/tools/tl_check.sh}
+if [ -f "$TL_CHECK" ]; then
+	if TL_BASELINE="$HERE/tl_baseline.txt" bash "$TL_CHECK" "$MOD/content/gui/mass_vehicle_replace.script.lua" lax; then
+		echo "tl_check: no new type errors"
+	elif [ "${TL_STRICT:-0}" = 1 ]; then
+		exit 1
+	else
+		echo "tl_check: NEW TYPE ERRORS above (look at them; accept noise with TL_BASELINE_WRITE=1)"
+	fi
+fi
