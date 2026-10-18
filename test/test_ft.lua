@@ -7,6 +7,10 @@ local SCRIPT, CSS, STRINGS = arg[1], arg[2], arg[3]
 local failures, checks = 0, 0
 local function fail(msg) failures = failures + 1; print("FAIL: " .. msg) end
 local function check(cond, msg) checks = checks + 1; if not cond then fail(msg) end end
+-- per-node rules of every rendered tree (layout gaps, CSS classes, entry shapes): they fail like checks but are not
+-- counted one by one, else every render adds ~1000 "checks" and the total says nothing (review 18.10.2026)
+local renders = 0
+local function invariant(cond, msg) if not cond then fail(msg) end end
 
 -- Translations -----------------------------------------------------------------------------------------
 local strings = dofile(STRINGS)
@@ -407,7 +411,7 @@ local function walk(node, path, visit)
 	if p.children then
 		local n = 0
 		for k in pairs(p.children) do if type(k) == "number" and k > n then n = k end end
-		check(n == #p.children, path .. ": child list with a gap (nil) in " .. node.kind)
+		invariant(n == #p.children, path .. ": child list with a gap (nil) in " .. node.kind)
 		for i = 1, n do walk(p.children[i], path .. "/" .. node.kind .. "[" .. i .. "]", visit) end
 	end
 	for _k, key in ipairs({ "child", "content", "layout" }) do
@@ -417,33 +421,34 @@ local function walk(node, path, visit)
 end
 
 local function rules(tree, label)
+	renders = renders + 1
 	check(tree and tree.kind == "BoxLayout", label .. ": recipe must return a layout, returns " .. tostring(tree and tree.kind))
 	walk(tree, label, function(n, path)
 		local p = n.props or {}
 		local cls = p.meta and p.meta.class
 		if cls then
 			for c in tostring(cls):gmatch("mvr%-[%w%-]+") do
-				check(cssClasses[c], path .. ": CSS class missing: " .. c)
+				invariant(cssClasses[c], path .. ": CSS class missing: " .. c)
 			end
 		end
-		check(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
+		invariant(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
 			path .. ": makeStyle only knows size; minSize/maxSize/gravity/padding have no effect")
 		if n.kind == "ComboBoxItem" then
-			check(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
+			invariant(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
 		elseif n.kind == "ComboBox" then
-			check(p.items and #p.items > 0, path .. ": ComboBox without entries")
-			check(p.meta and type(p.meta.localKey) == "string" and p.meta.localKey:find("combo:" .. tostring(p.value) .. "|", 1, true) == 1,
+			invariant(p.items and #p.items > 0, path .. ": ComboBox without entries")
+			invariant(p.meta and type(p.meta.localKey) == "string" and p.meta.localKey:find("combo:" .. tostring(p.value) .. "|", 1, true) == 1,
 				path .. ": ComboBox without a localKey for its value (the display would not update after changes)")
 			local found = false
 			for _i, it in ipairs(p.items or {}) do if it.props.value == p.value then found = true end end
-			check(found, path .. ": ComboBox value " .. tostring(p.value) .. " is not an entry (the display would be empty)")
+			invariant(found, path .. ": ComboBox value " .. tostring(p.value) .. " is not an entry (the display would be empty)")
 		elseif n.kind == "Component" and p.layout then
-			check(LAYOUTS[p.layout.kind], path .. ": Component.layout must be a layout")
+			invariant(LAYOUTS[p.layout.kind], path .. ": Component.layout must be a layout")
 		elseif n.kind == "ImageView" then
-			check(type(p.path) == "string" and p.path ~= "", path .. ": ImageView without path")
+			invariant(type(p.path) == "string" and p.path ~= "", path .. ": ImageView without path")
 		elseif n.kind == "TextView" then
-			check(type(p.text) == "string", path .. ": TextView without text")
-			check(not tostring(p.text):find("\n"), path .. ": line break in text: " .. tostring(p.text))
+			invariant(type(p.text) == "string", path .. ": TextView without text")
+			invariant(not tostring(p.text):find("\n"), path .. ": line break in text: " .. tostring(p.text))
 		end
 	end)
 end
@@ -478,7 +483,7 @@ local function sameShapes(tree, label)
 		for _i, it in ipairs(c.props.items) do
 			local s = shapeOf(it)
 			shape = shape or s
-			check(s == shape, label .. ": entries built differently:\n  " .. shape .. "\n  " .. s)
+			invariant(s == shape, label .. ": entries built differently:\n  " .. shape .. "\n  " .. s)
 		end
 	end
 end
@@ -1429,5 +1434,5 @@ check(okLoad, "doReplace fails when ActionButtonBar is not a recipe")
 check(_react.recipeReplace.ActionButtonBar == nil, "a plain function was passed to ReplaceRecipe")
 _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar = savedReplace, savedField
 
-print(string.format("\n%d checks, %d errors", checks, failures))
+print(string.format("\n%d checks, %d errors (plus the per-node rules on %d rendered trees)", checks, failures, renders))
 os.exit(failures == 0 and 0 or 1)

@@ -49,6 +49,14 @@ Check for answers at the start of a session.
   luacheck runs from an unpacked Ubuntu package via `~/.local/bin/luacheck` (no sudo in WSL); CI installs `lua-check`.
   Code comments are plain ASCII (`test/textcheck.py`). Add game facts to the
   mock first; a new test must fail against the old code.
+- What the tests can and cannot show (review 18.10.2026): they cover our own logic on our own data and the
+  compatibility mechanics. They are blind to everything the engine delivers (types, values, when something
+  changes), performance and looks; 5 of the 9 bugs that reached the game were of that kind.
+  - Only facts seen in the game go into the mock. A new `api.*` access nobody has measured yet is "game test
+    only": say so in the PR instead of inventing a mock for it.
+  - A failing existing test is a finding first. Never change an existing test to make a fix pass unless the PR
+    says so explicitly, with the reason (#10 attempt 1: a test caught the bug and was adjusted instead, addeb11).
+  - Count honestly: `check` is one scenario assertion; per-node rules of rendered trees use `invariant`.
 - Staging folder (what the game loads and uploads):
   `C:\Program Files (x86)\Steam\userdata\17526841\3493540\local\staging_area\mass_vehicle_replace_1`.
   Only mirror it from the repo, never patch it, with the private tf3-sdk script (WSL):
