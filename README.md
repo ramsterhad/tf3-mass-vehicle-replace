@@ -13,7 +13,7 @@ Replaces all vehicles of one model with another, across all lines. Adds a "Repla
 - Locomotives only replace locomotives, wagons only wagons. Multiple units are replaced as complete sets. Reversed vehicles and units stay reversed. In mixed trains only the chosen model is replaced.
 - Sort by name or year. Cargo icons for every model. The color of the old vehicles is kept where possible.
 - Uses the game's own replace command. Like the game's purchase window, the cost is the purchase price minus the residual value of the old vehicles; replacing is only possible when the balance covers it. Trains where only some vehicles are replaced are priced like the game's "Modify" window.
-- English and German.
+- English and German; French machine translated (native speaker review welcome).
 
 ## Install
 
