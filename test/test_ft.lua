@@ -340,6 +340,7 @@ api = {
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
+		-- the game returns userdata (a plain Lua 5.2 mock cannot make one): never check it with type() == "table"
 		getRevision = function(e)
 			gameTimeDrives = (gameTimeDrives or 0) + 1 -- num[3] counts up all the time
 			return { num = { 1, revisions[e] or 10, gameTimeDrives } }

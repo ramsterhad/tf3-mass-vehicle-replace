@@ -342,9 +342,11 @@ end
 -- game's own vehicle window (11 -> 21), num[1] never, num[3] counts up while a vehicle drives (so it is left out).
 -- The callbacks of our own batch count as a change too, in case the revision is read before the change shows.
 local cachedFleet = { sig = nil, byKey = nil }
+-- the game returns userdata here, not a table (game test 18.10.2026: a type(r) == "table" check made every
+-- revision 0), so the fields are read inside the pcall without type checks
 local function revisionOf(v)
-	local ok, r = pcall(api.engine.getRevision, v)
-	return ok and type(r) == "table" and type(r.num) == "table" and tonumber(r.num[2]) or 0
+	local ok, n = pcall(function() return api.engine.getRevision(v).num[2] end)
+	return ok and tonumber(n) or 0
 end
 local function fleetSig()
 	local ids = ownVehicles()
