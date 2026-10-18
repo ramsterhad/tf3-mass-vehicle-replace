@@ -141,8 +141,35 @@ local modules = {
 		MaintenanceStationEowExtensionPoint = { id = "::MaintenanceStationEowExtensionPoint" },
 	},
 }
+-- extension points like react.lua:67-117: the name is qualified by the mod id, a second registration returns nil,
+-- getPlugins lists the plugin resources of a registered point (resolved recipe and condition, sorted by order)
+_react.extensionPoints = {}
+local pluginResources = {} -- point id -> { { recipe, condition, order } }, as getPlugins resolves them
+react.RegisterExtensionPoint = function(modId, name)
+	local id = modId .. "::" .. name
+	if _react.extensionPoints[id] then return nil end
+	_react.extensionPoints[id] = true
+	return { id = id }
+end
+react.getPlugins = function(point)
+	if point == nil or not _react.extensionPoints[point.id] then return {} end
+	local list = {}
+	for _i, p in ipairs(pluginResources[point.id] or {}) do list[#list + 1] = { recipe = p.recipe, condition = p.condition, order = p.order } end
+	table.sort(list, function(l, r) return (l.order or 0) < (r.order or 0) end)
+	return list
+end
+-- the mod of the file that calls it (api/tealdef/main.d.tl:49-57); the mock only loads files of this mod
+function getOwningModId() return "mass_vehicle_replace_1" end
+
+-- files of the mod itself, "mass_vehicle_replace_1::/gui/x.lua" = <mod>/content/gui/x.lua, loaded once like modules
+local MOD_GUI = SCRIPT:match("^(.*)/[^/]*$")
 function ug_require(path)
 	local m = modules[path]
+	local file = path:match("^mass_vehicle_replace_1::/gui/(.+)$")
+	if m == nil and file then
+		m = dofile(MOD_GUI .. "/" .. file)
+		modules[path] = m
+	end
 	if m == nil then error("ug_require unknown: " .. path) end
 	return m
 end
@@ -1525,6 +1552,145 @@ readsBefore = fleetBuildReads
 check(wouldRedraw(), "fleet change: window not redrawn after the callbacks of our own batch")
 t = content("fleet change, replaced")
 check(fleetBuildReads > readsBefore, "fleet change: fleet not read again after our own batch")
+step()
+
+print("== Add-ons: extension point and shared rebuild module (issue #24)")
+local EXT_PATH = "mass_vehicle_replace_1::/gui/mass_vehicle_replace_extension.lua"
+local REBUILD_PATH = "mass_vehicle_replace_1::/gui/mass_vehicle_replace_rebuild.lua"
+local ext = ug_require(EXT_PATH)
+local POINT = "mass_vehicle_replace_1::MvrReplaceWindowExtension"
+check(ext.VERSION == 1, "extension: VERSION " .. tostring(ext.VERSION))
+check(ext.MvrReplaceWindowExtension and ext.MvrReplaceWindowExtension.id == POINT, "extension: point id " .. tostring(ext.MvrReplaceWindowExtension and ext.MvrReplaceWindowExtension.id))
+check(_react.extensionPoints[POINT] == true, "extension: point not registered with the game")
+-- the row with the Replace button: summary, spacer, add-ons, button
+local function bottomKinds(tt)
+	local btn = replaceButton(tt)
+	local row = find(tt, function(n)
+		if n.kind ~= "BoxLayout" or not n.props.children then return false end
+		for _i, c in ipairs(n.props.children) do if c == btn then return true end end
+		return false
+	end)[1]
+	local kinds = {}
+	for _i, c in ipairs(row and row.props.children or {}) do kinds[#kinds + 1] = c.kind end
+	return table.concat(kinds, ","), row
+end
+-- no plugin installed: the row is the one the window always had
+t = chooseKasten("add-on, none", 200000)
+check(bottomKinds(t) == "BoxLayout,Spacer,Button", "add-on: row without plugins changed: " .. bottomKinds(t))
+-- a second load under another path spelling must not lose the point (react.lua:69-72 returns nil then)
+_react.extensionPoints[POINT] = true
+local extAgain = dofile(MOD_GUI .. "/mass_vehicle_replace_extension.lua")
+check(extAgain.MvrReplaceWindowExtension and extAgain.MvrReplaceWindowExtension.id == POINT, "extension: second load has no point")
+
+-- a fake add-on, as documented in mass_vehicle_replace_extension.lua
+local seenByCondition, addonClicks = nil, 0
+local AddonButton = react.RegisterPluginRecipe(ext.MvrReplaceWindowExtension, "MvrTestAddonButton", function(params)
+	return builtin.BoxLayout{ children = { builtin.Button{
+		meta = { class = "primary" },
+		content = builtin.TextView{ meta = { class = "font-scale-body" }, text = "Rest vormerken " .. tostring(params.vehicles - params.affordableCount) },
+		onClick = function() addonClicks = addonClicks + 1 end,
+	} } }
+end)
+local function addonCondition(params)
+	seenByCondition = params
+	-- a careless add-on writes to its params: the window and the recipe call must not notice
+	params.newKey, params.vehicles = "m12", 99
+	if params.oldUnit then params.oldUnit.id = 999 end
+	return true
+end
+pluginResources[POINT] = { { recipe = AddonButton, condition = addonCondition, order = 10 } }
+t = chooseKasten("add-on, one plugin", 200000)
+local kinds, addonRow = bottomKinds(t)
+check(kinds == "BoxLayout,Spacer,recipe:MvrTestAddonButton,Button", "add-on: plugin not left of the Replace button: " .. kinds)
+local addonNode = addonRow and addonRow.props.children[3]
+local ps = addonNode and addonNode.props or {}
+check(ps.version == 1 and ps.oldKey == "m10" and ps.newKey == "m11", "add-on: params version/keys " .. tostring(ps.version) .. " " .. tostring(ps.oldKey) .. " " .. tostring(ps.newKey))
+check(ps.vehicles == 8 and ps.units == 8, "add-on: params vehicles/units " .. tostring(ps.vehicles) .. " " .. tostring(ps.units))
+check(ps.price == 488000 and ps.cost == 488000, "add-on: params price/cost " .. tostring(ps.price) .. " " .. tostring(ps.cost))
+check(ps.affordable == false and ps.affordableCount == 3 and ps.affordableCost == 183000, "add-on: params affordable "
+	.. tostring(ps.affordable) .. " " .. tostring(ps.affordableCount) .. " " .. tostring(ps.affordableCost))
+check(ps.infiniteMoney == false and ps.busy == false, "add-on: params infiniteMoney/busy")
+check(ps.oldUnit and ps.oldUnit.key == "m10" and ps.oldUnit.mu == false and ps.oldUnit.id == 10 and ps.oldUnit.compartments == 1, "add-on: params oldUnit")
+check(ps.newUnit and ps.newUnit.key == "m11" and ps.newUnit.id == 11, "add-on: params newUnit")
+check(seenByCondition ~= nil and seenByCondition ~= ps, "add-on: condition and recipe share one params table")
+-- plain data only: no functions, no metatables (no window state behind them)
+local function plain(v, depth)
+	if type(v) == "function" or type(v) == "userdata" or type(v) == "thread" then return false end
+	if type(v) == "table" then
+		if getmetatable(v) ~= nil or depth > 4 then return false end
+		for k, x in pairs(v) do if not plain(k, depth + 1) or not plain(x, depth + 1) then return false end end
+	end
+	return true
+end
+check(plain(ps, 0), "add-on: params are not plain data")
+-- the plugin's own recipe renders its button
+local addonTree = render("MvrTestAddonButton", ps)
+rules(addonTree, "add-on button")
+local addonBtn = find(addonTree, function(n) return n.kind == "Button" end)[1]
+check(addonBtn ~= nil and find(addonBtn, function(n) return n.kind == "TextView" end)[1].props.text == "Rest vormerken 5", "add-on: plugin button not rendered")
+addonBtn.props.onClick()
+check(addonClicks == 1, "add-on: plugin button click")
+-- what the add-on wrote did not reach the window: it still replaces the 3 covered trucks with model 11
+sent = {}
+replaceButton(t).props.onClick()
+check(#sent == 3, "add-on: a plugin changing its params changed the replacement: " .. #sent)
+check(sent[1] and sent[1].conf.vehicles[1].part.modelId == 11, "add-on: wrong new model after a plugin wrote to its params")
+step()
+-- the add-on side of the rebuild module: the same table the window uses, rebuilding with the units from the params
+local rb = ug_require(REBUILD_PATH)
+check(rb.VERSION == 1, "rebuild: VERSION " .. tostring(rb.VERSION))
+for _i, fn in ipairs({ "groupsOf", "groupReversed", "newPart", "rebuild" }) do check(type(rb[fn]) == "function", "rebuild: missing " .. fn) end
+local rbConf, rbUnits = rb.rebuild(vehicles[112].transportVehicleConfig, ps.oldUnit, ps.newUnit, 77)
+check(rbConf and rbUnits == 1 and rbConf.vehicles[1].part.modelId == 11 and rbConf.vehicles[1].purchaseTime == 77, "rebuild: add-on rebuild with the params' units")
+check(rb.rebuild(vehicles[120].transportVehicleConfig, ps.oldUnit, ps.newUnit, 77) == nil, "rebuild: a vehicle without the old model must give nil")
+-- multiple units in the params: the units copy the parts the rebuild needs
+openAndRender("add-on, multiple unit", 500, true)
+t = content("add-on, multiple unit")
+combos(t)[1].props.onValueChange("u900")
+t = content("add-on, multiple unit chosen")
+combos(t)[2].props.onValueChange("u901")
+t = content("add-on, multiple unit new")
+local __, muRow = bottomKinds(t)
+local mps = muRow and muRow.props.children[3] and muRow.props.children[3].props or {}
+check(mps.oldUnit and mps.oldUnit.mu == true and mps.oldUnit.path == "multiple_unit/et420.mdl" and #mps.oldUnit.parts == 3
+	and mps.oldUnit.parts[3].forward == false and mps.oldUnit.parts[3].info.id == 50, "add-on: multiple unit oldUnit")
+local muConf, muUnits = rb.rebuild(vehicles[104].transportVehicleConfig, mps.oldUnit, mps.newUnit, 5)
+check(muConf and muUnits == 1 and #muConf.vehicles == 4 and muConf.muFileNames[1] == "multiple_unit/et423.mdl", "rebuild: multiple unit from the params' units")
+-- infinite money reaches the plugin
+t = chooseKasten("add-on, infinite money", nil)
+__, addonRow = bottomKinds(t)
+check(addonRow and addonRow.props.children[3].props.infiniteMoney == true and addonRow.props.children[3].props.affordable == true, "add-on: infiniteMoney not passed")
+-- a condition that says no: nothing shown
+pluginResources[POINT] = { { recipe = AddonButton, condition = function() return false end } }
+t = chooseKasten("add-on, condition false", 200000)
+check(bottomKinds(t) == "BoxLayout,Spacer,Button", "add-on: plugin with a false condition shown: " .. bottomKinds(t))
+
+-- broken add-ons: a condition that throws, a recipe that was not found (react.lua:103-105 leaves it nil), a recipe
+-- that throws; the window stays intact, keeps the working plugin and logs each failure once
+local logsBefore = #logs
+pluginResources[POINT] = {
+	{ condition = function() error("broken condition") end, recipe = AddonButton, order = 1 },
+	{ recipe = nil, order = 2 },
+	{ recipe = function() error("broken recipe") end, order = 3 },
+	{ recipe = AddonButton, order = 4 },
+}
+local okBroken, brokenTree = pcall(chooseKasten, "add-on, broken", 200000)
+check(okBroken, "add-on: a broken plugin breaks the window: " .. tostring(brokenTree))
+if okBroken then
+	check(bottomKinds(brokenTree) == "BoxLayout,Spacer,recipe:MvrTestAddonButton,Button", "add-on: broken plugins: " .. bottomKinds(brokenTree))
+	check(buttonText(replaceButton(brokenTree)) == "3 von 8 ersetzen", "add-on: broken plugins changed the Replace button")
+	content("add-on, broken, again")
+end
+local failedLogs = 0
+for i = logsBefore + 1, #logs do if logs[i]:find("add-on plugin failed", 1, true) then failedLogs = failedLogs + 1 end end
+check(failedLogs == 3, "add-on: each broken plugin logged once, got " .. failedLogs)
+-- getPlugins itself fails
+local savedGetPlugins = react.getPlugins
+react.getPlugins = function() error("plugin list broken") end
+local okList, listTree = pcall(chooseKasten, "add-on, list broken", 200000)
+check(okList and bottomKinds(listTree) == "BoxLayout,Spacer,Button", "add-on: a failing plugin list breaks the window")
+react.getPlugins = savedGetPlugins
+pluginResources[POINT] = nil
 step()
 
 print("== Robust against mods that overwrite the module field")

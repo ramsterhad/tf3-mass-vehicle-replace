@@ -18,6 +18,14 @@ Current hooks into the game, keep this list up to date:
 | Depot entity | condition of a `MaintenanceStationEowExtensionPoint` plugin, always `false` | (already the smallest) |
 | Button in the depot button bar | chained `ReplaceRecipe(ActionButtonBar)`, order 1000, recipe captured at load | the button bar has no extension point |
 
+Offered to add-on mods (#24), interfaces documented at the top of each file; keep them stable and bump `VERSION`
+only on incompatible changes:
+
+| What | File | Id / path |
+|---|---|---|
+| Extension point of the replace window (plugins left of "Replace", every call in `pcall`) | `content/gui/mass_vehicle_replace_extension.lua` | `mass_vehicle_replace_1::MvrReplaceWindowExtension` |
+| Consist rebuild (`groupsOf`, `groupReversed`, `newPart`, `rebuild`), pure, no react | `content/gui/mass_vehicle_replace_rebuild.lua` | `mass_vehicle_replace_1::/gui/mass_vehicle_replace_rebuild.lua` |
+
 ## Compatibility test mods
 
 Keep these subscribed and active in the compatibility savegame; check `stdout.txt` after a start.
