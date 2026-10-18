@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Simplified Chinese translation (`zh_CN`), machine translated with Claude using the game's own terms; a native speaker review is welcome (#44).
+
 ## [1.0.3] - 2026-10-17
 
 ### Changed
