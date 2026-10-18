@@ -109,6 +109,14 @@ local engine_react_util = { useStepState = function(f)
 	stepStates[#stepStates + 1] = { f = f, v = v }
 	return { old = function() return v end }
 end }
+-- the timed variant (engine_react_util.tl:126-157) runs every interval seconds instead of every step; a step of the
+-- mock stands for one tick of it, and the interval must be the game's default or shorter
+engine_react_util.useStepStateTimer = function(f, interval)
+	assert(interval == nil or interval <= 0.5, "useStepStateTimer interval above 0.5 s")
+	local st = engine_react_util.useStepState(f)
+	stepStates[#stepStates].timer = true
+	return st
+end
 local spacerOrig = function() return { kind = "Spacer", props = {} } end
 local gui_react_util = { makeHorizontalSpacer = spacerOrig }
 local windows = {}
@@ -1241,6 +1249,15 @@ for v = 110, 117 do residuals[v] = 1000 end
 t = chooseKasten("live cost", 5000000)
 check(hasText(t, "Kosten nach Restwert: $480000"), "live cost: cost line")
 check(not wouldRedraw(), "live cost: redraw without any change")
+-- reading every residual value is heavy (1450 trucks in a game test): only timed step states may do it
+do
+	gameTimeNow = gameTimeNow + 1
+	for _i, st in ipairs(stepStates) do
+		local before = residualReads
+		st.f()
+		check(residualReads == before or st.timer, "live cost: an every-step state reads residual values")
+	end
+end
 for v = 110, 117 do residuals[v] = 900 end -- the trucks aged
 local reads = residualReads
 check(not wouldRedraw(), "live cost: redraw while paused")

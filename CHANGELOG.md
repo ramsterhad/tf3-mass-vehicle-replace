@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The cost line updates twice a second instead of every frame while the game runs. With many vehicles of the selected model (1450 trucks in a test) the window cost frames, because every update reads the residual value of each vehicle.
+
 ### Fixed
 
 - The window now notices when vehicles are bought, sold, handed to another player or rebuilt in the game's own vehicle window while it is open, and updates the count (#10). It also no longer reads the whole fleet again on every redraw, only when the fleet changes.
