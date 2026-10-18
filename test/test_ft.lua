@@ -224,7 +224,7 @@ local mus = {
 }
 
 local vehicles = {}
-local revisions = {} -- num[2] of api.engine.getRevision per vehicle
+local fleetBuildReads = 0 -- carrier reads of vehicles: only a fleet build reads them (#10)
 -- groups: nil = each part its own group; otherwise { {size, file name}, ... } like in the game
 local function vehicle(id, parts, groups)
 	local list = {}
@@ -236,9 +236,12 @@ local function vehicle(id, parts, groups)
 	else
 		for i = 1, #parts do sizes[i], paths[i] = 1, "" end
 	end
-	vehicles[id] = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
-	-- like the game (measured 18.10.2026): num[2] changes when a vehicle is rebuilt, num[3] while it drives
-	revisions[id] = (revisions[id] or 10) + 1
+	-- carrier is read when the fleet is built (an entry per model), not by the cheap per-step part check (#10)
+	local real = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
+	vehicles[id] = setmetatable({}, { __index = function(_t, k)
+		if k == "carrier" then fleetBuildReads = fleetBuildReads + 1 end
+		return real[k]
+	end, __newindex = real })
 end
 vehicle(100, { 1, 2, 2, 2, 3 })
 vehicle(101, { 1, 2, 2, 6 })
@@ -279,7 +282,6 @@ local commandSucceeds, holdSteps = true, false
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
 local residualReads, deadReads = 0, 0
-local fleetReads = 0 -- vehicle components read, to tell a fleet rebuild from a cached fleet (#10)
 local gameTimeNow = 123 -- game time of the mock; advancing it means the game runs
 -- value per existing part, set with partValue(vehicle, index, value); 0 by default (#26)
 local partValues, partValueThrows = {}, false
@@ -335,16 +337,11 @@ api = {
 			return t
 		end,
 		getComponent = function(e, ct)
-			if ct == CT.TRANSPORT_VEHICLE then fleetReads = fleetReads + 1; return vehicles[e] end
+			if ct == CT.TRANSPORT_VEHICLE then return vehicles[e] end
 			if ct == CT.GAME_TIME then return { gameTime = gameTimeNow } end
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
-		-- the game returns userdata (a plain Lua 5.2 mock cannot make one): never check it with type() == "table"
-		getRevision = function(e)
-			gameTimeDrives = (gameTimeDrives or 0) + 1 -- num[3] counts up all the time
-			return { num = { 1, revisions[e] or 10, gameTimeDrives } }
-		end,
 		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
 			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
@@ -947,7 +944,7 @@ openAndRender("train depot 7", 500, true)
 t = content("before swap")
 local keyBefore = combos(t)[1].props.meta.localKey
 -- like after a swap in the game's own vehicle window: train 106 now runs with Roter Pfeil instead of M-300.
--- The id stays, the revision changes (issue #10), so the open window sees it on the next step.
+-- The id stays (issue #10); the window compares the parts of its vehicles in turn and sees it on the next step.
 local saved = vehicles[106]
 vehicle(106, { 61 })
 local redraw = false
@@ -1427,9 +1424,9 @@ print("== Fleet changes while the window is open (issue #10)")
 t = chooseKasten("fleet change", 5000000)
 check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: start count")
 check(not wouldRedraw(), "fleet change: redraw without any change")
-local readsBefore = fleetReads
+local readsBefore = fleetBuildReads
 t = content("fleet change, unchanged")
-check(fleetReads == readsBefore, "fleet change: fleet rebuilt on a redraw without changes, " .. (fleetReads - readsBefore) .. " vehicle reads")
+check(fleetBuildReads == readsBefore, "fleet change: fleet rebuilt on a redraw without changes")
 vehicle(118, { 10 }) -- bought
 check(wouldRedraw(), "fleet change: window not redrawn after a purchase")
 t = content("fleet change, bought")
@@ -1444,10 +1441,10 @@ vehicles[118] = nil
 t = content("fleet change, before replacing")
 replaceButton(t).props.onClick() -- the click itself reads the vehicles; count only the redraw after it
 step() -- the commands run, their callbacks arrive
-readsBefore = fleetReads
+readsBefore = fleetBuildReads
 check(wouldRedraw(), "fleet change: window not redrawn after the callbacks of our own batch")
 t = content("fleet change, replaced")
-check(fleetReads > readsBefore, "fleet change: fleet not read again after our own batch")
+check(fleetBuildReads > readsBefore, "fleet change: fleet not read again after our own batch")
 step()
 
 print("== Robust against mods that overwrite the module field")

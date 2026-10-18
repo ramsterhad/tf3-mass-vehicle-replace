@@ -270,8 +270,16 @@ local function ownVehicles()
 	return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE, { requireOwnedByPlayer = api.engine.util.getPlayer() })
 end
 
+-- the models of a vehicle's parts in order, to notice a vehicle rebuilt under the same id (#10)
+local function partsOf(cfg)
+	local models = {}
+	for j, part in ipairs(cfg.vehicles) do models[j] = tostring(part.part.modelId) end
+	return table.concat(models, ",")
+end
+
+-- returns the entries by key and the parts of every vehicle read (partsOf)
 local function fleet()
-	local byKey = {}
+	local byKey, partsByVehicle = {}, {}
 	-- uses: every vehicle this entry is in, with the entry of each of its parts, so the residual value can
 	-- tell replaced parts from kept ones (#26). keys[j] is false for parts of an unknown multiple unit.
 	local function add(key, tv, seen)
@@ -284,6 +292,7 @@ local function fleet()
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
+			partsByVehicle[v] = partsOf(cfg)
 			local seen, keys = {}, {}
 			for __, g in ipairs(groupsOf(cfg)) do
 				if g.path ~= "" then
@@ -302,7 +311,7 @@ local function fleet()
 			for key in pairs(seen) do local u = byKey[key].uses; u[#u + 1] = use end
 		end
 	end
-	return byKey
+	return byKey, partsByVehicle
 end
 
 -- new part: paint from the old part; reversed from the old part or, in a multiple unit, from its definition
@@ -335,36 +344,50 @@ local function pending()
 end
 
 -- Fleet of the window (#10): reading every vehicle on every redraw is the expensive part, so the window keeps the
--- last fleet and builds it again only when the player's vehicles change. fleetSig is cheap enough for every step
--- (ids and revision numbers, no components) and redraws the window when a vehicle is bought, sold, handed to
--- another player or rebuilt. A rebuilt vehicle keeps its id; api.engine.getRevision (api/tealdef/api/engine.d.tl
--- getRevision) tells it: measured in the game 18.10.2026, num[2] changed only when vehicles were replaced in the
--- game's own vehicle window (11 -> 21), num[1] never, num[3] counts up while a vehicle drives (so it is left out).
--- The callbacks of our own batch count as a change too, in case the revision is read before the change shows.
-local cachedFleet = { sig = nil, byKey = nil }
--- the game returns userdata here, not a table (game test 18.10.2026: a type(r) == "table" check made every
--- revision 0), so the fields are read inside the pcall without type checks; tostring first, in case the number
--- itself is an engine value (the probe only showed its text "11")
-local function revisionOf(v)
-	local ok, n = pcall(function() return api.engine.getRevision(v).num[2] end)
-	return ok and tonumber(tostring(n)) or 0
+-- last fleet and builds it again only when the player's vehicles change. fleetSig runs every step and redraws the
+-- window on a change:
+-- - bought, sold or handed to another player: the list of ids changes (cheap, no components);
+-- - rebuilt under the same id (the game's own vehicle window, "Replace"): each step compares the parts of the next
+--   CHECK_PER_STEP vehicles with the fleet read last, in turn, so a large fleet is covered within a few steps.
+--   Game test 18.10.2026: the parts change at once; api.engine.getRevision did not (num[2] stayed 5 while the
+--   model changed), so revisions are not used;
+-- - the callbacks of our own batch.
+local CHECK_PER_STEP = 100
+local cachedFleet = { sig = nil, byKey = nil, parts = nil, nextCheck = 1, rebuilt = 0 }
+
+local function checkSomeParts(ids)
+	local parts = cachedFleet.parts
+	if not parts or #ids == 0 then return end
+	for __ = 1, math.min(CHECK_PER_STEP, #ids) do
+		local i = cachedFleet.nextCheck
+		if i > #ids then i = 1 end
+		cachedFleet.nextCheck = i + 1
+		local v = ids[i]
+		local ok, now = pcall(function() return partsOf(api.engine.getComponent(v, CT.TRANSPORT_VEHICLE).transportVehicleConfig) end)
+		if ok and parts[v] ~= nil and now ~= parts[v] then
+			parts[v] = now -- count each rebuild once; the fleet is read again anyway
+			cachedFleet.rebuilt = cachedFleet.rebuilt + 1
+		end
+	end
 end
+
 local function fleetSig()
 	local ids = ownVehicles()
+	checkSomeParts(ids)
 	-- order-free, so a different order of the same vehicles is no change
-	local sum, squares, revisions = 0, 0, 0
+	local sum, squares = 0, 0
 	for __, v in ipairs(ids) do
 		sum = sum + v
 		squares = (squares + v * v) % 2147483647
-		revisions = (revisions + revisionOf(v) * (v % 1000 + 1)) % 2147483647
 	end
-	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(revisions) .. ":" .. tostring(result.batch) .. ":" ..
-		tostring(result.ok + result.failed)
+	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(cachedFleet.rebuilt) .. ":" ..
+		tostring(result.batch) .. ":" .. tostring(result.ok + result.failed)
 end
 
 local function windowFleet(sig)
 	if cachedFleet.sig ~= sig or cachedFleet.byKey == nil then
-		cachedFleet.sig, cachedFleet.byKey = sig, fleet()
+		cachedFleet.sig = sig
+		cachedFleet.byKey, cachedFleet.parts = fleet()
 	end
 	return cachedFleet.byKey
 end
