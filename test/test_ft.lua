@@ -948,7 +948,9 @@ local keyBefore = combos(t)[1].props.meta.localKey
 local saved = vehicles[106]
 vehicle(106, { 61 })
 local redraw = false
-for _i, st in ipairs(stepStates) do if st.f() ~= st.v then redraw = true end end
+for _s = 1, 6 do -- the window checks its vehicles only every few steps (SIG_EVERY in the script)
+	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then redraw = true end end
+end
 check(redraw, "window not redrawn after a vehicle was rebuilt with the same id")
 t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
@@ -1226,8 +1228,12 @@ check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
 
 print("== The cost follows the residual value while the game runs (issue #26)")
 -- in-game 17.10.2026: the line was read, the game ran on, the charge was 5120 higher
+-- several steps: the window checks its vehicles only every few steps (#10, SIG_EVERY in the script)
+local STEPS_PER_CHECK = 6
 local function wouldRedraw()
-	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	for _s = 1, STEPS_PER_CHECK do
+		for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	end
 	return false
 end
 residuals = {}
@@ -1437,6 +1443,13 @@ t = content("fleet change, handed over")
 check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: count after a handover")
 owners[118] = nil
 vehicles[118] = nil
+-- reopened right after a change, before the throttled vehicle check ran: the new window must not show the old fleet
+t = chooseKasten("fleet change, reopen 1", 5000000)
+vehicle(118, { 10 })
+t = chooseKasten("fleet change, reopen 2", 5000000)
+check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: reopened window shows the fleet of the last one")
+vehicles[118] = nil
+t = chooseKasten("fleet change, reopen 3", 5000000)
 -- our own batch: the vehicles keep their ids, the callbacks make the window read the fleet again
 t = content("fleet change, before replacing")
 replaceButton(t).props.onClick() -- the click itself reads the vehicles; count only the redraw after it

@@ -353,7 +353,13 @@ end
 --   model changed), so revisions are not used;
 -- - the callbacks of our own batch.
 local CHECK_PER_STEP = 100
-local cachedFleet = { sig = nil, byKey = nil, parts = nil, nextCheck = 1, rebuilt = 0 }
+-- the vehicle check runs only every SIG_EVERY steps (game test 18.10.2026: 1-3 fps less with 1808 vehicles when it
+-- ran every step); in between its last result stands. Opening the window (result.batch) and the callbacks of our
+-- own batch are cheap and count at once; a new batch also refreshes the vehicle part, so the fleet read on opening
+-- is not read a second time a few steps later.
+local SIG_EVERY = 6
+local cachedFleet = { sig = nil, byKey = nil, parts = nil, nextCheck = 1, rebuilt = 0, steps = 0, vehiclesSig = nil,
+	vehiclesBatch = nil }
 
 local function checkSomeParts(ids)
 	local parts = cachedFleet.parts
@@ -371,7 +377,7 @@ local function checkSomeParts(ids)
 	end
 end
 
-local function fleetSig()
+local function vehiclesSig()
 	local ids = ownVehicles()
 	checkSomeParts(ids)
 	-- order-free, so a different order of the same vehicles is no change
@@ -380,8 +386,15 @@ local function fleetSig()
 		sum = sum + v
 		squares = (squares + v * v) % 2147483647
 	end
-	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(cachedFleet.rebuilt) .. ":" ..
-		tostring(result.batch) .. ":" .. tostring(result.ok + result.failed)
+	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(cachedFleet.rebuilt)
+end
+
+local function fleetSig()
+	cachedFleet.steps = cachedFleet.steps + 1
+	if cachedFleet.vehiclesSig == nil or cachedFleet.vehiclesBatch ~= result.batch or cachedFleet.steps % SIG_EVERY == 0 then
+		cachedFleet.vehiclesSig, cachedFleet.vehiclesBatch = vehiclesSig(), result.batch
+	end
+	return cachedFleet.vehiclesSig .. ":" .. tostring(result.batch) .. ":" .. tostring(result.ok + result.failed)
 end
 
 local function windowFleet(sig)
