@@ -7,6 +7,9 @@ local builtin = ug_require "::/gui/main/builtin.lua"
 local gui_react_util = ug_require "::/gui/main/gui_react_util.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local okGlobals, game_react_globals = pcall(ug_require, "::/gui/main/game_react_globals.tl")
+-- vehicle stats (#16): the purchase window's own data collection and the game's collapsible card. Missing: no details.
+local okStore, vehicle_store_util = pcall(ug_require, "::/gui/line_vehicle_mgmt/vehicle_store_util.tl")
+local okCard, content_card = pcall(ug_require, "::/gui/main/content_card.tl")
 
 local WINDOW_KEY = "mass_vehicle_replace.window"
 local CT = api.type.ComponentType
@@ -828,6 +831,191 @@ local function bigPicture(i)
 	return builtin.Component{ meta = { class = "mvr-big-image" } }
 end
 
+-- Vehicle stats (#16) ---------------------------------------------------------------------------------
+-- Collapsible "Details" card below the window, collapsed by default. Values come from the purchase window's own
+-- data collection: vehicle_store_util.makeVehicleData(repId, isMultipleUnit) (vehicle_store_util.tl:785-797) sums
+-- or picks per part like the store (collectVehicleData, vehicle_store_util.tl:122-391), so a multiple unit counts
+-- as the whole unit, like in the store. Model metadata does not change during a game, so each model is read once;
+-- the card's body is only built while it is expanded (content_card.tl:362-386), so collapsed costs nothing.
+local statsCache = {} -- key -> VehicleData, or false when unreadable
+
+local function statsOf(i)
+	if not (i and okStore and type(vehicle_store_util) == "table") then return nil end
+	local c = statsCache[i.key]
+	if c == nil then
+		local ok, d = pcall(vehicle_store_util.makeVehicleData, i.id, i.mu == true)
+		c = (ok and d) or false
+		if not ok then log("stats unreadable", tostring(i.key), tostring(d)) end
+		statsCache[i.key] = c
+	end
+	return c or nil
+end
+
+-- a field of the game's data that can be shown: a finite number (speed is math.huge without parts)
+local function statValue(d, field)
+	if not d then return nil end
+	local ok, v = pcall(function() return d[field] end)
+	if ok and type(v) == "number" and v == v and v > -math.huge and v < math.huge then return v end
+	return nil
+end
+
+-- like mathutil.mapClamp, which the store uses for its bars (vehicle_store_window.tl:574-588)
+local function mapClamp(v, a, b, lo, hi)
+	if b == a then return lo end
+	local t = math.max(0, math.min(1, (v - a) / (b - a)))
+	return lo + t * (hi - lo)
+end
+
+local function formatted(fn, v)
+	local ok, s = pcall(fn, v)
+	if ok and type(s) == "string" then return s end
+	return string.format("%.0f", v)
+end
+
+-- the units the store uses for each stat (vehicle_store_window.tl:497-623, 117-124)
+local function fmtSpeed(v) return formatted(function(x) return api.util.formatSpeed(x) end, v) end
+local function fmtPower(v) return formatted(function(x) return api.util.formatPower(x) end, v) end
+local function fmtForce(v) return formatted(function(x) return api.util.formatForce(x) end, v) end
+local function fmtWeight(v) return formatted(function(x) return api.util.formatWeight(x) end, v) end
+local function fmtLoad(v) return string.format("%.1fx", v) end
+local function fmtCount(v) return string.format("%.0f", v) end
+
+-- Rows in the order of the store. higher: true if a higher value is better. optional: the row only shows if one of
+-- the two models has a value above 0 (the store hides tractive effort, thrust and power the same way).
+-- rating: shown as a word ("Good") from the carrier's range for the current year, like the store's noise,
+-- pollution and comfort (vehicle_store_window.tl:552-598, vehicle_store_util.tl:393-406); inverted for emissions.
+local STATS = {
+	{ label = "mvr_stat_capacity", field = "totalCapacity", fmt = fmtCount, higher = true, optional = true },
+	{ label = "mvr_stat_speed", field = "speed", fmt = fmtSpeed, higher = true },
+	{ label = "mvr_stat_loading", field = "loadingSpeed", fmt = fmtLoad, higher = true, optional = true },
+	{ label = "mvr_stat_power", field = "power", fmt = fmtPower, higher = true, optional = true },
+	{ label = "mvr_stat_tractive", field = "tractiveEffort", fmt = fmtForce, higher = true, optional = true },
+	{ label = "mvr_stat_thrust", field = "thrust", fmt = fmtForce, higher = true, optional = true },
+	{ label = "mvr_stat_weight", field = "weight", fmt = fmtWeight, higher = false },
+	{ label = "mvr_stat_running", field = "runningCosts", fmt = function(v) return money(v) end, higher = false },
+	{ label = "mvr_stat_noise", field = "noise", rating = "noiseScoreRange", inverted = true },
+	{ label = "mvr_stat_pollution", field = "pollution", rating = "pollutionScoreRange", inverted = true },
+	{ label = "mvr_stat_comfort", field = "comfortFactor", rating = "comfortScoreRange", optional = true },
+}
+
+-- like the store's formatDelta (vehicle_store_window.tl:24-32, local there): "+" or "-" and the formatted
+-- difference; nothing when equal
+local function delta(new, old, fmt)
+	if new == old then return "" end
+	if new > old then return "+" .. fmt(new - old) end
+	return "-" .. fmt(old - new)
+end
+
+-- the carrier's ranges for the rating words; the store passes its carrier and year (vehicle_store_window.tl:1773-1777)
+local function rangesFor(d, carrier, year)
+	if not (d and carrier ~= nil) then return nil end
+	local ok, r = pcall(vehicle_store_util.getRangesFromData, d, carrier, year)
+	return ok and r or nil
+end
+
+local function ratingOf(v, ranges, s)
+	if v == nil or not ranges then return nil end
+	local ok, pct = pcall(function()
+		local r = ranges[s.rating]
+		if s.inverted then return mapClamp(v, r[1], r[2], 1, 0) end
+		return mapClamp(v, r[1], r[2], 0, 1)
+	end)
+	if not ok or type(pct) ~= "number" then return nil end
+	local okText, word = pcall(vehicle_store_util.goodnessToTextString, pct)
+	return pct, okText and type(word) == "string" and word or nil
+end
+
+-- one row: { label, old, new, change, better }; better: true, false or nil (equal or not comparable)
+local function statRow(s, oldData, newData, ranges)
+	local o, n = statValue(oldData, s.field), statValue(newData, s.field)
+	if s.optional and not ((o or 0) > 0 or (n or 0) > 0) then return nil end
+	if o == nil and n == nil then return nil end
+	if s.rating then
+		local po, wo = ratingOf(o, ranges, s)
+		local pn, wn = ratingOf(n, ranges, s)
+		if not (wo or wn) then return nil end
+		local better = nil
+		if po and pn and po ~= pn then better = pn > po end
+		return { label = _(s.label), old = wo or "-", new = wn or "-", change = "", better = better }
+	end
+	local better, change = nil, ""
+	if o and n then
+		change = delta(n, o, s.fmt)
+		if n ~= o then better = (n > o) == s.higher end
+	end
+	return { label = _(s.label), old = o and s.fmt(o) or "-", new = n and s.fmt(n) or "-", change = change, better = better }
+end
+
+-- rows for the selected models; carrier from the fleet (the vehicle component's carrier, like the store's)
+local function statRows(altInfo, neuInfo, carrier, year)
+	local oldData, newData = statsOf(altInfo), statsOf(neuInfo)
+	if not (oldData or newData) then return {} end
+	-- one range for both, like the store's comparison (both bars on the ranges of the shown vehicle)
+	local ranges = rangesFor(newData or oldData, carrier, year)
+	local rows = {}
+	for __, s in ipairs(STATS) do
+		local ok, r = pcall(statRow, s, oldData, newData, ranges)
+		if ok and r then rows[#rows + 1] = r elseif not ok then log("stat row failed", s.label, tostring(r)) end
+	end
+	return rows
+end
+
+local function statCell(s, class)
+	return builtin.TextView{ meta = { class = class }, text = s }
+end
+
+-- half of the table: header and rows in a TableLayout (columns label, old, new, change)
+local function statTable(rows)
+	local ANN = "font-scale-annotation"
+	local list = { builtin.Row{ cells = {
+		statCell(" ", ANN), statCell(_("mvr_stat_old"), ANN), statCell(_("mvr_stat_new"), ANN), statCell(_("mvr_stat_change"), ANN),
+	} } }
+	for __, r in ipairs(rows) do
+		-- the game's global text colors for better and worse (default.css.lua "!positive", "!negative")
+		local mark = r.better == true and ", positive" or r.better == false and ", negative" or ""
+		list[#list + 1] = builtin.Row{ cells = {
+			statCell(r.label, "font-scale-body"),
+			statCell(r.old, "font-scale-body"),
+			-- ratings have no difference: their new word carries the color instead
+			statCell(r.new, "font-scale-body" .. (r.change == "" and mark or "")),
+			statCell(r.change, "font-scale-body" .. (r.change ~= "" and mark or "")),
+		} }
+	end
+	return builtin.Component{
+		meta = { class = "mvr-stats-half" },
+		layout = builtin.TableLayout{ meta = { class = "mvr-stats" }, columnWeights = { 3, 2, 2, 2 }, rows = list },
+	}
+end
+
+-- body of the card: two halves side by side, like the store's stats table (left and right column), so the
+-- expanded card stays about half as tall
+local MvrStats = react.RegisterRecipe("MvrStats", function(p)
+	local rows = statRows(p.alt, p.neu, p.carrier, p.year)
+	if #rows == 0 then
+		return builtin.BoxLayout{ children = { text(_("mvr_stat_none")) } }
+	end
+	local half = math.ceil(#rows / 2)
+	local left, right = {}, {}
+	for k, r in ipairs(rows) do
+		if k <= half then left[#left + 1] = r else right[#right + 1] = r end
+	end
+	return builtin.BoxLayout{
+		orientation = builtin.type.Orientation.Horizontal,
+		children = { statTable(left), builtin.Component{ meta = { class = "mvr-mid" } }, statTable(right) },
+	}
+end)
+
+-- the card itself; nil without the game's card module or without an old model
+local function detailsCard(altInfo, neuInfo, carrier, year, expanded, setExpanded)
+	if not (altInfo and okCard and type(content_card) == "table" and okStore and type(vehicle_store_util) == "table") then return nil end
+	return builtin.BoxLayout{ child = content_card.ContentCard{
+		title = _("mvr_details"),
+		recipeAndParamCollapsible = content_card.makeRecipeAndParam(MvrStats, { alt = altInfo, neu = neuInfo, carrier = carrier, year = year }),
+		collapsibleExpanded = expanded,
+		setCollapsibleExpanded = setExpanded,
+	} }
+end
+
 -- vehicle types with the icons of the vehicle management; nil = all
 local CARRIERS = {}
 for __, c in ipairs({
@@ -915,7 +1103,8 @@ end
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- selection in the window; lives outside the recipe so every opening starts fresh
-local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true }
+-- details: the stats card is expanded (#16); collapsed at first, then kept for the session like the sorting
+local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = false }
 
 local function topBar(update)
 	local children = {}
@@ -1147,6 +1336,10 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			button,
 		}),
 	}
+	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
+	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,
+		function(v) update(function() sel.details = v == true end) end)
+	if details then children[#children + 1] = details end
 
 	-- a recipe must return a layout, not a component
 	return builtin.BoxLayout{ children = {

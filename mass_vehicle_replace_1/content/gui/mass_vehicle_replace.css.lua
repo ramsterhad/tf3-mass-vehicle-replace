@@ -11,6 +11,7 @@ local ITEM_TEXT = 290
 local CARGO_ICON = 18
 local CARGO_ROW = ITEM_IMAGE[1] + 8 + ITEM_TEXT
 local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits centered below it
+local STATS_HALF = CELL - 20
 
 local function fixed(w, h)
 	return {
@@ -68,6 +69,15 @@ function data()
 	})
 	a("!mvr-content", {
 		gravity = { 0, 0 },
+	})
+
+	-- vehicle stats (#16): two halves of a fixed width below the two columns. The game's card around them takes
+	-- 3 + 3 + 3 px on each side (content_card.css.lua: collapse margin, card-collapsible padding, card-margin-inner
+	-- margin), so 2 x 420 + MID stays inside the window width and expanding does not widen it.
+	a("!mvr-stats-half", with(fixed(STATS_HALF), { gravity = { 0, 0 } }))
+	-- the game's spacing values: 8 between columns, 2 between rows like its entity window tables (entity_window.css.lua:623-626)
+	a("TableLayout!mvr-stats", {
+		innerSpacing = { 8, 2 },
 	})
 
 	a("!mvr-gap", fixed(10, 8))

@@ -42,7 +42,23 @@
 		"mvr_n_parts_1": "1 car",
 		"mvr_replace_some": "Replace %d of %d",
 		"mvr_replace_some_tip": "The money does not cover all of them: replaces only as many as it covers now, oldest first. Each vehicle (a whole train) is replaced completely.",
-		"mvr_replaced_partial": "Replaced: %d of %d, the money covered no more"
+		"mvr_replaced_partial": "Replaced: %d of %d, the money covered no more",
+		"mvr_details": "Details",
+		"mvr_stat_old": "Old",
+		"mvr_stat_new": "New",
+		"mvr_stat_change": "Change",
+		"mvr_stat_none": "No data for these models.",
+		"mvr_stat_capacity": "Capacity",
+		"mvr_stat_speed": "Top speed",
+		"mvr_stat_loading": "Loading speed",
+		"mvr_stat_power": "Power",
+		"mvr_stat_tractive": "Tractive effort",
+		"mvr_stat_thrust": "Thrust",
+		"mvr_stat_weight": "Weight",
+		"mvr_stat_running": "Running costs/year",
+		"mvr_stat_noise": "Noise",
+		"mvr_stat_pollution": "Pollution",
+		"mvr_stat_comfort": "Comfort"
 	},
 	"de": {
 		"mvr_title": "Mass Vehicle Replace",
@@ -87,6 +103,22 @@
 		"mvr_n_parts_1": "1-teilig",
 		"mvr_replace_some": "%d von %d ersetzen",
 		"mvr_replace_some_tip": "Das Geld reicht nicht für alle: ersetzt nur so viele, wie es jetzt deckt, die ältesten zuerst. Jedes Fahrzeug (ein ganzer Zug) wird vollständig ersetzt.",
-		"mvr_replaced_partial": "Ersetzt: %d von %d, mehr deckte das Geld nicht"
+		"mvr_replaced_partial": "Ersetzt: %d von %d, mehr deckte das Geld nicht",
+		"mvr_details": "Details",
+		"mvr_stat_old": "Alt",
+		"mvr_stat_new": "Neu",
+		"mvr_stat_change": "Änderung",
+		"mvr_stat_none": "Keine Daten zu diesen Modellen.",
+		"mvr_stat_capacity": "Kapazität",
+		"mvr_stat_speed": "Höchsttempo",
+		"mvr_stat_loading": "Ladetempo",
+		"mvr_stat_power": "Leistung",
+		"mvr_stat_tractive": "Zugkraft",
+		"mvr_stat_thrust": "Schub",
+		"mvr_stat_weight": "Gewicht",
+		"mvr_stat_running": "Betriebskosten/Jahr",
+		"mvr_stat_noise": "Lärm",
+		"mvr_stat_pollution": "Verschmutzung",
+		"mvr_stat_comfort": "Komfort"
 	}
 }
