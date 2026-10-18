@@ -39,7 +39,10 @@
 		"mvr_n_mus": "%d multiple units",
 		"mvr_n_mus_1": "1 multiple unit",
 		"mvr_n_parts": "%d cars",
-		"mvr_n_parts_1": "1 car"
+		"mvr_n_parts_1": "1 car",
+		"mvr_replace_some": "Replace %d of %d",
+		"mvr_replace_some_tip": "Replaces only the vehicles the money covers now, oldest first. Each vehicle (a whole train) is replaced completely.",
+		"mvr_replaced_partial": "Replaced: %d of %d, the money covered no more"
 	},
 	"de": {
 		"mvr_title": "Mass Vehicle Replace",
@@ -81,6 +84,9 @@
 		"mvr_n_mus": "%d Triebzüge",
 		"mvr_n_mus_1": "1 Triebzug",
 		"mvr_n_parts": "%d-teilig",
-		"mvr_n_parts_1": "1-teilig"
+		"mvr_n_parts_1": "1-teilig",
+		"mvr_replace_some": "%d von %d ersetzen",
+		"mvr_replace_some_tip": "Ersetzt nur so viele Fahrzeuge, wie das Geld jetzt reicht, die ältesten zuerst. Jedes Fahrzeug (ein ganzer Zug) wird vollständig ersetzt.",
+		"mvr_replaced_partial": "Ersetzt: %d von %d, mehr deckte das Geld nicht"
 	}
 }

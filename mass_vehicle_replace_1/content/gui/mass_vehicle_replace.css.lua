@@ -72,6 +72,14 @@ function data()
 
 	a("!mvr-gap", fixed(10, 8))
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
+	-- the "replace what the money covers" button left of the main one (#23); 8 apart like the game's rows
+	a("Window!mvr-window BoxLayout!mvr-buttons", {
+		innerSpacing = { 8, 0 },
+		gravity = { 1, 0.5 },
+	})
+	a("Window!mvr-window Button!mvr-some-btn", {
+		gravity = { 1, 0.5 },
+	})
 	a("Window!mvr-window Button!mvr-replace-btn", {
 		gravity = { 1, 0.5 },
 		minSize = { 140, 0 },

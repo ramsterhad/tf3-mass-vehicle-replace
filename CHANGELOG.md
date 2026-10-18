@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- When the money does not cover the whole replacement, a second button "Replace 7 of 8" appears next to the disabled "Not enough money" button (#23). It replaces only the vehicles the balance covers now, oldest first; each vehicle (a whole train) is replaced completely or not at all. The result line says how many of all were replaced. Replacing all or nothing stays the default.
+
 ### Changed
 
 - With infinite money (sandbox mode, "no costs") the window no longer shows the cost line, like the game hides the balance in the depot window (#20). The prices in the model list stay.

@@ -337,7 +337,7 @@ end
 -- come a frame later (api/tealdef/api/cmd.d.tl:2-10); until then the vehicles still look unchanged, so a
 -- second batch would replace the same vehicles again. Like the game (engine_react_util.tl:36-55, 66-98) we
 -- count pending callbacks for as long as the window is open; batch tells callbacks of an earlier window apart.
-local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "" }
+local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "", total = nil }
 
 local function pending()
 	return result.sent > result.ok + result.failed
@@ -412,6 +412,8 @@ local function updateText()
 		return
 	end
 	local s = string.format(_("mvr_replaced"), result.ok, result.sent)
+	-- partial (#23): of all vehicles with the old model, not only of those sent
+	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced_partial"), result.ok, result.total) end
 	if result.failed > 0 then s = s .. string.format(_("mvr_failed"), result.failed) end
 	result.text = s
 end
@@ -531,23 +533,74 @@ end
 -- its "Modify" mode, which keeps some parts of a vehicle, also charges the kept parts at getPartPrice
 -- (vehicle_store_window.tl:3758-3768). Per vehicle: residual value minus the value of the parts that stay.
 -- A vehicle with an unreadable value credits nothing: it counts at the full price of its new parts.
+local function creditOf(use, key)
+	-- the window reads this every step, so a vehicle may be gone since fleet() saw it; the game also checks
+	-- its vehicles before valuing them (vehicle_store_window.tl:3496-3503). Gone: nothing to credit.
+	local okE, exists = pcall(api.engine.entityExists, use.vehicle)
+	local credit = okE and exists and readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle) or nil
+	for j, part in ipairs(use.parts) do
+		if credit and use.keys[j] ~= key then
+			local kept = readValue(api.engine.util.vehicle.getPartPrice, part)
+			credit = kept and credit - kept or nil
+		end
+	end
+	-- may be below 0 when the kept parts are worth more than the vehicle: the game charges that too
+	return credit or 0
+end
+
 local function residual(e, key)
 	local sum = 0
-	for __, use in ipairs(e and e.uses or {}) do
-		-- the window reads this every step, so a vehicle may be gone since fleet() saw it; the game also checks
-		-- its vehicles before valuing them (vehicle_store_window.tl:3496-3503). Gone: nothing to credit.
-		local okE, exists = pcall(api.engine.entityExists, use.vehicle)
-		local credit = okE and exists and readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle) or nil
-		for j, part in ipairs(use.parts) do
-			if credit and use.keys[j] ~= key then
-				local kept = readValue(api.engine.util.vehicle.getPartPrice, part)
-				credit = kept and credit - kept or nil
-			end
-		end
-		-- may be below 0 when the kept parts are worth more than the vehicle: the game charges that too
-		if credit then sum = sum + credit end
-	end
+	for __, use in ipairs(e and e.uses or {}) do sum = sum + creditOf(use, key) end
 	return sum
+end
+
+-- Replacing only as many vehicles as the balance covers (#23). A vehicle (a whole train) is replaced completely
+-- or not at all; oldest first, by the purchase time of its oldest part; the cost of a vehicle is the price of its
+-- new units minus its credit, by the same rule as the whole batch.
+local function unitsIn(use, key, altInfo)
+	local n = 0
+	for j = 1, #use.parts do if use.keys[j] == key then n = n + 1 end end
+	-- a multiple unit is one unit with several parts (fleet() counts its groups the same way)
+	if altInfo and altInfo.mu then n = n / math.max(1, #altInfo.parts) end
+	return n
+end
+
+local function purchasedAt(use)
+	local oldest = math.huge
+	for __, part in ipairs(use.parts) do
+		-- tostring first: an engine value need not be a Lua number (lesson of #10)
+		local ok, t = pcall(function() return tonumber(tostring(part.purchaseTime)) end)
+		if ok and t and t < oldest then oldest = t end
+	end
+	return oldest
+end
+
+-- the vehicles of entry e the balance covers: set of vehicle ids, their number and the cost
+local function affordablePart(e, key, altInfo, neuInfo, funds)
+	local list = {}
+	for __, use in ipairs(e and e.uses or {}) do
+		list[#list + 1] = { vehicle = use.vehicle, age = purchasedAt(use),
+			cost = neuInfo.price * unitsIn(use, key, altInfo) - creditOf(use, key) }
+	end
+	table.sort(list, function(a, b)
+		if a.age ~= b.age then return a.age < b.age end
+		return a.vehicle < b.vehicle
+	end)
+	local picked, n, sum = {}, 0, 0
+	for __, x in ipairs(list) do
+		-- stop at the first vehicle the rest of the money does not cover, so the oldest go first
+		if sum + x.cost > funds then break end
+		sum = sum + x.cost
+		picked[x.vehicle] = true
+		n = n + 1
+	end
+	return picked, n, sum
+end
+
+local function balance()
+	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	if ok and type(funds) == "number" then return funds end
+	return nil
 end
 
 local function gameTime()
@@ -567,8 +620,9 @@ local function shownCost()
 	return shown.cost
 end
 
--- Replaces alt with neu in every vehicle; the other parts stay as they are.
-local function replaceAll(altKey, neuKey)
+-- Replaces alt with neu in every vehicle; the other parts stay as they are. partial: only the vehicles the balance
+-- covers right now (#23), an explicit choice next to the disabled button; otherwise all or nothing.
+local function replaceAll(altKey, neuKey, partial)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if pending() then return end
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
@@ -579,13 +633,27 @@ local function replaceAll(altKey, neuKey)
 		return
 	end
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
+	-- partial: decided once, with the balance read now and a fresh fleet
+	local only, total = nil, nil
+	if partial then
+		local funds = balance()
+		if funds == nil then return end -- infinite or unreadable money: the normal button covers it
+		local e = fleet()[altKey]
+		local n
+		only, n = affordablePart(e, altKey, altInfo, neuInfo, funds)
+		if n == 0 then
+			result.text = _("mvr_not_enough_money")
+			return
+		end
+		total = e and #e.uses or n
+	end
 	-- build all first: either every vehicle is replaced or none, like the purchase window
 	local jobs, units = {}, 0
 	for __, v in ipairs(ownVehicles()) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		local conf, n = nil, 0
-		if cfg then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
+		if cfg and (only == nil or only[v]) then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
 			jobs[#jobs + 1] = { entity = v, conf = conf }
 			units = units + n
@@ -593,13 +661,13 @@ local function replaceAll(altKey, neuKey)
 	end
 	-- checked again here: the balance may have changed since the window was drawn; residual value by the
 	-- same rule as the window
-	if not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
+	if not partial and not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
 		result.text = _("mvr_not_enough_money")
 		return
 	end
 	-- counters are reset only here, right before sending: a refused click leaves the previous batch alone
 	local batch = result.batch
-	result.sent, result.ok, result.failed = 0, 0, 0
+	result.sent, result.ok, result.failed, result.total = 0, 0, 0, total
 	for __, job in ipairs(jobs) do
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
@@ -980,6 +1048,17 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
 	engine_react_util.useStepStateTimer(function() return enoughMoney(shownCost()) end, 0.5)
 	local affordable = enoughMoney(cost)
+	-- not enough for all (#23): how many the balance covers, oldest first. Read when drawing (like the cost line, so
+	-- a new selection never shows the number of the last one); the timer only redraws when it changes, twice a second
+	local function someCount()
+		if not (shown.e and neuInfo) or enoughMoney(shownCost()) then return 0 end
+		local funds = balance()
+		if funds == nil then return 0 end
+		local __, n = affordablePart(shown.e, shown.key, altInfo, neuInfo, funds)
+		return n
+	end
+	engine_react_util.useStepStateTimer(someCount, 0.5)
+	local some = (not affordable and e and neuInfo) and someCount() or 0
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
 	local busy = pending()
@@ -1042,8 +1121,31 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		end,
 	}
 
+	-- next to the disabled button: replace only what the balance covers (#23); all or nothing stays the default
+	local someButton = nil
+	if some > 0 and not busy then
+		someButton = builtin.Button{
+			meta = {
+				class = "secondary, mvr-some-btn",
+				tooltip = _("mvr_replace_some_tip"),
+			},
+			content = text(string.format(_("mvr_replace_some"), some, e.vehicles)),
+			onClick = function()
+				if not (altInfo and neuInfo) then return end
+				local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key, true)
+				if not ok then
+					result.text = _("mvr_error") .. " " .. tostring(err)
+					log("error", tostring(err))
+				end
+				update(function() sel.alt, sel.neu = nil, nil end)
+			end,
+		}
+	end
+
 	local summaryLines = {}
 	for k, line in ipairs(summary) do summaryLines[k] = text(line) end
+	local buttons = { button }
+	if someButton then buttons = { someButton, button } end
 
 	local children = {
 		topBar(update),
@@ -1055,7 +1157,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		row({
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
 			gui_react_util.makeHorizontalSpacer(),
-			button,
+			builtin.BoxLayout{ meta = { class = "mvr-buttons" }, orientation = builtin.type.Orientation.Horizontal, children = buttons },
 		}),
 	}
 
@@ -1107,7 +1209,7 @@ local function openWindow(carrier)
 	result.text = ""
 	-- a new window starts without pending commands, like the game's counter that lives with its component
 	result.batch = result.batch + 1
-	result.sent, result.ok, result.failed = 0, 0, 0
+	result.sent, result.ok, result.failed, result.total = 0, 0, 0, nil
 	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("opening window failed", tostring(err)) end

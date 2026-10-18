@@ -1082,6 +1082,37 @@ check(bankBalance == 487999, "balance changed without a replacement")
 t = content("too little money, after click")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nicht genug Geld" end) == 1, "no message after the refused click")
 
+print("== Replace as many as the money covers (issue #23)")
+local function someButton(tt)
+	return find(tt, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-some%-btn") end)[1]
+end
+t = chooseKasten("partial, 487999", 487999)
+check(someButton(t) ~= nil and buttonText(someButton(t)) == "7 von 8 ersetzen",
+	"partial: 487999 covers 7 trucks: " .. tostring(someButton(t) and buttonText(someButton(t))))
+-- 200000 covers 3 trucks at 61000; truck 115 is the oldest, the rest by id
+vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+t = chooseKasten("partial", 200000)
+check(replaceButton(t).props.meta.enabled == false, "partial: main button not disabled")
+local some = someButton(t)
+check(some and buttonText(some) == "3 von 8 ersetzen", "partial: button text " .. tostring(some and buttonText(some)))
+sent = {}
+some.props.onClick()
+local partialIds = {}
+for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
+table.sort(partialIds)
+check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
+t = content("partial, after the click")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8, mehr deckte das Geld nicht" end) == 1, "partial: result line")
+check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
+vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
+-- not even one truck: no partial button; enough for all: none either
+t = chooseKasten("partial, too poor", 60999)
+check(someButton(t) == nil, "partial: button although not one truck is covered")
+t = chooseKasten("partial, rich", 488000)
+check(someButton(t) == nil, "partial: button although the money covers all")
+t = chooseKasten("partial, infinite", nil)
+check(someButton(t) == nil, "partial: button with infinite money")
+
 t = chooseKasten("exactly enough", 488000)
 check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
 check(buttonText(replaceButton(t)) == "Ersetzen", "button text with enough money: " .. tostring(buttonText(replaceButton(t))))
