@@ -336,19 +336,26 @@ end
 
 -- Fleet of the window (#10): reading every vehicle on every redraw is the expensive part, so the window keeps the
 -- last fleet and builds it again only when the player's vehicles change. fleetSig is cheap enough for every step
--- (ids only, no components) and redraws the window when a vehicle is bought, sold or handed to another player.
--- The ids may stay the same when vehicles are rebuilt, so the callbacks of our own batch count as a change too.
--- Not seen: a vehicle changed in the game's own Modify window while ours is open (same id); reopening shows it.
+-- (ids and revision numbers, no components) and redraws the window when a vehicle is bought, sold, handed to
+-- another player or rebuilt. A rebuilt vehicle keeps its id; api.engine.getRevision (api/tealdef/api/engine.d.tl
+-- getRevision) tells it: measured in the game 18.10.2026, num[2] changed only when vehicles were replaced in the
+-- game's own vehicle window (11 -> 21), num[1] never, num[3] counts up while a vehicle drives (so it is left out).
+-- The callbacks of our own batch count as a change too, in case the revision is read before the change shows.
 local cachedFleet = { sig = nil, byKey = nil }
+local function revisionOf(v)
+	local ok, r = pcall(api.engine.getRevision, v)
+	return ok and type(r) == "table" and type(r.num) == "table" and tonumber(r.num[2]) or 0
+end
 local function fleetSig()
 	local ids = ownVehicles()
 	-- order-free, so a different order of the same vehicles is no change
-	local sum, squares = 0, 0
+	local sum, squares, revisions = 0, 0, 0
 	for __, v in ipairs(ids) do
 		sum = sum + v
 		squares = (squares + v * v) % 2147483647
+		revisions = (revisions + revisionOf(v) * (v % 1000 + 1)) % 2147483647
 	end
-	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(result.batch) .. ":" ..
+	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(revisions) .. ":" .. tostring(result.batch) .. ":" ..
 		tostring(result.ok + result.failed)
 end
 

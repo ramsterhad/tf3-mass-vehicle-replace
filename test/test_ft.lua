@@ -224,6 +224,7 @@ local mus = {
 }
 
 local vehicles = {}
+local revisions = {} -- num[2] of api.engine.getRevision per vehicle
 -- groups: nil = each part its own group; otherwise { {size, file name}, ... } like in the game
 local function vehicle(id, parts, groups)
 	local list = {}
@@ -236,6 +237,8 @@ local function vehicle(id, parts, groups)
 		for i = 1, #parts do sizes[i], paths[i] = 1, "" end
 	end
 	vehicles[id] = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
+	-- like the game (measured 18.10.2026): num[2] changes when a vehicle is rebuilt, num[3] while it drives
+	revisions[id] = (revisions[id] or 10) + 1
 end
 vehicle(100, { 1, 2, 2, 2, 3 })
 vehicle(101, { 1, 2, 2, 6 })
@@ -337,6 +340,10 @@ api = {
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
+		getRevision = function(e)
+			gameTimeDrives = (gameTimeDrives or 0) + 1 -- num[3] counts up all the time
+			return { num = { 1, revisions[e] or 10, gameTimeDrives } }
+		end,
 		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
 			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
@@ -938,11 +945,13 @@ print("== List is built afresh after replacing")
 openAndRender("train depot 7", 500, true)
 t = content("before swap")
 local keyBefore = combos(t)[1].props.meta.localKey
--- like after a swap: train 106 now runs with Roter Pfeil instead of M-300. The id stays, so the window sees it
--- when it is opened again (or with the callbacks of its own batch, see issue #10 below), not on a plain redraw.
+-- like after a swap in the game's own vehicle window: train 106 now runs with Roter Pfeil instead of M-300.
+-- The id stays, the revision changes (issue #10), so the open window sees it on the next step.
 local saved = vehicles[106]
 vehicle(106, { 61 })
-openAndRender("train depot 7, reopened", 500, true)
+local redraw = false
+for _i, st in ipairs(stepStates) do if st.f() ~= st.v then redraw = true end end
+check(redraw, "window not redrawn after a vehicle was rebuilt with the same id")
 t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
 check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")

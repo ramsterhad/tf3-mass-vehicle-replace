@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The window now notices when vehicles are bought, sold or handed to another player while it is open, and updates the count (#10). It also no longer reads the whole fleet again on every redraw, only when the fleet changes.
+- The window now notices when vehicles are bought, sold, handed to another player or rebuilt in the game's own vehicle window while it is open, and updates the count (#10). It also no longer reads the whole fleet again on every redraw, only when the fleet changes.
 
 ## [1.0.3] - 2026-10-17
 
