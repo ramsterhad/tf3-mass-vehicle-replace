@@ -1123,6 +1123,21 @@ local foreignSent = false
 for _i, c in ipairs(sent) do if c.e == 130 then foreignSent = true end end
 check(#sent == 8 and not foreignSent, "foreign truck replaced or commands missing: " .. #sent)
 
+print("== Infinite money: no cost line (issue #20)")
+residuals = {}
+for v = 110, 117 do residuals[v] = 1000 end
+t = chooseKasten("infinite money", nil)
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "infinite money: count missing")
+local moneyLines = find(t, function(n) return n.kind == "TextView" and type(n.props.text) == "string" and (n.props.text:find("^Kaufpreis") or n.props.text:find("^Kosten")) end)
+-- the price per model in the list stays, like the game's purchase list
+check(#moneyLines == 0, "infinite money: cost line shown: " .. tostring(moneyLines[1] and moneyLines[1].props.text))
+check(replaceButton(t).props.meta.enabled == true, "infinite money: button disabled")
+local readsInfinite = residualReads
+gameTimeNow = gameTimeNow + 1
+for _i, st in ipairs(stepStates) do st.f() end
+check(residualReads == readsInfinite, "infinite money: residual values read although no cost is shown")
+residuals = {}
+
 print("== New model expires while the window is open (issue #3)")
 bankBalance = nil
 openAndRender("expiring model", 501, true)
