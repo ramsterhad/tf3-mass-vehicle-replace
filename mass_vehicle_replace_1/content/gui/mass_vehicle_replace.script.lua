@@ -411,10 +411,18 @@ local function updateText()
 		result.text = _("mvr_none_found")
 		return
 	end
+	-- the result shows once, when the game has answered every command (user decision 19.10.2026); until then
+	-- the button says "Replacing ..." and no half-counted line like "0 of 8" appears
+	if pending() then
+		result.text = ""
+		return
+	end
 	local s = string.format(_("mvr_replaced"), result.ok, result.sent)
 	-- partial (#23): of all vehicles with the old model, not only of those sent
 	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced_partial"), result.ok, result.total) end
-	if result.failed > 0 then s = s .. string.format(_("mvr_failed"), result.failed) end
+	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
+	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
+	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
 	result.text = s
 end
 
