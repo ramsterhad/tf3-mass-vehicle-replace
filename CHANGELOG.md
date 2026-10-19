@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Replacement queue (#23, stage 2): when the money does not cover all vehicles, a box "Queue the other n, replace as money comes in" appears above the warning line. With it ticked, the yellow button replaces what the balance covers now and queues the rest, oldest first; with nothing affordable it says "Queue 8". The queue replaces one vehicle about every second of real time as soon as the balance minus a reserve covers the next one, also while the game is paused. It is kept in the savegame and survives saving, a restart and loading.
+- "Queue …" button in the replace window opens the queue window: reserve (stays on the account), "Paused", a status line, one card per job with "Open / Replaced / Skipped" (the skipped reasons in the tooltip), the next vehicle's cost and what is short, "Cancel" per job and "Cancel all" with the game's confirmation dialog.
+- "Queued n" next to the game's earnings in the bottom bar while vehicles are waiting (tooltip tells where the queue is).
+- Each queued vehicle is checked right before its command is sent: sold or handed to another player, entity id reused, or already carrying the new model (replaced by hand) is skipped and counted; a new model that is no longer for sale or unknown (mod removed) blocks only that job, the jobs behind it go on. A command the game refuses three times drops the vehicle; a command without an answer for 10 s is resolved by looking at the vehicle. Five Lua errors in a row pause the queue and the window says so.
+
 ## [1.1.0] - 2026-10-19
 
 ### Added

@@ -938,11 +938,18 @@ local function writeSaveData()
 	if not ok then log("settings not saved", tostring(err)) else savedRaw = data end
 end
 
-local function openCount()
-	ensureLoaded()
+-- open vehicles in memory only: safe inside a timed step state (those run as deferred steps with a restricted
+-- api, react.lua:525-534), so it never reads the savegame; the host loads the queue when it mounts
+local function queuedNow()
+	if not queue.loaded then return 0 end
 	local n = 0
 	for __, j in ipairs(queue.jobs) do n = n + #j.open end
 	return n
+end
+
+local function openCount()
+	ensureLoaded()
+	return queuedNow()
 end
 
 local function jobById(id)
@@ -1243,7 +1250,7 @@ if not MvrQueueHost then log("mod entry point not available, queue host disabled
 
 Queue.loadKept, Queue.ensureLoaded, Queue.writeSaveData, Queue.openCount, Queue.jobById = loadKept, ensureLoaded, writeSaveData, openCount, jobById
 Queue.enqueue, Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused = enqueue, removeJob, cancelAll, setReserve, setPaused
-Queue.num, Queue.host = num, MvrQueueHost
+Queue.num, Queue.host, Queue.queuedNow = num, MvrQueueHost, queuedNow
 end
 
 -- Replaces alt with neu in every vehicle; the other parts stay as they are. partial: only the vehicles the balance
@@ -2141,8 +2148,8 @@ local function jobSig(j)
 		j.cost and num(j.cost) or "", j.short and num(j.short) or "" }, ":")
 end
 
+-- memory only (runs in a timed step state, see queuedNow); the content recipe loads the queue before it renders
 local function queueSig()
-	ensureLoaded()
 	local parts = { queue.paused and "p" or "r", num(queue.reserve), queue.foreign and "f" or "", queue.lastError or "",
 		queue.inflight and num(queue.inflight.entity) or "" }
 	for __, j in ipairs(queue.jobs) do parts[#parts + 1] = jobSig(j) end
@@ -2324,7 +2331,7 @@ local MvrQueueBar = okBar and type(game_bar_widgets) == "table" and game_bar_wid
 			return ok and v == true
 		end)
 		-- the count is two Lua numbers; the recipe redraws only when it changes
-		local countState = engine_react_util.useStepStateTimer(openCount, 0.5)
+		local countState = engine_react_util.useStepStateTimer(Queue.queuedNow, 0.5)
 		if isMapEditorRef:get() then return nil end
 		local n = countState:old()
 		if n == 0 then return builtin.BoxLayout{ children = {} } end
