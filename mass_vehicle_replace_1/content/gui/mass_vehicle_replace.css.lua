@@ -11,6 +11,7 @@ local ITEM_TEXT = 290
 local CARGO_ICON = 18
 local CARGO_ROW = ITEM_IMAGE[1] + 8 + ITEM_TEXT
 local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits centered below it
+local STATS_HALF = CELL - 20
 
 local function fixed(w, h)
 	return {
@@ -70,6 +71,15 @@ function data()
 		gravity = { 0, 0 },
 	})
 
+	-- vehicle stats (#16): two halves of a fixed width below the two columns. The game's card around them takes
+	-- 3 + 3 + 3 px on each side (content_card.css.lua: collapse margin, card-collapsible padding, card-margin-inner
+	-- margin), so 2 x 420 + MID stays inside the window width and expanding does not widen it.
+	a("!mvr-stats-half", with(fixed(STATS_HALF), { gravity = { 0, 0 } }))
+	-- the game's spacing values: 8 between columns, 2 between rows like its entity window tables (entity_window.css.lua:623-626)
+	a("TableLayout!mvr-stats", {
+		innerSpacing = { 8, 2 },
+	})
+
 	a("!mvr-gap", fixed(10, 8))
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
 	a("Window!mvr-window Button!mvr-replace-btn", {
@@ -86,6 +96,20 @@ function data()
 			Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money:hover]], {
 			backgroundColor1 = colors.Error,
 		})
+	end
+	-- money for some, not all (#23): yellow, the game's warning color with dark text on it, like its speed warning
+	-- (entity_window.css.lua "R::SpeedIndicator TextView!warning": Warning background, NeutralDarkest text)
+	if okColors and colors and colors.Warning then
+		a([[Window!mvr-window Button!mvr-partial!mvr-partial!mvr-partial,
+			Window!mvr-window Button!mvr-partial!mvr-partial!mvr-partial:hover]], {
+			backgroundColor1 = colors.Warning,
+		})
+		if colors.NeutralDarkest then
+			a([[Window!mvr-window Button!mvr-partial TextView,
+				Window!mvr-window Button!mvr-partial ImageView]], {
+				color = colors.NeutralDarkest,
+			})
+		end
 	end
 
 	a("Window!mvr-window ToggleButton!mvr-filter", {

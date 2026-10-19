@@ -7,6 +7,10 @@ local SCRIPT, CSS, STRINGS = arg[1], arg[2], arg[3]
 local failures, checks = 0, 0
 local function fail(msg) failures = failures + 1; print("FAIL: " .. msg) end
 local function check(cond, msg) checks = checks + 1; if not cond then fail(msg) end end
+-- per-node rules of every rendered tree (layout gaps, CSS classes, entry shapes): they fail like checks but are not
+-- counted one by one, else every render adds ~1000 "checks" and the total says nothing (review 18.10.2026)
+local renders = 0
+local function invariant(cond, msg) if not cond then fail(msg) end end
 
 -- Translations -----------------------------------------------------------------------------------------
 local strings = dofile(STRINGS)
@@ -25,7 +29,7 @@ end
 local bankBalance = 5000000
 
 -- builtin: every call returns a node -------------------------------------------------------------------
-local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true }
+local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true, TableLayout = true }
 local builtin = setmetatable({
 	type = {
 		Orientation = { Horizontal = "H", Vertical = "V" },
@@ -109,6 +113,14 @@ local engine_react_util = { useStepState = function(f)
 	stepStates[#stepStates + 1] = { f = f, v = v }
 	return { old = function() return v end }
 end }
+-- the timed variant (engine_react_util.tl:126-157) runs every interval seconds instead of every step; a step of the
+-- mock stands for one tick of it, and the interval must be the game's default or shorter
+engine_react_util.useStepStateTimer = function(f, interval)
+	assert(interval == nil or interval <= 0.5, "useStepStateTimer interval above 0.5 s")
+	local st = engine_react_util.useStepState(f)
+	stepStates[#stepStates].timer = true
+	return st
+end
 local spacerOrig = function() return { kind = "Spacer", props = {} } end
 local gui_react_util = { makeHorizontalSpacer = spacerOrig }
 local windows = {}
@@ -121,8 +133,48 @@ local MaintenanceStationWindow = makeRecipe("MaintenanceStationWindow", function
 recipeIds[MaintenanceStationWindow] = "MaintenanceStationWindow"
 originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:MaintenanceStationWindow", props = params } end
 
+-- Minimal fake of the three vehicle_store_util functions the stats card calls (#16), nothing else of the module.
+-- makeVehicleData(repId, isMultipleUnit) returns the game's VehicleData, a plain Lua table built by game Lua code
+-- (vehicle_store_util.tl:122-391); here only the fields the card reads, per "m<id>" / "u<id>". A model without an
+-- entry throws, like the game's code does on a model with missing metadata.
+local storeStats, storeCalls = {}, {}
+local vehicle_store_util = {
+	makeVehicleData = function(repId, mu)
+		assert(type(mu) == "boolean", "makeVehicleData: second argument must be a boolean")
+		local key = (mu and "u" or "m") .. tostring(repId)
+		storeCalls[#storeCalls + 1] = key
+		local d = storeStats[key]
+		if d == nil then error("attempt to index field 'metadata' (a nil value)") end
+		local copy = {}
+		for k, v in pairs(d) do copy[k] = v end
+		return copy
+	end,
+	-- the game looks the carrier up in a table keyed by the enum (vehicle_util.tl:210-260); another form fails there
+	getRangesFromData = function(d, carrier, year)
+		assert(type(d) == "table" and type(year) == "number", "getRangesFromData: bad arguments")
+		local known = false
+		for _k, v in pairs(api.type.enum.Carrier) do if v == carrier then known = true end end
+		if not known then error("bad argument #1 to 'ipairs' (table expected, got nil)") end
+		return { noiseScoreRange = { 0, 1 }, pollutionScoreRange = { 0, 1 }, comfortScoreRange = { 0, 1 }, loadSpeedScoreRange = { 0.5, 10 } }
+	end,
+	-- vehicle_store_util.tl:393-406
+	goodnessToTextString = function(v)
+		if v < 0 then return "" elseif v < 0.2 then return "Sehr schlecht" elseif v < 0.4 then return "Schlecht"
+		elseif v < 0.6 then return "Mittel" elseif v < 0.8 then return "Gut" end
+		return "Sehr gut"
+	end,
+}
+-- the game's card (content_card.tl:207-455): renders its collapsible part only while expanded; the mock keeps
+-- the params so the test can expand it and render the body itself
+local content_card = {
+	ContentCard = makeRecipe("ContentCard", function() return builtin.BoxLayout{} end),
+	makeRecipeAndParam = function(recipe, param) return { recipe = recipe, param = param } end,
+}
+
 local modules = {
 	["::/gui/main/react.lua"] = react,
+	["::/gui/line_vehicle_mgmt/vehicle_store_util.tl"] = vehicle_store_util,
+	["::/gui/main/content_card.tl"] = content_card,
 	["::/gui/main/builtin.lua"] = builtin,
 	["::/gui/main/gui_react_util.tl"] = gui_react_util,
 	["::/gui/main/engine_react_util.tl"] = engine_react_util,
@@ -237,7 +289,28 @@ local mus = {
 	[904] = { name = "ET 404", filterTags = { "default" }, vehicles = { { name = "vehicle/56.mdl", forward = true }, { name = "vehicle/57.mdl", forward = true }, { name = "vehicle/56.mdl", forward = false } } },
 }
 
+-- Engine records are userdata in the game, not tables (tf3-sdk knowledge/api-value-types.md; game test 18.10.2026:
+-- a type(r) == "table" check on getRevision passed in a table mock and failed in the game). A file handle with its
+-- own metatable is real userdata in Lua 5.2: type() says "userdata", pairs/next/table.* fail like on the engine's.
+-- Only declared fields can be set, like "Could not assign value to userdata".
+local function engineRecord(name, real, onRead)
+	local u = io.tmpfile()
+	debug.setmetatable(u, {
+		__index = function(_u, k)
+			if onRead then onRead(k) end
+			return real[k]
+		end,
+		__newindex = function(_u, k, v)
+			if real[k] == nil then error("Could not assign value to userdata '" .. tostring(k) .. "' (" .. name .. ")") end
+			real[k] = v
+		end,
+		__pairs = function() error("pairs on userdata " .. name) end,
+		__tostring = function() return "userdata: " .. name end,
+	})
+	return u
+end
 local vehicles = {}
+local fleetBuildReads = 0 -- carrier reads of vehicles: only a fleet build reads them (#10)
 -- groups: nil = each part its own group; otherwise { {size, file name}, ... } like in the game
 local function vehicle(id, parts, groups)
 	local list = {}
@@ -249,7 +322,11 @@ local function vehicle(id, parts, groups)
 	else
 		for i = 1, #parts do sizes[i], paths[i] = 1, "" end
 	end
-	vehicles[id] = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
+	-- carrier is read when the fleet is built (an entry per model), not by the cheap per-step part check (#10)
+	local real = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
+	vehicles[id] = engineRecord("TransportVehicle", real, function(k)
+		if k == "carrier" then fleetBuildReads = fleetBuildReads + 1 end
+	end)
 end
 vehicle(100, { 1, 2, 2, 2, 3 })
 vehicle(101, { 1, 2, 2, 6 })
@@ -287,6 +364,7 @@ local costPerCommand = 560000
 -- commands waiting for the next simulation step; holdSteps keeps them waiting (game paused, slow step)
 local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
+local refused = {}
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
 local residualReads, deadReads = 0, 0
@@ -372,18 +450,26 @@ api = {
 			end } },
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
-	util = { formatMoney = function(v) return "$" .. tostring(v) end },
+	util = { formatMoney = function(v) return "$" .. tostring(v) end,
+		-- units as documented in api/tealdef/api/util.d.tl:36-96 (m/s, kW, kN, t)
+		formatSpeed = function(v) return string.format("%.0f km/h", v * 3.6) end,
+		formatPower = function(v) return string.format("%.0f kW", v) end,
+		formatForce = function(v) return string.format("%.0f kN", v) end,
+		formatWeight = function(v) return string.format("%.1f t", v) end,
+	},
 	cmd = {
 		makeVehicleReplaceCmd = function(e, conf) return { e = e, conf = conf } end,
 		-- like the game in the GUI state (api/tealdef/api/cmd.d.tl:2-10): the command runs in the next
 		-- simulation step and its callback comes a frame later; step() below plays that out.
-		-- Each executed command books a fixed amount.
+		-- Each executed command books a fixed amount, whatever the balance: measured 19.10.2026, the game carries out
+		-- a replace it cannot pay for and lets the balance go negative (tf3-sdk knowledge/vehicles.md).
+		-- refused[e]: the game answers this vehicle's command with success == false (cmd.d.tl callback).
 		sendCommand = function(c, cb)
 			if throwAtCommand and #sent + 1 == throwAtCommand then error("command rejected") end
 			sent[#sent + 1] = c
 			queuedCommands[#queuedCommands + 1] = function()
 				if bankBalance then bankBalance = bankBalance - costPerCommand end
-				if cb then cb(c, commandSucceeds, {}) end
+				if cb then cb(c, commandSucceeds and not refused[c.e], {}) end
 			end
 		end,
 	},
@@ -421,43 +507,47 @@ local function walk(node, path, visit)
 	if p.children then
 		local n = 0
 		for k in pairs(p.children) do if type(k) == "number" and k > n then n = k end end
-		check(n == #p.children, path .. ": child list with a gap (nil) in " .. node.kind)
+		invariant(n == #p.children, path .. ": child list with a gap (nil) in " .. node.kind)
 		for i = 1, n do walk(p.children[i], path .. "/" .. node.kind .. "[" .. i .. "]", visit) end
 	end
 	for _k, key in ipairs({ "child", "content", "layout" }) do
 		if p[key] then walk(p[key], path .. "/" .. node.kind .. "." .. key, visit) end
 	end
 	if p.items then for i, it in ipairs(p.items) do walk(it, path .. "/items[" .. i .. "]", visit) end end
+	-- TableLayout rows and their cells
+	if p.rows then for i, r in ipairs(p.rows) do walk(r, path .. "/rows[" .. i .. "]", visit) end end
+	if p.cells then for i, c in ipairs(p.cells) do walk(c, path .. "/cells[" .. i .. "]", visit) end end
 end
 
 local function rules(tree, label)
+	renders = renders + 1
 	check(tree and tree.kind == "BoxLayout", label .. ": recipe must return a layout, returns " .. tostring(tree and tree.kind))
 	walk(tree, label, function(n, path)
 		local p = n.props or {}
 		local cls = p.meta and p.meta.class
 		if cls then
 			for c in tostring(cls):gmatch("mvr%-[%w%-]+") do
-				check(cssClasses[c], path .. ": CSS class missing: " .. c)
+				invariant(cssClasses[c], path .. ": CSS class missing: " .. c)
 			end
 		end
-		check(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
+		invariant(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
 			path .. ": makeStyle only knows size; minSize/maxSize/gravity/padding have no effect")
 		if n.kind == "ComboBoxItem" then
-			check(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
+			invariant(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
 		elseif n.kind == "ComboBox" then
-			check(p.items and #p.items > 0, path .. ": ComboBox without entries")
-			check(p.meta and type(p.meta.localKey) == "string" and p.meta.localKey:find("combo:" .. tostring(p.value) .. "|", 1, true) == 1,
+			invariant(p.items and #p.items > 0, path .. ": ComboBox without entries")
+			invariant(p.meta and type(p.meta.localKey) == "string" and p.meta.localKey:find("combo:" .. tostring(p.value) .. "|", 1, true) == 1,
 				path .. ": ComboBox without a localKey for its value (the display would not update after changes)")
 			local found = false
 			for _i, it in ipairs(p.items or {}) do if it.props.value == p.value then found = true end end
-			check(found, path .. ": ComboBox value " .. tostring(p.value) .. " is not an entry (the display would be empty)")
+			invariant(found, path .. ": ComboBox value " .. tostring(p.value) .. " is not an entry (the display would be empty)")
 		elseif n.kind == "Component" and p.layout then
-			check(LAYOUTS[p.layout.kind], path .. ": Component.layout must be a layout")
+			invariant(LAYOUTS[p.layout.kind], path .. ": Component.layout must be a layout")
 		elseif n.kind == "ImageView" then
-			check(type(p.path) == "string" and p.path ~= "", path .. ": ImageView without path")
+			invariant(type(p.path) == "string" and p.path ~= "", path .. ": ImageView without path")
 		elseif n.kind == "TextView" then
-			check(type(p.text) == "string", path .. ": TextView without text")
-			check(not tostring(p.text):find("\n"), path .. ": line break in text: " .. tostring(p.text))
+			invariant(type(p.text) == "string", path .. ": TextView without text")
+			invariant(not tostring(p.text):find("\n"), path .. ": line break in text: " .. tostring(p.text))
 		end
 	end)
 end
@@ -492,7 +582,7 @@ local function sameShapes(tree, label)
 		for _i, it in ipairs(c.props.items) do
 			local s = shapeOf(it)
 			shape = shape or s
-			check(s == shape, label .. ": entries built differently:\n  " .. shape .. "\n  " .. s)
+			invariant(s == shape, label .. ": entries built differently:\n  " .. shape .. "\n  " .. s)
 		end
 	end
 end
@@ -951,9 +1041,15 @@ print("== List is built afresh after replacing")
 openAndRender("train depot 7", 500, true)
 t = content("before swap")
 local keyBefore = combos(t)[1].props.meta.localKey
--- like after a swap: train 106 now runs with Roter Pfeil instead of M-300
+-- like after a swap in the game's own vehicle window: train 106 now runs with Roter Pfeil instead of M-300.
+-- The id stays (issue #10); the window compares the parts of its vehicles in turn and sees it on the next step.
 local saved = vehicles[106]
 vehicle(106, { 61 })
+local redraw = false
+for _s = 1, 6 do -- the window checks its vehicles only every few steps (SIG_EVERY in the script)
+	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then redraw = true end end
+end
+check(redraw, "window not redrawn after a vehicle was rebuilt with the same id")
 t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
 check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")
@@ -1058,7 +1154,8 @@ local function chooseKasten(label, b)
 end
 costPerCommand = 61000
 
-t = chooseKasten("too little money", 487999)
+-- not one truck covered (one truck costs 61000): the red, disabled button; partly covered see issue #23 below
+t = chooseKasten("too little money", 60999)
 local btnPoor = replaceButton(t)
 check(btnPoor.props.meta.enabled == false, "button not disabled without enough money")
 check(btnPoor.props.meta.class:find("mvr-no-money", 1, true) ~= nil, "button without mvr-no-money class")
@@ -1068,13 +1165,52 @@ local function buttonText(btn)
 	local tv = find(btn, function(n) return n.kind == "TextView" end)
 	return tv[1] and tv[1].props.text
 end
+-- the money covers the whole replacement: the plain enabled "Ersetzen" (one short: "n von m" or "Nicht genug Geld", #23)
+local function fullyCovered(btn)
+	return btn.props.meta.enabled == true and buttonText(btn) == "Ersetzen"
+end
 check(buttonText(btnPoor) == "Nicht genug Geld", "button text without enough money: " .. tostring(buttonText(btnPoor)))
 sent = {}
 btnPoor.props.onClick() -- the game ignores clicks on disabled buttons; the click itself checks again anyway
 check(#sent == 0, "replaced without enough money: " .. #sent)
-check(bankBalance == 487999, "balance changed without a replacement")
+check(bankBalance == 60999, "balance changed without a replacement")
 t = content("too little money, after click")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nicht genug Geld" end) == 1, "no message after the refused click")
+
+print("== Replace as many as the money covers (issue #23)")
+-- not enough for all: the main button itself says "7 von 8 ersetzen", yellow (mvr-partial), enabled
+t = chooseKasten("partial, 487999", 487999)
+local partBtn = replaceButton(t)
+check(buttonText(partBtn) == "7 von 8 ersetzen", "partial: button text " .. tostring(buttonText(partBtn)))
+check(partBtn.props.meta.enabled == true, "partial: button disabled")
+check(partBtn.props.meta.tooltip == "Nicht genug Geld: Es werden nur 7 von 8 ersetzt (älteste zuerst).", "partial: tooltip " .. tostring(partBtn.props.meta.tooltip))
+check(partBtn.props.meta.class:find("mvr-partial", 1, true) and not partBtn.props.meta.class:find("mvr-no-money", 1, true), "partial: class " .. partBtn.props.meta.class)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "7 Fahrzeuge werden ersetzt." end) == 1, "partial: count line does not match the button")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Kosten nach Restwert: $427000" end) == 1, "partial: cost line does not match the button")
+-- 200000 covers 3 trucks at 61000; truck 115 is the oldest, the rest by id
+vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+t = chooseKasten("partial", 200000)
+partBtn = replaceButton(t)
+check(buttonText(partBtn) == "3 von 8 ersetzen", "partial: button text " .. tostring(buttonText(partBtn)))
+sent = {}
+partBtn.props.onClick()
+local partialIds = {}
+for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
+table.sort(partialIds)
+check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
+t = content("partial, after the click")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8" end) == 1, "partial: result line")
+check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
+vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
+-- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
+-- money for exactly one truck: the tooltip uses its singular text
+t = chooseKasten("partial, one", 61000)
+check(buttonText(replaceButton(t)) == "1 von 8 ersetzen", "partial, one: button text " .. tostring(buttonText(replaceButton(t))))
+check(replaceButton(t).props.meta.tooltip == "Nicht genug Geld: Es wird nur 1 von 8 ersetzt (das älteste).", "partial, one: tooltip " .. tostring(replaceButton(t).props.meta.tooltip))
+t = chooseKasten("partial, too poor", 60999)
+check(buttonText(replaceButton(t)) == "Nicht genug Geld" and replaceButton(t).props.meta.enabled == false, "partial: not one truck covered")
+t = chooseKasten("partial, rich", 488000)
+check(buttonText(replaceButton(t)) == "Ersetzen", "partial: money covers all")
 
 t = chooseKasten("exactly enough", 488000)
 check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
@@ -1116,6 +1252,21 @@ replaceButton(t).props.onClick()
 local foreignSent = false
 for _i, c in ipairs(sent) do if c.e == 130 then foreignSent = true end end
 check(#sent == 8 and not foreignSent, "foreign truck replaced or commands missing: " .. #sent)
+
+print("== Infinite money: no cost line (issue #20)")
+residuals = {}
+for v = 110, 117 do residuals[v] = 1000 end
+t = chooseKasten("infinite money", nil)
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "infinite money: count missing")
+local moneyLines = find(t, function(n) return n.kind == "TextView" and type(n.props.text) == "string" and (n.props.text:find("^Kaufpreis") or n.props.text:find("^Kosten")) end)
+-- the price per model in the list stays, like the game's purchase list
+check(#moneyLines == 0, "infinite money: cost line shown: " .. tostring(moneyLines[1] and moneyLines[1].props.text))
+check(replaceButton(t).props.meta.enabled == true, "infinite money: button disabled")
+local readsInfinite = residualReads
+gameTimeNow = gameTimeNow + 1
+for _i, st in ipairs(stepStates) do st.f() end
+check(residualReads == readsInfinite, "infinite money: residual values read although no cost is shown")
+residuals = {}
 
 print("== New model expires while the window is open (issue #3)")
 bankBalance = nil
@@ -1162,6 +1313,8 @@ check(#sent == 8, "second click on the same button sent again: " .. #sent)
 t = content("double click, redrawn")
 check(replaceButton(t).props.meta.enabled == false, "button enabled while the batch is running")
 check(buttonText(replaceButton(t)) == "Wird ersetzt …", "button text while running: " .. tostring(buttonText(replaceButton(t))))
+-- no half-counted result while the game has not answered yet: the line shows once, at the end
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("Ersetzt:", 1, true) end) == 0, "result line shown before the game answered")
 combos(t)[2].props.onValueChange("m11") -- the user picks the new model again
 t = content("double click, chosen again")
 replaceButton(t).props.onClick()
@@ -1179,9 +1332,25 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "failing commands: 8 sent expected, " .. #sent)
 holdSteps = false
 t = content("failing commands, step done")
-check(hasText(t, "Ersetzt: 0 von 8, Fehler: 8"), "failure count not shown")
+check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)"), "failure count not shown")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
 commandSucceeds = true
+
+print("== Refused commands are told apart from the vehicles skipped for money")
+step()
+refused[113] = true
+t = chooseKasten("one refused", nil)
+replaceButton(t).props.onClick()
+t = content("one refused, done")
+check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "one refused: result line")
+-- partial: 3 trucks planned (200000 covers 3 x 61000), one of them refused
+refused[113], refused[110] = nil, true
+t = chooseKasten("partial, one refused", 200000)
+replaceButton(t).props.onClick()
+t = content("partial, one refused, done")
+check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
+refused = {}
+bankBalance = nil
 
 print("== A command that throws does not leave the button stuck (issue #9)")
 -- review finding on #28: counted before sending, a throwing command never got its callback
@@ -1223,15 +1392,19 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 8, "price minus residual covered: 8 commands expected, " .. #sent)
 t = chooseKasten("residual, one short", 479999)
-check(replaceButton(t).props.meta.enabled == false, "button enabled one short of price minus residual")
+check(not fullyCovered(replaceButton(t)), "button enabled one short of price minus residual")
 sent = {}
 replaceButton(t).props.onClick()
-check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
+check(#sent < 8, "replaced all one short of price minus residual: " .. #sent)
 
 print("== The cost follows the residual value while the game runs (issue #26)")
 -- in-game 17.10.2026: the line was read, the game ran on, the charge was 5120 higher
+-- several steps: the window checks its vehicles only every few steps (#10, SIG_EVERY in the script)
+local STEPS_PER_CHECK = 6
 local function wouldRedraw()
-	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	for _s = 1, STEPS_PER_CHECK do
+		for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	end
 	return false
 end
 residuals = {}
@@ -1239,6 +1412,15 @@ for v = 110, 117 do residuals[v] = 1000 end
 t = chooseKasten("live cost", 5000000)
 check(hasText(t, "Kosten nach Restwert: $480000"), "live cost: cost line")
 check(not wouldRedraw(), "live cost: redraw without any change")
+-- reading every residual value is heavy (1450 trucks in a game test): only timed step states may do it
+do
+	gameTimeNow = gameTimeNow + 1
+	for _i, st in ipairs(stepStates) do
+		local before = residualReads
+		st.f()
+		check(residualReads == before or st.timer, "live cost: an every-step state reads residual values")
+	end
+end
 for v = 110, 117 do residuals[v] = 900 end -- the trucks aged
 local reads = residualReads
 check(not wouldRedraw(), "live cost: redraw while paused")
@@ -1289,10 +1471,10 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 3, "partly replaced trains, exactly enough: 3 commands expected, " .. #sent)
 t = chooseBr103("partly replaced, one short", 3849999)
-check(replaceButton(t).props.meta.enabled == false, "partly replaced trains: button enabled one short")
+check(not fullyCovered(replaceButton(t)), "partly replaced trains: button enabled one short")
 sent = {}
 replaceButton(t).props.onClick()
-check(#sent == 0, "partly replaced trains replaced one short: " .. #sent)
+check(#sent < 3, "partly replaced trains: all replaced one short: " .. #sent)
 
 print("== Kept parts worth more than the vehicle's residual value cost extra, like the game (issue #26)")
 residuals, partValues = {}, {}
@@ -1302,7 +1484,7 @@ t = chooseBr103("kept parts worth more", 5000000)
 check(hasText(t, "Kosten nach Restwert: $5000000"), "kept parts worth more: cost line")
 check(replaceButton(t).props.meta.enabled == true, "kept parts worth more: button disabled with enough money")
 t = chooseBr103("kept parts worth more, one short", 4999999)
-check(replaceButton(t).props.meta.enabled == false, "kept parts worth more: button enabled below the game's cost")
+check(not fullyCovered(replaceButton(t)), "kept parts worth more: button enabled below the game's cost")
 
 print("== Part value unreadable: that vehicle counts at the full price (issue #26)")
 partlyReplacedValues()
@@ -1310,7 +1492,7 @@ partValueThrows = true
 t = chooseBr103("part value unreadable", 4500000)
 check(priceText(t) == "Kaufpreis: $4500000", "part value unreadable: price line " .. tostring(priceText(t)))
 t = chooseBr103("part value unreadable, one short", 4499999)
-check(replaceButton(t).props.meta.enabled == false, "part value unreadable: credited although the kept parts are unknown")
+check(not fullyCovered(replaceButton(t)), "part value unreadable: credited although the kept parts are unknown")
 -- vehicles without kept parts do not need a part value: the trucks still get their residual value
 for v = 110, 117 do residuals[v] = 1000 end
 t = chooseKasten("part value unreadable, whole trucks", 480000)
@@ -1321,13 +1503,13 @@ partValue(102, 2, 0 / 0) -- nan: train 102 counts at the full price, 107 and 108
 t = chooseBr103("part value nan", 4250000)
 check(replaceButton(t).props.meta.enabled == true, "part value nan: the other trains lost their credit")
 t = chooseBr103("part value nan, one short", 4249999)
-check(replaceButton(t).props.meta.enabled == false, "part value nan: train 102 credited anyway")
+check(not fullyCovered(replaceButton(t)), "part value nan: train 102 credited anyway")
 partlyReplacedValues()
 partValue(107, 2, -1); partValue(108, 2, math.huge) -- 107 and 108 count at the full price, 102 credits 400000
 t = chooseBr103("part value negative and infinite", 4100000)
 check(replaceButton(t).props.meta.enabled == true, "part value negative/infinite: train 102 lost its credit")
 t = chooseBr103("part value negative and infinite, one short", 4099999)
-check(replaceButton(t).props.meta.enabled == false, "part value negative/infinite: trains 107 or 108 credited anyway")
+check(not fullyCovered(replaceButton(t)), "part value negative/infinite: trains 107 or 108 credited anyway")
 
 print("== A train with an unknown multiple unit: its parts stay and are charged (issue #26)")
 -- the multiple unit's mod is missing: rebuild keeps the group, so it counts as kept like any other part
@@ -1342,7 +1524,7 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 4, "unknown multiple unit: 4 commands expected, " .. #sent)
 t = chooseBr103("unknown multiple unit, one short", 4849999)
-check(replaceButton(t).props.meta.enabled == false, "unknown multiple unit: its parts were not charged")
+check(not fullyCovered(replaceButton(t)), "unknown multiple unit: its parts were not charged")
 vehicles[140] = nil
 
 print("== Multiple units: whole and partly replaced trains (issue #26)")
@@ -1367,7 +1549,7 @@ t = chooseEt423("multiple units, enough", 4900000) -- 3 units x 2200000 - 100000
 check(hasText(t, "Kosten nach Restwert: $4900000"), "multiple units: cost line missing")
 check(replaceButton(t).props.meta.enabled == true, "multiple units: residual value not counted")
 t = chooseEt423("multiple units, one short", 4899999)
-check(replaceButton(t).props.meta.enabled == false, "multiple units: the kept wagon was not charged")
+check(not fullyCovered(replaceButton(t)), "multiple units: the kept wagon was not charged")
 -- an ET 420 end car standing alone is a single model, not the multiple unit: not replaced, not credited
 vehicle(141, { 50 })
 residuals[141] = 5000000
@@ -1379,13 +1561,22 @@ check(#sent == 2, "loose multiple unit car: 2 commands expected, " .. #sent)
 vehicles[141] = nil
 residuals, partValues = {}, {}
 
+print("== Residual value above the price: proceeds, not a negative cost")
+-- 8 trucks worth 100000 each, replaced for 61000 each: the player gets 312000 back
+for v = 110, 117 do residuals[v] = 100000 end
+t = chooseKasten("proceeds", 0)
+check(hasText(t, "Erlös nach Restwert: $312000"), "proceeds: line missing")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("$-", 1, true) end) == 0, "proceeds: negative amount shown")
+check(replaceButton(t).props.meta.enabled == true, "proceeds: button disabled with a balance of 0")
+residuals = {}
+
 print("== Residual value unreadable counts as none (issue #26)")
 residualThrows = true
 t = chooseKasten("residual unreadable, full price", 488000)
 check(replaceButton(t).props.meta.enabled == true, "residual unreadable: button disabled with the full price")
 check(priceText(t) == "Kaufpreis: $488000", "residual unreadable: price line " .. tostring(priceText(t)))
 t = chooseKasten("residual unreadable, one short", 487999)
-check(replaceButton(t).props.meta.enabled == false, "residual unreadable: button enabled below the full price")
+check(not fullyCovered(replaceButton(t)), "residual unreadable: button enabled below the full price")
 residualThrows = false
 -- nan, negative and infinite values count as none (review finding: only the error path was tested)
 for v = 110, 117 do residuals[v] = 1000 end
@@ -1394,7 +1585,7 @@ t = chooseKasten("odd residual values", 483000) -- 488000 - 5 x 1000
 check(replaceButton(t).props.meta.enabled == true, "odd residual values: button disabled with price minus the valid residual")
 check(hasText(t, "Kosten nach Restwert: $483000"), "odd residual values: cost line")
 t = chooseKasten("odd residual values, one short", 482999)
-check(replaceButton(t).props.meta.enabled == false, "odd residual values: button enabled one short")
+check(not fullyCovered(replaceButton(t)), "odd residual values: button enabled one short")
 residuals = {}
 step()
 bankBalance = 5000000
@@ -1455,6 +1646,144 @@ local typeB = preselectedAfterClick(barB, "second depot window")
 check(typeB == "Straße: Busse und Lkw", "button of the second depot window opens another depot: " .. tostring(typeB))
 if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
 
+print("== Fleet changes while the window is open (issue #10)")
+-- seen in the game: a vehicle bought or handed to another player while the window was open left the count stale
+t = chooseKasten("fleet change", 5000000)
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: start count")
+check(not wouldRedraw(), "fleet change: redraw without any change")
+local readsBefore = fleetBuildReads
+t = content("fleet change, unchanged")
+check(fleetBuildReads == readsBefore, "fleet change: fleet rebuilt on a redraw without changes")
+vehicle(118, { 10 }) -- bought
+check(wouldRedraw(), "fleet change: window not redrawn after a purchase")
+t = content("fleet change, bought")
+check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: count after a purchase")
+owners[118] = 99 -- handed to another player (makeEntitySetPlayerCmd)
+check(wouldRedraw(), "fleet change: window not redrawn after a handover")
+t = content("fleet change, handed over")
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: count after a handover")
+owners[118] = nil
+vehicles[118] = nil
+-- reopened right after a change, before the throttled vehicle check ran: the new window must not show the old fleet
+t = chooseKasten("fleet change, reopen 1", 5000000)
+vehicle(118, { 10 })
+t = chooseKasten("fleet change, reopen 2", 5000000)
+check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: reopened window shows the fleet of the last one")
+vehicles[118] = nil
+t = chooseKasten("fleet change, reopen 3", 5000000)
+-- our own batch: the vehicles keep their ids, the callbacks make the window read the fleet again
+t = content("fleet change, before replacing")
+replaceButton(t).props.onClick() -- the click itself reads the vehicles; count only the redraw after it
+step() -- the commands run, their callbacks arrive
+readsBefore = fleetBuildReads
+check(wouldRedraw(), "fleet change: window not redrawn after the callbacks of our own batch")
+t = content("fleet change, replaced")
+check(fleetBuildReads > readsBefore, "fleet change: fleet not read again after our own batch")
+step()
+
+print("== Vehicle stats of old and new model (issue #16)")
+storeStats.m10 = { totalCapacity = 10, speed = 60 / 3.6, loadingSpeed = 1, power = 50, tractiveEffort = 20, thrust = 0,
+	weight = 3, runningCosts = 5000, noise = 0.6, pollution = 0.6, comfortFactor = 0 }
+storeStats.m11 = { totalCapacity = 12, speed = 70 / 3.6, loadingSpeed = 1, power = 60, tractiveEffort = 20, thrust = 0,
+	weight = 3.5, runningCosts = 6000, noise = 0.4, pollution = 0.6, comfortFactor = 0 }
+storeCalls = {}
+local function detailsCardOf(tt)
+	local cards = find(tt, function(n) return n.kind == "recipe:ContentCard" end)
+	return cards[1] and cards[1].props, #cards
+end
+-- the body the game renders inside the card while it is expanded
+local function detailsBody(card, label)
+	local rp = card and card.recipeAndParamCollapsible
+	check(rp and rp.recipe and rp.recipe.name == "MvrStats", label .. ": card without the stats body")
+	if not (rp and rp.recipe) then return { kind = "BoxLayout", props = {} } end
+	local body = render(rp.recipe.name, rp.param)
+	rules(body, label .. " body")
+	return body
+end
+-- the cells of every table row, as text lists
+local function statLines(body)
+	local lines = {}
+	for _i, tl in ipairs(find(body, function(n) return n.kind == "TableLayout" end)) do
+		for _j, r in ipairs(tl.props.rows) do
+			local cells = {}
+			for k, c in ipairs(r.props.cells) do cells[k] = c end
+			lines[#lines + 1] = cells
+		end
+	end
+	return lines
+end
+local function lineOf(body, label)
+	for _i, cells in ipairs(statLines(body)) do if cells[1].props.text == label then return cells end end
+	return nil
+end
+local function classOf(cell) return tostring(cell and cell.props.meta and cell.props.meta.class) end
+
+t = chooseKasten("stats", 5000000)
+local card, nCards = detailsCardOf(t)
+check(nCards == 1, "stats: one details card expected, found " .. nCards)
+check(card and card.title == "Details", "stats: card title")
+check(card and card.collapsibleExpanded == false, "stats: card must be collapsed by default")
+check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
+local stepStatesCollapsed = #stepStates
+-- expand like the game's arrow button does
+card.setCollapsibleExpanded(true)
+t = content("stats expanded")
+card = detailsCardOf(t)
+check(card and card.collapsibleExpanded == true, "stats: card does not stay expanded")
+check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
+local body = detailsBody(card, "stats expanded")
+check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
+local speedLine = lineOf(body, "Höchsttempo")
+check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
+check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
+local weightLine = lineOf(body, "Gewicht")
+check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
+local costLine = lineOf(body, "Betriebskosten/Jahr")
+check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
+local tractiveLine = lineOf(body, "Zugkraft")
+check(tractiveLine and tractiveLine[4].props.text == "" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative"), "stats: equal values without difference or color")
+local noiseLine = lineOf(body, "Lärm")
+-- emissions are inverted: less noise is better, shown as the game's rating words
+check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
+check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
+check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
+local readsExpanded = #storeCalls
+check(readsExpanded == 2, "stats: each model read once: " .. table.concat(storeCalls, ","))
+detailsBody(detailsCardOf(content("stats again")), "stats again")
+check(#storeCalls == readsExpanded, "stats: redraw read the vehicle data again")
+check(not wouldRedraw(), "stats: expanded card makes the window redraw on its own")
+
+-- new model without data (the game's code throws): old values stay, no crash, no difference
+combos(content("stats missing"))[2].props.onValueChange("m13")
+t = content("stats missing new")
+body = detailsBody(detailsCardOf(t), "stats missing new")
+speedLine = lineOf(body, "Höchsttempo")
+check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "-" and speedLine[4].props.text == "", "stats: missing new data must show a dash")
+
+-- a vehicle type without any data and no new model: the card says so
+openAndRender("stats tram", 502, true)
+t = content("stats tram")
+card = detailsCardOf(t)
+check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
+body = detailsBody(card, "stats tram")
+check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+
+-- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
+storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
+storeStats.u901 = { totalCapacity = 240, speed = 140 / 3.6, power = 2400, weight = 170, runningCosts = 110000 }
+bankBalance = 10000000
+openAndRender("stats mu", 500, true)
+combos(content("stats mu"))[1].props.onValueChange("u900")
+combos(content("stats mu old"))[2].props.onValueChange("u901")
+body = detailsBody(detailsCardOf(content("stats mu new")), "stats mu")
+local capLine = lineOf(body, "Kapazität")
+check(capLine and capLine[2].props.text == "100" and capLine[3].props.text == "240" and capLine[4].props.text == "+140", "stats: multiple unit capacity per unit")
+-- collapsing again hides the body
+card = detailsCardOf(content("stats mu collapse"))
+card.setCollapsibleExpanded(false)
+check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
+if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+
 print("== Robust against mods that overwrite the module field")
 -- fresh copy of the mod without the other mod's replacement in front of it
 local savedReplace, savedField = _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar
@@ -1475,5 +1804,5 @@ check(okLoad, "doReplace fails when ActionButtonBar is not a recipe")
 check(_react.recipeReplace.ActionButtonBar == nil, "a plain function was passed to ReplaceRecipe")
 _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar = savedReplace, savedField
 
-print(string.format("\n%d checks, %d errors", checks, failures))
+print(string.format("\n%d checks, %d errors (plus the per-node rules on %d rendered trees)", checks, failures, renders))
 os.exit(failures == 0 and 0 or 1)

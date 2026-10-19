@@ -29,7 +29,7 @@ I recommend saving your game before using the mod for the first time. The mod on
 
 ## Feedback
 
-Bugs and ideas are welcome as [issues](https://github.com/ramsterhad/tf3-mass-vehicle-replace/issues), in English or German.
+Bugs and ideas are welcome as [issues](https://github.com/ramsterhad/tf3-mass-vehicle-replace/issues) or as a comment on the mod's mod.io page, in English or German.
 
 ## License
 
