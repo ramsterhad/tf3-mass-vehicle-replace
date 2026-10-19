@@ -271,6 +271,26 @@ local mus = {
 	[904] = { name = "ET 404", filterTags = { "default" }, vehicles = { { name = "vehicle/56.mdl", forward = true }, { name = "vehicle/57.mdl", forward = true }, { name = "vehicle/56.mdl", forward = false } } },
 }
 
+-- Engine records are userdata in the game, not tables (tf3-sdk knowledge/api-value-types.md; game test 18.10.2026:
+-- a type(r) == "table" check on getRevision passed in a table mock and failed in the game). A file handle with its
+-- own metatable is real userdata in Lua 5.2: type() says "userdata", pairs/next/table.* fail like on the engine's.
+-- Only declared fields can be set, like "Could not assign value to userdata".
+local function engineRecord(name, real, onRead)
+	local u = io.tmpfile()
+	debug.setmetatable(u, {
+		__index = function(_u, k)
+			if onRead then onRead(k) end
+			return real[k]
+		end,
+		__newindex = function(_u, k, v)
+			if real[k] == nil then error("Could not assign value to userdata '" .. tostring(k) .. "' (" .. name .. ")") end
+			real[k] = v
+		end,
+		__pairs = function() error("pairs on userdata " .. name) end,
+		__tostring = function() return "userdata: " .. name end,
+	})
+	return u
+end
 local vehicles = {}
 local fleetBuildReads = 0 -- carrier reads of vehicles: only a fleet build reads them (#10)
 -- groups: nil = each part its own group; otherwise { {size, file name}, ... } like in the game
@@ -286,10 +306,9 @@ local function vehicle(id, parts, groups)
 	end
 	-- carrier is read when the fleet is built (an entry per model), not by the cheap per-step part check (#10)
 	local real = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
-	vehicles[id] = setmetatable({}, { __index = function(_t, k)
+	vehicles[id] = engineRecord("TransportVehicle", real, function(k)
 		if k == "carrier" then fleetBuildReads = fleetBuildReads + 1 end
-		return real[k]
-	end, __newindex = real })
+	end)
 end
 vehicle(100, { 1, 2, 2, 2, 3 })
 vehicle(101, { 1, 2, 2, 6 })
