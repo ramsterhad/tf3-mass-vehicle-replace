@@ -57,6 +57,9 @@ for root, _dirs, files in os.walk(mod):
         # the dev build stamp (tf3-sdk tools/stage.sh) belongs in the staging copy only, never in the repo
         if f.endswith((".lua", ".json")) and "DEV-BUILD" in open(p, encoding="utf-8").read():
             error(p, 0, "dev build stamp (DEV-BUILD) in the mod; it must only exist in the staging copy")
+        # temporary diagnostics for one game test are marked DIAG-ONLY (tf3-sdk tools/stage.sh); never merged
+        if f.endswith((".lua", ".json")) and "DIAG-ONLY" in open(p, encoding="utf-8").read():
+            error(p, 0, "diagnostic code (DIAG-ONLY) in the mod; it belongs on a local test branch only")
 
 lua_files = []
 for root, _dirs, files in os.walk(os.path.join(mod, "content")):
