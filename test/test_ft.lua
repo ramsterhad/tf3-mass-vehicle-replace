@@ -25,7 +25,7 @@ end
 local bankBalance = 5000000
 
 -- builtin: every call returns a node -------------------------------------------------------------------
-local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true }
+local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true, TableLayout = true }
 local builtin = setmetatable({
 	type = {
 		Orientation = { Horizontal = "H", Vertical = "V" },
@@ -129,8 +129,48 @@ local MaintenanceStationWindow = makeRecipe("MaintenanceStationWindow", function
 recipeIds[MaintenanceStationWindow] = "MaintenanceStationWindow"
 originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:MaintenanceStationWindow", props = params } end
 
+-- Minimal fake of the three vehicle_store_util functions the stats card calls (#16), nothing else of the module.
+-- makeVehicleData(repId, isMultipleUnit) returns the game's VehicleData, a plain Lua table built by game Lua code
+-- (vehicle_store_util.tl:122-391); here only the fields the card reads, per "m<id>" / "u<id>". A model without an
+-- entry throws, like the game's code does on a model with missing metadata.
+local storeStats, storeCalls = {}, {}
+local vehicle_store_util = {
+	makeVehicleData = function(repId, mu)
+		assert(type(mu) == "boolean", "makeVehicleData: second argument must be a boolean")
+		local key = (mu and "u" or "m") .. tostring(repId)
+		storeCalls[#storeCalls + 1] = key
+		local d = storeStats[key]
+		if d == nil then error("attempt to index field 'metadata' (a nil value)") end
+		local copy = {}
+		for k, v in pairs(d) do copy[k] = v end
+		return copy
+	end,
+	-- the game looks the carrier up in a table keyed by the enum (vehicle_util.tl:210-260); another form fails there
+	getRangesFromData = function(d, carrier, year)
+		assert(type(d) == "table" and type(year) == "number", "getRangesFromData: bad arguments")
+		local known = false
+		for _k, v in pairs(api.type.enum.Carrier) do if v == carrier then known = true end end
+		if not known then error("bad argument #1 to 'ipairs' (table expected, got nil)") end
+		return { noiseScoreRange = { 0, 1 }, pollutionScoreRange = { 0, 1 }, comfortScoreRange = { 0, 1 }, loadSpeedScoreRange = { 0.5, 10 } }
+	end,
+	-- vehicle_store_util.tl:393-406
+	goodnessToTextString = function(v)
+		if v < 0 then return "" elseif v < 0.2 then return "Sehr schlecht" elseif v < 0.4 then return "Schlecht"
+		elseif v < 0.6 then return "Mittel" elseif v < 0.8 then return "Gut" end
+		return "Sehr gut"
+	end,
+}
+-- the game's card (content_card.tl:207-455): renders its collapsible part only while expanded; the mock keeps
+-- the params so the test can expand it and render the body itself
+local content_card = {
+	ContentCard = makeRecipe("ContentCard", function() return builtin.BoxLayout{} end),
+	makeRecipeAndParam = function(recipe, param) return { recipe = recipe, param = param } end,
+}
+
 local modules = {
 	["::/gui/main/react.lua"] = react,
+	["::/gui/line_vehicle_mgmt/vehicle_store_util.tl"] = vehicle_store_util,
+	["::/gui/main/content_card.tl"] = content_card,
 	["::/gui/main/builtin.lua"] = builtin,
 	["::/gui/main/gui_react_util.tl"] = gui_react_util,
 	["::/gui/main/engine_react_util.tl"] = engine_react_util,
@@ -373,7 +413,13 @@ api = {
 			end } },
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
-	util = { formatMoney = function(v) return "$" .. tostring(v) end },
+	util = { formatMoney = function(v) return "$" .. tostring(v) end,
+		-- units as documented in api/tealdef/api/util.d.tl:36-96 (m/s, kW, kN, t)
+		formatSpeed = function(v) return string.format("%.0f km/h", v * 3.6) end,
+		formatPower = function(v) return string.format("%.0f kW", v) end,
+		formatForce = function(v) return string.format("%.0f kN", v) end,
+		formatWeight = function(v) return string.format("%.1f t", v) end,
+	},
 	cmd = {
 		makeVehicleReplaceCmd = function(e, conf) return { e = e, conf = conf } end,
 		-- like the game in the GUI state (api/tealdef/api/cmd.d.tl:2-10): the command runs in the next
@@ -431,6 +477,9 @@ local function walk(node, path, visit)
 		if p[key] then walk(p[key], path .. "/" .. node.kind .. "." .. key, visit) end
 	end
 	if p.items then for i, it in ipairs(p.items) do walk(it, path .. "/items[" .. i .. "]", visit) end end
+	-- TableLayout rows and their cells
+	if p.rows then for i, r in ipairs(p.rows) do walk(r, path .. "/rows[" .. i .. "]", visit) end end
+	if p.cells then for i, c in ipairs(p.cells) do walk(c, path .. "/cells[" .. i .. "]", visit) end end
 end
 
 local function rules(tree, label)
@@ -1561,6 +1610,109 @@ check(wouldRedraw(), "fleet change: window not redrawn after the callbacks of ou
 t = content("fleet change, replaced")
 check(fleetBuildReads > readsBefore, "fleet change: fleet not read again after our own batch")
 step()
+
+print("== Vehicle stats of old and new model (issue #16)")
+storeStats.m10 = { totalCapacity = 10, speed = 60 / 3.6, loadingSpeed = 1, power = 50, tractiveEffort = 20, thrust = 0,
+	weight = 3, runningCosts = 5000, noise = 0.6, pollution = 0.6, comfortFactor = 0 }
+storeStats.m11 = { totalCapacity = 12, speed = 70 / 3.6, loadingSpeed = 1, power = 60, tractiveEffort = 20, thrust = 0,
+	weight = 3.5, runningCosts = 6000, noise = 0.4, pollution = 0.6, comfortFactor = 0 }
+storeCalls = {}
+local function detailsCardOf(tt)
+	local cards = find(tt, function(n) return n.kind == "recipe:ContentCard" end)
+	return cards[1] and cards[1].props, #cards
+end
+-- the body the game renders inside the card while it is expanded
+local function detailsBody(card, label)
+	local rp = card and card.recipeAndParamCollapsible
+	check(rp and rp.recipe and rp.recipe.name == "MvrStats", label .. ": card without the stats body")
+	if not (rp and rp.recipe) then return { kind = "BoxLayout", props = {} } end
+	local body = render(rp.recipe.name, rp.param)
+	rules(body, label .. " body")
+	return body
+end
+-- the cells of every table row, as text lists
+local function statLines(body)
+	local lines = {}
+	for _i, tl in ipairs(find(body, function(n) return n.kind == "TableLayout" end)) do
+		for _j, r in ipairs(tl.props.rows) do
+			local cells = {}
+			for k, c in ipairs(r.props.cells) do cells[k] = c end
+			lines[#lines + 1] = cells
+		end
+	end
+	return lines
+end
+local function lineOf(body, label)
+	for _i, cells in ipairs(statLines(body)) do if cells[1].props.text == label then return cells end end
+	return nil
+end
+local function classOf(cell) return tostring(cell and cell.props.meta and cell.props.meta.class) end
+
+t = chooseKasten("stats", 5000000)
+local card, nCards = detailsCardOf(t)
+check(nCards == 1, "stats: one details card expected, found " .. nCards)
+check(card and card.title == "Details", "stats: card title")
+check(card and card.collapsibleExpanded == false, "stats: card must be collapsed by default")
+check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
+local stepStatesCollapsed = #stepStates
+-- expand like the game's arrow button does
+card.setCollapsibleExpanded(true)
+t = content("stats expanded")
+card = detailsCardOf(t)
+check(card and card.collapsibleExpanded == true, "stats: card does not stay expanded")
+check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
+local body = detailsBody(card, "stats expanded")
+check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
+local speedLine = lineOf(body, "Höchsttempo")
+check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
+check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
+local weightLine = lineOf(body, "Gewicht")
+check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
+local costLine = lineOf(body, "Betriebskosten/Jahr")
+check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
+local tractiveLine = lineOf(body, "Zugkraft")
+check(tractiveLine and tractiveLine[4].props.text == "" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative"), "stats: equal values without difference or color")
+local noiseLine = lineOf(body, "Lärm")
+-- emissions are inverted: less noise is better, shown as the game's rating words
+check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
+check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
+check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
+local readsExpanded = #storeCalls
+check(readsExpanded == 2, "stats: each model read once: " .. table.concat(storeCalls, ","))
+detailsBody(detailsCardOf(content("stats again")), "stats again")
+check(#storeCalls == readsExpanded, "stats: redraw read the vehicle data again")
+check(not wouldRedraw(), "stats: expanded card makes the window redraw on its own")
+
+-- new model without data (the game's code throws): old values stay, no crash, no difference
+combos(content("stats missing"))[2].props.onValueChange("m13")
+t = content("stats missing new")
+body = detailsBody(detailsCardOf(t), "stats missing new")
+speedLine = lineOf(body, "Höchsttempo")
+check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "-" and speedLine[4].props.text == "", "stats: missing new data must show a dash")
+
+-- a vehicle type without any data and no new model: the card says so
+openAndRender("stats tram", 502, true)
+t = content("stats tram")
+card = detailsCardOf(t)
+check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
+body = detailsBody(card, "stats tram")
+check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+
+-- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
+storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
+storeStats.u901 = { totalCapacity = 240, speed = 140 / 3.6, power = 2400, weight = 170, runningCosts = 110000 }
+bankBalance = 10000000
+openAndRender("stats mu", 500, true)
+combos(content("stats mu"))[1].props.onValueChange("u900")
+combos(content("stats mu old"))[2].props.onValueChange("u901")
+body = detailsBody(detailsCardOf(content("stats mu new")), "stats mu")
+local capLine = lineOf(body, "Kapazität")
+check(capLine and capLine[2].props.text == "100" and capLine[3].props.text == "240" and capLine[4].props.text == "+140", "stats: multiple unit capacity per unit")
+-- collapsing again hides the body
+card = detailsCardOf(content("stats mu collapse"))
+card.setCollapsibleExpanded(false)
+check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
+if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
 
 print("== Robust against mods that overwrite the module field")
 -- fresh copy of the mod without the other mod's replacement in front of it
