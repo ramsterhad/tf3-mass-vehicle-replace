@@ -778,18 +778,19 @@ print("== Swap a multiple unit as a whole")
 openAndRender("train depot 2", 500, true)
 t = content("train depot 2")
 cs = combos(t)
-check(cs[1].props.value == "m60", "railcar is not at the top: " .. tostring(cs[1].props.value))
+-- sorted by year, newest first (user decision 19.10.2026): ET 420 (1969) before M-300 (1924)
+check(cs[1].props.value == "u900", "newest railcar or multiple unit is not at the top: " .. tostring(cs[1].props.value))
 cs[1].props.onValueChange("u900")
 t = content("ET 420 chosen")
 cs = combos(t)
-check(itemTexts(cs[1].props.items[3])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[3])[2]))
+check(itemTexts(cs[1].props.items[2])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[2])[2]))
 local muNeu = {}
 for i = 2, itemCount(cs[2]) do muNeu[#muNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new for ET 420: " .. table.concat(muNeu, " | "))
 local secondEt423
 for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
 check(secondEt423 == "$2200000 · 1975 · 4-teilig", "second line ET 423: " .. tostring(secondEt423))
-check(table.concat(muNeu, "|") == "ACF M-300|Roter Pfeil|ET 423", "for ET 420 (by year, without locomotive pair): railcars and ET 423, no locomotives, no single parts: " .. table.concat(muNeu, "|"))
+check(table.concat(muNeu, "|") == "ET 423|Roter Pfeil|ACF M-300", "for ET 420 (by year, without locomotive pair): railcars and ET 423, no locomotives, no single parts: " .. table.concat(muNeu, "|"))
 bankBalance = 10000000
 cs[2].props.onValueChange("u901")
 t = content("ET 423 chosen")
@@ -946,11 +947,15 @@ print("== Railcar for multiple unit")
 openAndRender("train depot 4", 500, true)
 t = content("train depot 4")
 cs = combos(t)
-check(cs[1].props.value == "m60", "M-300 not preselected")
+-- newest first puts ET 420 at the top; this test is about M-300, so it is chosen
+cs[1].props.onValueChange("m60")
+t = content("train depot 4 M-300")
+cs = combos(t)
+check(cs[1].props.value == "m60", "M-300 not selected")
 local rcNeu = {}
 for i = 2, itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new for M-300: " .. table.concat(rcNeu, " | "))
-check(table.concat(rcNeu, "|") == "Roter Pfeil|ET 420|ET 423", "for M-300 (by year): multiple units and railcars, no locomotives: " .. table.concat(rcNeu, "|"))
+check(table.concat(rcNeu, "|") == "ET 423|ET 420|Roter Pfeil", "for M-300 (by year): multiple units and railcars, no locomotives: " .. table.concat(rcNeu, "|"))
 bankBalance = 10000000
 cs[2].props.onValueChange("u901")
 t = content("M-300 for ET 423")
@@ -1067,7 +1072,12 @@ check(redraw, "window not redrawn after a vehicle was rebuilt with the same id")
 t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
 check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")
-check(combos(t)[1].props.value == "m61", "after the swap Roter Pfeil is at the top: " .. tostring(combos(t)[1].props.value))
+-- the swapped-in model is listed, the swapped-out one is gone (sorted newest first since 19.10.2026, so the
+-- top entry no longer shows it)
+local namesAfter = {}
+for i = 2, itemCount(combos(t)[1]) do namesAfter[#namesAfter + 1] = itemTexts(combos(t)[1].props.items[i])[1] end
+local listed = "|" .. table.concat(namesAfter, "|") .. "|"
+check(listed:find("|Roter Pfeil|", 1, true) and not listed:find("|ACF M-300|", 1, true), "after the swap: Roter Pfeil in, M-300 out: " .. listed)
 vehicles[106] = saved
 
 print("== Road depot")

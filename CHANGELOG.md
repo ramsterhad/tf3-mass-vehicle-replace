@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Sorting by year shows the newest models first, as a player usually looks for the latest model.
 - The depot is now read through the game's extension point for the depot window. The depot window itself is no longer replaced, so mods that change it no longer conflict with this one (#8).
 - Internal names (recipes, CSS classes, translation keys) carry the prefix "mvr", so they cannot clash with other mods.
 - Development log lines are no longer written to `stdout.txt` (#19). Errors, warnings and the startup line about other mods' replacements stay.
