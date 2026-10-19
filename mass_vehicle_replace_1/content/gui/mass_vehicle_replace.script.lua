@@ -270,8 +270,16 @@ local function ownVehicles()
 	return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE, { requireOwnedByPlayer = api.engine.util.getPlayer() })
 end
 
+-- the models of a vehicle's parts in order, to notice a vehicle rebuilt under the same id (#10)
+local function partsOf(cfg)
+	local models = {}
+	for j, part in ipairs(cfg.vehicles) do models[j] = tostring(part.part.modelId) end
+	return table.concat(models, ",")
+end
+
+-- returns the entries by key and the parts of every vehicle read (partsOf)
 local function fleet()
-	local byKey = {}
+	local byKey, partsByVehicle = {}, {}
 	-- uses: every vehicle this entry is in, with the entry of each of its parts, so the residual value can
 	-- tell replaced parts from kept ones (#26). keys[j] is false for parts of an unknown multiple unit.
 	local function add(key, tv, seen)
@@ -284,6 +292,7 @@ local function fleet()
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
+			partsByVehicle[v] = partsOf(cfg)
 			local seen, keys = {}, {}
 			for __, g in ipairs(groupsOf(cfg)) do
 				if g.path ~= "" then
@@ -302,7 +311,7 @@ local function fleet()
 			for key in pairs(seen) do local u = byKey[key].uses; u[#u + 1] = use end
 		end
 	end
-	return byKey
+	return byKey, partsByVehicle
 end
 
 -- new part: paint from the old part; reversed from the old part or, in a multiple unit, from its definition
@@ -332,6 +341,69 @@ local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "" }
 
 local function pending()
 	return result.sent > result.ok + result.failed
+end
+
+-- Fleet of the window (#10): reading every vehicle on every redraw is the expensive part, so the window keeps the
+-- last fleet and builds it again only when the player's vehicles change. fleetSig runs every step and redraws the
+-- window on a change:
+-- - bought, sold or handed to another player: the list of ids changes (cheap, no components);
+-- - rebuilt under the same id (the game's own vehicle window, "Replace"): each step compares the parts of the next
+--   CHECK_PER_STEP vehicles with the fleet read last, in turn, so a large fleet is covered within a few steps.
+--   Game test 18.10.2026: the parts change at once; api.engine.getRevision did not (num[2] stayed 5 while the
+--   model changed), so revisions are not used;
+-- - the callbacks of our own batch.
+local CHECK_PER_STEP = 100
+-- the vehicle check runs only every SIG_EVERY steps (game test 18.10.2026: 1-3 fps less with 1808 vehicles when it
+-- ran every step); in between its last result stands. Opening the window (result.batch) and the callbacks of our
+-- own batch are cheap and count at once; a new batch also refreshes the vehicle part, so the fleet read on opening
+-- is not read a second time a few steps later.
+local SIG_EVERY = 6
+local cachedFleet = { sig = nil, byKey = nil, parts = nil, nextCheck = 1, rebuilt = 0, steps = 0, vehiclesSig = nil,
+	vehiclesBatch = nil }
+
+local function checkSomeParts(ids)
+	local parts = cachedFleet.parts
+	if not parts or #ids == 0 then return end
+	for __ = 1, math.min(CHECK_PER_STEP, #ids) do
+		local i = cachedFleet.nextCheck
+		if i > #ids then i = 1 end
+		cachedFleet.nextCheck = i + 1
+		local v = ids[i]
+		local ok, now = pcall(function() return partsOf(api.engine.getComponent(v, CT.TRANSPORT_VEHICLE).transportVehicleConfig) end)
+		if ok and parts[v] ~= nil and now ~= parts[v] then
+			parts[v] = now -- count each rebuild once; the fleet is read again anyway
+			cachedFleet.rebuilt = cachedFleet.rebuilt + 1
+		end
+	end
+end
+
+local function vehiclesSig()
+	local ids = ownVehicles()
+	checkSomeParts(ids)
+	-- order-free, so a different order of the same vehicles is no change
+	local sum, squares = 0, 0
+	for __, v in ipairs(ids) do
+		sum = sum + v
+		squares = (squares + v * v) % 2147483647
+	end
+	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(cachedFleet.rebuilt)
+end
+
+local function fleetSig()
+	cachedFleet.steps = cachedFleet.steps + 1
+	if cachedFleet.vehiclesSig == nil or cachedFleet.vehiclesBatch ~= result.batch or cachedFleet.steps % SIG_EVERY == 0 then
+		cachedFleet.vehiclesSig, cachedFleet.vehiclesBatch = vehiclesSig(), result.batch
+	end
+	return cachedFleet.vehiclesSig .. ":" .. tostring(result.batch) .. ":" .. tostring(result.ok + result.failed)
+end
+
+local function windowFleet(sig)
+	if cachedFleet.sig ~= sig or cachedFleet.byKey == nil then
+		-- sig only after a successful read: if fleet() throws, the next redraw tries again (as before #10)
+		cachedFleet.byKey, cachedFleet.parts = fleet()
+		cachedFleet.sig = sig
+	end
+	return cachedFleet.byKey
 end
 
 local function updateText()
@@ -811,7 +883,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	end
 	local resultState = engine_react_util.useStepState(function() return result.text end)
 
-	local byKey = fleet()
+	-- redraw when the player's vehicles change; the fleet itself is built again only then (#10)
+	local byKey = windowFleet(engine_react_util.useStepState(fleetSig):old())
 	-- redraw at a year change, so models that expire or appear update while the window is open
 	engine_react_util.useStepState(function() return api.engine.util.getYear() end)
 	local year = api.engine.util.getYear()
@@ -985,7 +1058,11 @@ end)
 local windowOpen = false
 
 local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, function(p)
-	react.onUnmount(function() windowOpen = false end)
+	react.onUnmount(function()
+		windowOpen = false
+		-- the fleet holds a copy of every vehicle's parts; the next window reads it afresh anyway (#10)
+		cachedFleet.byKey, cachedFleet.parts, cachedFleet.sig = nil, nil, nil
+	end)
 	return builtin.Window{
 		meta = { class = "mvr-window" },
 		id = "mass_vehicle_replace.window",

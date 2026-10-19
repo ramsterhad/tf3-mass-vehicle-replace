@@ -224,6 +224,7 @@ local mus = {
 }
 
 local vehicles = {}
+local fleetBuildReads = 0 -- carrier reads of vehicles: only a fleet build reads them (#10)
 -- groups: nil = each part its own group; otherwise { {size, file name}, ... } like in the game
 local function vehicle(id, parts, groups)
 	local list = {}
@@ -235,7 +236,12 @@ local function vehicle(id, parts, groups)
 	else
 		for i = 1, #parts do sizes[i], paths[i] = 1, "" end
 	end
-	vehicles[id] = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
+	-- carrier is read when the fleet is built (an entry per model), not by the cheap per-step part check (#10)
+	local real = { carrier = carrier, transportVehicleConfig = { vehicles = list, vehicleGroups = sizes, muFileNames = paths } }
+	vehicles[id] = setmetatable({}, { __index = function(_t, k)
+		if k == "carrier" then fleetBuildReads = fleetBuildReads + 1 end
+		return real[k]
+	end, __newindex = real })
 end
 vehicle(100, { 1, 2, 2, 2, 3 })
 vehicle(101, { 1, 2, 2, 6 })
@@ -937,9 +943,15 @@ print("== List is built afresh after replacing")
 openAndRender("train depot 7", 500, true)
 t = content("before swap")
 local keyBefore = combos(t)[1].props.meta.localKey
--- like after a swap: train 106 now runs with Roter Pfeil instead of M-300
+-- like after a swap in the game's own vehicle window: train 106 now runs with Roter Pfeil instead of M-300.
+-- The id stays (issue #10); the window compares the parts of its vehicles in turn and sees it on the next step.
 local saved = vehicles[106]
 vehicle(106, { 61 })
+local redraw = false
+for _s = 1, 6 do -- the window checks its vehicles only every few steps (SIG_EVERY in the script)
+	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then redraw = true end end
+end
+check(redraw, "window not redrawn after a vehicle was rebuilt with the same id")
 t = content("after swap")
 local keyAfter = combos(t)[1].props.meta.localKey
 check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")
@@ -1216,8 +1228,12 @@ check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
 
 print("== The cost follows the residual value while the game runs (issue #26)")
 -- in-game 17.10.2026: the line was read, the game ran on, the charge was 5120 higher
+-- several steps: the window checks its vehicles only every few steps (#10, SIG_EVERY in the script)
+local STEPS_PER_CHECK = 6
 local function wouldRedraw()
-	for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	for _s = 1, STEPS_PER_CHECK do
+		for _i, st in ipairs(stepStates) do if st.f() ~= st.v then return true end end
+	end
 	return false
 end
 residuals = {}
@@ -1408,6 +1424,41 @@ check(typeA == "Schiene: Loks und Wagen", "button of the first depot window open
 local typeB = preselectedAfterClick(barB, "second depot window")
 check(typeB == "Straße: Busse und Lkw", "button of the second depot window opens another depot: " .. tostring(typeB))
 if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+
+print("== Fleet changes while the window is open (issue #10)")
+-- seen in the game: a vehicle bought or handed to another player while the window was open left the count stale
+t = chooseKasten("fleet change", 5000000)
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: start count")
+check(not wouldRedraw(), "fleet change: redraw without any change")
+local readsBefore = fleetBuildReads
+t = content("fleet change, unchanged")
+check(fleetBuildReads == readsBefore, "fleet change: fleet rebuilt on a redraw without changes")
+vehicle(118, { 10 }) -- bought
+check(wouldRedraw(), "fleet change: window not redrawn after a purchase")
+t = content("fleet change, bought")
+check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: count after a purchase")
+owners[118] = 99 -- handed to another player (makeEntitySetPlayerCmd)
+check(wouldRedraw(), "fleet change: window not redrawn after a handover")
+t = content("fleet change, handed over")
+check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: count after a handover")
+owners[118] = nil
+vehicles[118] = nil
+-- reopened right after a change, before the throttled vehicle check ran: the new window must not show the old fleet
+t = chooseKasten("fleet change, reopen 1", 5000000)
+vehicle(118, { 10 })
+t = chooseKasten("fleet change, reopen 2", 5000000)
+check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: reopened window shows the fleet of the last one")
+vehicles[118] = nil
+t = chooseKasten("fleet change, reopen 3", 5000000)
+-- our own batch: the vehicles keep their ids, the callbacks make the window read the fleet again
+t = content("fleet change, before replacing")
+replaceButton(t).props.onClick() -- the click itself reads the vehicles; count only the redraw after it
+step() -- the commands run, their callbacks arrive
+readsBefore = fleetBuildReads
+check(wouldRedraw(), "fleet change: window not redrawn after the callbacks of our own batch")
+t = content("fleet change, replaced")
+check(fleetBuildReads > readsBefore, "fleet change: fleet not read again after our own batch")
+step()
 
 print("== Robust against mods that overwrite the module field")
 -- fresh copy of the mod without the other mod's replacement in front of it
