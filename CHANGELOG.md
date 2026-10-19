@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The new list preselects its top model like the old list, so no empty line stands at the top of the open list; replacing still needs the click. Right after a replacement it waits for a choice, so the result line stays visible.
 - The old and the new list each have their own sort buttons (name or year). A second click on the active button reverses the order, shown with the game's sort icons. By year the old models start oldest first, the new ones newest first, as a player usually looks for the latest model.
 - When the residual value of the old vehicles is higher than the price of the new ones, the window says "Proceeds after residual value: $100" instead of a negative cost ("$-100"). The game credits that amount.
 - With infinite money (sandbox mode, "no costs") the window no longer shows the cost line, like the game hides the balance in the depot window (#20). The prices in the model list stay.
