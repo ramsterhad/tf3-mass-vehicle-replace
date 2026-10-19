@@ -1074,10 +1074,12 @@ local keyAfter = combos(t)[1].props.meta.localKey
 check(keyBefore ~= keyAfter, "localKey of the left list does not change after the swap")
 -- the swapped-in model is listed, the swapped-out one is gone (sorted newest first since 19.10.2026, so the
 -- top entry no longer shows it)
-local namesAfter = {}
-for i = 2, itemCount(combos(t)[1]) do namesAfter[#namesAfter + 1] = itemTexts(combos(t)[1].props.items[i])[1] end
-local listed = "|" .. table.concat(namesAfter, "|") .. "|"
-check(listed:find("|Roter Pfeil|", 1, true) and not listed:find("|ACF M-300|", 1, true), "after the swap: Roter Pfeil in, M-300 out: " .. listed)
+do -- own block: the main chunk is at the 200 local limit
+	local namesAfter = {}
+	for i = 2, itemCount(combos(t)[1]) do namesAfter[#namesAfter + 1] = itemTexts(combos(t)[1].props.items[i])[1] end
+	local listed = "|" .. table.concat(namesAfter, "|") .. "|"
+	check(listed:find("|Roter Pfeil|", 1, true) and not listed:find("|ACF M-300|", 1, true), "after the swap: Roter Pfeil in, M-300 out: " .. listed)
+end
 vehicles[106] = saved
 
 print("== Road depot")
