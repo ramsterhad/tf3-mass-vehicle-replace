@@ -1161,7 +1161,7 @@ for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
 table.sort(partialIds)
 check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
 t = content("partial, after the click")
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "3 von 8 ersetzt: nicht genug Geld." end) == 1, "partial: result line")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8" end) == 1, "partial: result line")
 check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
 -- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
@@ -1310,7 +1310,7 @@ refused[113], refused[110] = nil, true
 t = chooseKasten("partial, one refused", 200000)
 replaceButton(t).props.onClick()
 t = content("partial, one refused, done")
-check(hasText(t, "2 von 8 ersetzt: nicht genug Geld. (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
+check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
 refused = {}
 bankBalance = nil
 
