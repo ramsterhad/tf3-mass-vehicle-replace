@@ -1184,9 +1184,36 @@ end
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- selection in the window; lives outside the recipe so every opening starts fresh
--- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026), then kept for the
--- session like the sorting
+-- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
 local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = true }
+
+-- Sorting, "Same cargo" and the details card are kept in the savegame (user decision 19.10.2026), in the game's
+-- GUI save data per mod (api/tealdef/api/gui.d.tl:773-781 getGuiSaveData/setGuiSaveData). The game keeps its HUD
+-- filters there (layer_hud_filter.tl:59-82), Clean HUD and Line Manager their settings. Read on every opening,
+-- written on every change; a missing or odd value keeps the default.
+local MOD_ID = "mass_vehicle_replace_1"
+local function isBool(v) return type(v) == "boolean" end
+local KEPT = {
+	sort = function(v) return v == "name" or v == "year" end,
+	sameCargo = isBool,
+	details = isBool,
+}
+
+local function loadKept()
+	local ok, data = pcall(function() return api.gui.game.getGuiSaveData(MOD_ID) end)
+	if not ok or type(data) ~= "table" then return end
+	for k, valid in pairs(KEPT) do
+		local okV, v = pcall(function() return data[k] end)
+		if okV and valid(v) then sel[k] = v end
+	end
+end
+
+local function saveKept()
+	local data = {}
+	for k in pairs(KEPT) do data[k] = sel[k] end
+	local ok, err = pcall(function() api.gui.game.setGuiSaveData(MOD_ID, data) end)
+	if not ok then log("settings not saved", tostring(err)) end
+end
 
 local function topBar(update)
 	local children = {}
@@ -1209,14 +1236,14 @@ local function topBar(update)
 		meta = { class = "mvr-cargo-filter", tooltip = _("mvr_same_cargo_tip") },
 		content = text(_("mvr_same_cargo"), "font-scale-annotation"),
 		value = sel.sameCargo and 1 or 0,
-		onValueChange = function(v) update(function() sel.sameCargo = v == 1 end) end,
+		onValueChange = function(v) update(function() sel.sameCargo = v == 1; saveKept() end) end,
 	}
 	for __, s in ipairs(SORTS) do
 		children[#children + 1] = builtin.ToggleButton{
 			meta = { class = "mvr-sort" },
 			content = text(_(s.label), "font-scale-annotation"),
 			value = sel.sort == s.key and 1 or 0,
-			onValueChange = function() update(function() sel.sort = s.key end) end,
+			onValueChange = function() update(function() sel.sort = s.key; saveKept() end) end,
 		}
 	end
 	return row(children)
@@ -1428,7 +1455,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	}
 	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
 	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,
-		function(v) update(function() sel.details = v == true end) end)
+		function(v) update(function() sel.details = v == true; saveKept() end) end)
 	if details then children[#children + 1] = details end
 
 	-- a recipe must return a layout, not a component
@@ -1481,6 +1508,7 @@ local function openWindow(carrier)
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed, result.total = 0, 0, 0, nil
 	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
+	loadKept()
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("opening window failed", tostring(err)) end
 end

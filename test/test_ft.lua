@@ -377,7 +377,20 @@ local function step()
 	queuedCommands = {}
 	for _i, run in ipairs(q) do run() end
 end
+-- the game's GUI save data per mod id (api/tealdef/api/gui.d.tl:773-781); kept as a copy, like data that goes into
+-- a savegame. What the game returns before anything was set is not measured: nil here, the mod handles both.
+local guiSaveData = {}
+local function copyTable(t)
+	if type(t) ~= "table" then return t end
+	local c = {}
+	for k, v in pairs(t) do c[k] = copyTable(v) end
+	return c
+end
 api = {
+	gui = { game = {
+		getGuiSaveData = function(modId) return copyTable(guiSaveData[modId]) end,
+		setGuiSaveData = function(modId, data) assert(type(data) == "table", "setGuiSaveData: table expected"); guiSaveData[modId] = copyTable(data) end,
+	} },
 	type = {
 		ComponentType = CT,
 		enum = { Carrier = Carrier, TransportMode = TransportMode, VehicleEngineType = VehicleEngineType },
@@ -1815,6 +1828,39 @@ card = detailsCardOf(content("stats mu collapse"))
 card.setCollapsibleExpanded(false)
 check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
 if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+
+print("== Sorting, Same cargo and details kept in the savegame")
+local MOD = "mass_vehicle_replace_1"
+openAndRender("kept settings", 500, true)
+t = content("kept settings")
+find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
+cargoToggle().props.onValueChange(0)
+detailsCardOf(content("kept details")).setCollapsibleExpanded(false)
+local kept = guiSaveData[MOD] or {}
+check(kept.sort == "year" and kept.sameCargo == false and kept.details == false,
+	"kept: changes not written: sort " .. tostring(kept.sort) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
+-- another savegame with other values: the next opening takes them
+guiSaveData[MOD] = { sort = "name", sameCargo = true, details = true }
+openAndRender("kept other savegame", 500, true)
+t = content("kept other savegame")
+local sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
+check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+	"kept: saved values not read on opening")
+-- odd values (another version, a broken savegame) keep what is there
+guiSaveData[MOD] = { sort = "speed", sameCargo = "no", details = 1 }
+openAndRender("kept odd values", 500, true)
+t = content("kept odd values")
+sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
+check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+	"kept: odd saved values must be ignored")
+-- the game's save data unreachable: the window still opens and works
+local savedGame = api.gui.game
+api.gui.game = nil
+openAndRender("kept unreachable", 500, true)
+find(content("kept unreachable"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
+check(find(content("kept unreachable after"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.value == 1,
+	"kept: without save data the sorting must still switch")
+api.gui.game = savedGame
 
 print("== Robust against mods that overwrite the module field")
 -- fresh copy of the mod without the other mod's replacement in front of it
