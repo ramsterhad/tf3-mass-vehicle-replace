@@ -1356,9 +1356,10 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	local neuInfo = sel.neu and info(sel.neu) or nil
 	if neuInfo and not (fits(neuInfo) and available(neuInfo, year)) then neuInfo = nil end
-	-- nothing chosen yet: the top model, like the old list (user decision 19.10.2026), so the list never shows an empty
-	-- placeholder line; replacing still needs the click
-	if not neuInfo and neus[1] then neuInfo = neus[1] end
+	-- nothing chosen yet: the top model, like the old list (user decision 19.10.2026), so the list shows no empty
+	-- placeholder line; replacing still needs the click. Not while the result of the last batch is shown: it stands in
+	-- the summary until a model is chosen (below), and a preselected model would hide it
+	if not neuInfo and neus[1] and result.text == "" then neuInfo = neus[1] end
 
 	local altItems = {}
 	for k, x in ipairs(alts) do
