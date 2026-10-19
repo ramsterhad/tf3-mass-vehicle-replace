@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Sorting by year shows the new models newest first, as a player usually looks for the latest one; the old models stay oldest first.
+- The old and the new list each have their own sort buttons (name or year). By year the old models come oldest first, the new ones newest first, as a player usually looks for the latest model.
 - When the residual value of the old vehicles is higher than the price of the new ones, the window says "Proceeds after residual value: $100" instead of a negative cost ("$-100"). The game credits that amount.
 - With infinite money (sandbox mode, "no costs") the window no longer shows the cost line, like the game hides the balance in the depot window (#20). The prices in the model list stay.
 - The cost line updates twice a second instead of every frame while the game runs. With many vehicles of the selected model (1450 trucks in a test) the window cost frames, because every update reads the residual value of each vehicle.
