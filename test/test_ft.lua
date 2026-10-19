@@ -1908,24 +1908,26 @@ do -- own block: the main chunk is at the 200 local limit
 end
 
 print("== Robust against mods that overwrite the module field")
--- fresh copy of the mod without the other mod's replacement in front of it
-local savedReplace, savedField = _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar
-_react.recipeReplace.ActionButtonBar = nil
-chunk()
-local fresh = data()
-fresh.doReplace(replacementApi)
--- a careless mod swaps the field with a plain function after we loaded
-entity_window_util.ActionButtonBar = function(ref, p) return { kind = "Swapped", props = p } end
-local okSwap, swapped = pcall(barRecipe, nil, manage)
-check(okSwap, "our replacement breaks when another mod swaps the module field: " .. tostring(swapped))
-check(okSwap and swapped.kind == "ActionButtonBar" and #swapped.props.secondaryButtons == 1, "captured recipe not used after the field was swapped")
--- the field is already swapped when the mod loads: no crash, no replacement
-_react.recipeReplace.ActionButtonBar = nil
-chunk()
-local okLoad = pcall(function() data().doReplace(replacementApi) end)
-check(okLoad, "doReplace fails when ActionButtonBar is not a recipe")
-check(_react.recipeReplace.ActionButtonBar == nil, "a plain function was passed to ReplaceRecipe")
-_react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar = savedReplace, savedField
+do -- own block: the main chunk is at the 200 local limit
+	-- fresh copy of the mod without the other mod's replacement in front of it
+	local savedReplace, savedField = _react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar
+	_react.recipeReplace.ActionButtonBar = nil
+	chunk()
+	local fresh = data()
+	fresh.doReplace(replacementApi)
+	-- a careless mod swaps the field with a plain function after we loaded
+	entity_window_util.ActionButtonBar = function(ref, p) return { kind = "Swapped", props = p } end
+	local okSwap, swapped = pcall(barRecipe, nil, manage)
+	check(okSwap, "our replacement breaks when another mod swaps the module field: " .. tostring(swapped))
+	check(okSwap and swapped.kind == "ActionButtonBar" and #swapped.props.secondaryButtons == 1, "captured recipe not used after the field was swapped")
+	-- the field is already swapped when the mod loads: no crash, no replacement
+	_react.recipeReplace.ActionButtonBar = nil
+	chunk()
+	local okLoad = pcall(function() data().doReplace(replacementApi) end)
+	check(okLoad, "doReplace fails when ActionButtonBar is not a recipe")
+	check(_react.recipeReplace.ActionButtonBar == nil, "a plain function was passed to ReplaceRecipe")
+	_react.recipeReplace.ActionButtonBar, entity_window_util.ActionButtonBar = savedReplace, savedField
+end
 
 print(string.format("\n%d checks, %d errors (plus the per-node rules on %d rendered trees)", checks, failures, renders))
 os.exit(failures == 0 and 0 or 1)
