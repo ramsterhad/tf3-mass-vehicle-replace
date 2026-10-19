@@ -143,6 +143,8 @@ end
 local Carrier = { ROAD = 0, RAIL = 1, TRAM = 2, AIR = 3, WATER = 4 }
 local CT = { TRANSPORT_VEHICLE = "TV", GAME_TIME = "GT", VEHICLE_DEPOT = "VD" }
 
+-- engine types of the game (api/tealdef/api/type.d.tl:1892); the values are made up, only equality counts
+local VehicleEngineType = { HORSE = 40, STEAM = 41, ELECTRIC = 42, DIESEL = 43 }
 local models = {}
 local function model(id, name, carrier, engine, yearFrom, yearTo, price, icons, group, noTags)
 	models[id] = { metadata = {
@@ -188,6 +190,18 @@ model(57, "ET 404 Mittelwagen", Carrier.RAIL, true, 1990, 0, 400000)
 -- railcars: engine and passengers (like ACF M-300); locomotives carry only crew without cargo type (like in the game)
 model(60, "ACF M-300", Carrier.RAIL, true, 1924, 0, 1582128)
 model(61, "Roter Pfeil", Carrier.RAIL, true, 1935, 0, 1200000)
+-- engines with a type like landVehicle.engines in the game (VehicleEngine.type, type.d.tl:3980-3984);
+-- models without it keep an engine without type, so the older tests never see an engine change
+local function engines(id, ...)
+	local list = {}
+	for k, et in ipairs({ ... }) do list[k] = { type = VehicleEngineType[et] } end
+	models[id].metadata.landVehicle.engines = list
+end
+engines(1, "ELECTRIC") -- Ae 4/7
+engines(4, "ELECTRIC") -- BR 103
+engines(5, "STEAM") -- BR 50
+engines(50, "ELECTRIC"); engines(51, "ELECTRIC") -- ET 420
+engines(52, "ELECTRIC"); engines(53, "DIESEL") -- ET 423: one part diesel, to see the types of all parts
 local function load(id, classes, cap)
 	models[id].metadata.transportVehicle.compartments = { { loadConfigs = { { cargoEntry = { capacity = cap,
 		cargoTypeSet = { cargoClassesIncluded = classes, cargoTypesIncluded = {}, cargoClassesExcluded = {}, cargoTypesExcluded = {} } } } } } }
@@ -288,7 +302,7 @@ end
 api = {
 	type = {
 		ComponentType = CT,
-		enum = { Carrier = Carrier, TransportMode = TransportMode },
+		enum = { Carrier = Carrier, TransportMode = TransportMode, VehicleEngineType = VehicleEngineType },
 		TransportVehiclePart = { new = function() return { part = {} } end },
 		LoadConfig = { new = function() return {} end },
 		TransportVehicleConfig = { new = function(c) return { vehicles = c.vehicles, vehicleGroups = c.vehicleGroups, muFileNames = c.muFileNames } end },
@@ -1384,6 +1398,38 @@ check(replaceButton(t).props.meta.enabled == false, "odd residual values: button
 residuals = {}
 step()
 bankBalance = 5000000
+
+print("== Warning when the engine type changes (issue #50)")
+local ARROW = "\226\134\146"
+local function engineLine(tt)
+	local w = find(tt, function(n) return n.kind == "TextView" and n.props.meta.class == "font-scale-body, warning" end)
+	check(#w == 1, "engine warning line missing or doubled: " .. #w)
+	return w[1] and w[1].props or { meta = {} }
+end
+local function chooseRail(label, altKey, neuKey)
+	step()
+	openAndRender(label, 500, true)
+	local tt = content(label)
+	combos(tt)[1].props.onValueChange(altKey)
+	tt = content(label .. ", old")
+	if neuKey then combos(tt)[2].props.onValueChange(neuKey); tt = content(label .. ", new") end
+	return tt
+end
+local wl = engineLine(chooseRail("steam to electric", "m5", "m4"))
+check(wl.text == "Antrieb wechselt: Dampf " .. ARROW .. " Elektrisch", "steam to electric: " .. tostring(wl.text))
+check(wl.meta.tooltip ~= nil and wl.meta.tooltip:find("Oberleitung", 1, true) ~= nil, "steam to electric: tooltip " .. tostring(wl.meta.tooltip))
+wl = engineLine(chooseRail("electric to electric", "m1", "m4"))
+check(wl.text == " " and wl.meta.tooltip == nil, "same engine type warns: " .. tostring(wl.text))
+wl = engineLine(chooseRail("wagon to wagon", "m2", "m3"))
+check(wl.text == " " and wl.meta.tooltip == nil, "wagons warn: " .. tostring(wl.text))
+wl = engineLine(chooseRail("no new model yet", "m5", nil))
+check(wl.text == " ", "warning without a new model: " .. tostring(wl.text))
+wl = engineLine(chooseRail("multiple units", "u900", "u901"))
+check(wl.text == "Antrieb wechselt: Elektrisch " .. ARROW .. " Diesel/Elektrisch", "multiple units: " .. tostring(wl.text))
+-- an engine without a known type (like the older models here) gives no warning
+wl = engineLine(chooseRail("untyped engine", "m4", "m41"))
+check(wl.text == " ", "untyped engine warns: " .. tostring(wl.text))
+if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
 
 print("== Depot window is not replaced, depot comes from the plugin condition")
 check(_react.recipeReplace.MaintenanceStationWindow == nil, "MaintenanceStationWindow is replaced although the plugin condition gives the depot")

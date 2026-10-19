@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A warning below the cost line when the new model has a different engine type than the old one, e.g. diesel to electric (#50). The tooltip reminds you to check that every line is equipped for it, such as with catenary.
+
 ## [1.0.3] - 2026-10-17
 
 ### Changed
