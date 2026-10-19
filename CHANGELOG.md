@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-19
+
 ### Added
 
 - A warning below the cost line when the new model has a different engine type than the old one, e.g. diesel to electric (#50). The tooltip reminds you to check that every line is equipped for it, such as with catenary.
@@ -87,7 +89,8 @@ First public release. Versions 0.x were internal test builds.
 - Decorative models are hidden: copies without a store entry (e.g. from asset mods) and "fake" locomotives without engine and cargo.
 - English and German.
 
-[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.0...v1.0.1

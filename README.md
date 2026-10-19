@@ -12,8 +12,10 @@ Replaces all vehicles of one model with another, across all lines. Adds a "Repla
 - "Same cargo" filter: only offer models that can carry at least everything the old one could. Can be switched off.
 - Locomotives only replace locomotives, wagons only wagons. Multiple units are replaced as complete sets. Reversed vehicles and units stay reversed. In mixed trains only the chosen model is replaced.
 - Warns when the engine type changes, e.g. from diesel to electric.
-- Sort by name or year. Cargo icons for every model. The color of the old vehicles is kept where possible.
-- Uses the game's own replace command. Like the game's purchase window, the cost is the purchase price minus the residual value of the old vehicles; replacing is only possible when the balance covers it. Trains where only some vehicles are replaced are priced like the game's "Modify" window.
+- A "Details" card compares the old and the new model value by value (capacity, speed, power, running costs, noise and more).
+- Each list sorts by name or year on its own; a second click reverses the order. Sorting, "Same cargo" and the Details card are kept in the savegame.
+- Cargo icons for every model. The color of the old vehicles is kept where possible.
+- Uses the game's own replace command. Like the game's purchase window, the cost is the purchase price minus the residual value of the old vehicles; replacing is only possible when the balance covers it. Trains where only some vehicles are replaced are priced like the game's "Modify" window. When the money does not cover all vehicles, a yellow "Replace x of y" button replaces only the oldest ones it covers.
 - English and German.
 
 ## Install
