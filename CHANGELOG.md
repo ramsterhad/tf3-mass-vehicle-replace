@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A collapsible "Details" card at the bottom of the window compares the old and the new model value by value (#16), the better value in blue and the worse one in red.
 - The result line after replacing shows once, when the game has answered for every vehicle, instead of counting up from "0 of 8".
 - Vehicles the game refuses to replace are named apart from those skipped for money, e.g. "Replaced: 7 of 8 (1 planned vehicle was rejected by the game)".
-- The window keeps sorting, the "Same cargo" filter and whether the "Details" card is open in the savegame, so they survive a restart.
+- The window keeps the sorting of both lists, the "Same cargo" filter and whether the "Details" card is open in the savegame, so they survive a restart.
 
 ### Changed
 
@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The window now notices when vehicles are bought, sold, handed to another player or rebuilt in the game's own vehicle window while it is open, and updates the count (#10).
 - The window no longer reads the whole fleet again on every redraw, only when the fleet changes.
+- With a model selected, the open lists no longer show an extra first line ("No vehicles of this type" on the left, empty on the right).
 
 ## [1.0.3] - 2026-10-17
 
