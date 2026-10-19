@@ -239,6 +239,14 @@ local function money(v)
 	return ok and s or tostring(v)
 end
 
+-- Net amount after residual value. Below 0 the player gets money back (the game books exactly that, measured
+-- 19.10.2026); the game's own button then shows a negative price (vehicle_store_window.tl:4277), we say
+-- "proceeds" with the positive amount instead (user decision 19.10.2026)
+local function netLine(cost)
+	if cost < 0 then return string.format(_("mvr_gain_net"), money(-cost)) end
+	return string.format(_("mvr_cost_net"), money(cost))
+end
+
 -- Vehicles in the game ------------------------------------------------------------------------------
 
 -- Groups of a vehicle: { from, to, path } with path = file name of the multiple unit or "" for single parts.
@@ -1078,11 +1086,11 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local busy = pending()
 	if e and neuInfo then
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
-		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(cost)) or string.format(_("mvr_price"), money(price))
+		local priceLine = refund ~= 0 and netLine(cost) or string.format(_("mvr_price"), money(price))
 		if free then priceLine = " " end
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
 		-- partial (#23): what the button does, so count, cost and label agree
-		if partial then summary = { count("mvr_will_replace", some), string.format(_("mvr_cost_net"), money(someCost)) } end
+		if partial then summary = { count("mvr_will_replace", some), netLine(someCost) } end
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }
 	elseif not altInfo then

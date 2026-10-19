@@ -1474,6 +1474,15 @@ check(#sent == 2, "loose multiple unit car: 2 commands expected, " .. #sent)
 vehicles[141] = nil
 residuals, partValues = {}, {}
 
+print("== Residual value above the price: proceeds, not a negative cost")
+-- 8 trucks worth 100000 each, replaced for 61000 each: the player gets 312000 back
+for v = 110, 117 do residuals[v] = 100000 end
+t = chooseKasten("proceeds", 0)
+check(hasText(t, "Erlös nach Restwert: $312000"), "proceeds: line missing")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("$-", 1, true) end) == 0, "proceeds: negative amount shown")
+check(replaceButton(t).props.meta.enabled == true, "proceeds: button disabled with a balance of 0")
+residuals = {}
+
 print("== Residual value unreadable counts as none (issue #26)")
 residualThrows = true
 t = chooseKasten("residual unreadable, full price", 488000)
