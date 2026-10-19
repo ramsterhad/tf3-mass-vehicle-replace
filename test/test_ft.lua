@@ -1785,92 +1785,94 @@ local function lineOf(body, label)
 end
 local function classOf(cell) return tostring(cell and cell.props.meta and cell.props.meta.class) end
 
-t = chooseKasten("stats", 5000000)
-local card, nCards = detailsCardOf(t)
-check(nCards == 1, "stats: one details card expected, found " .. nCards)
-check(card and card.title == "Details", "stats: card title")
--- expanded by default (user decision 19.10.2026; was collapsed until then)
-check(card and card.collapsibleExpanded == true, "stats: card must be expanded by default")
--- collapse like the game's arrow button does: stays collapsed, and collapsed reads nothing
-card.setCollapsibleExpanded(false)
-card = detailsCardOf(content("stats collapsed"))
-check(card and card.collapsibleExpanded == false, "stats: card does not stay collapsed")
-check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
-local stepStatesCollapsed = #stepStates
--- and expand again
-card.setCollapsibleExpanded(true)
-t = content("stats expanded")
-card = detailsCardOf(t)
-check(card and card.collapsibleExpanded == true, "stats: card does not stay expanded")
-check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
-local body = detailsBody(card, "stats expanded")
-check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
--- the change right after the label, as the most important column (user decision 19.10.2026)
-local header = statLines(body)[1] or {}
-local headerText = {}
-for k, c in ipairs(header) do headerText[k] = c.props.text end
-check(table.concat(headerText, "|") == " |Änderung|Alt|Neu", "stats: column order " .. table.concat(headerText, "|"))
-local speedLine = lineOf(body, "Höchsttempo")
-check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
-check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
--- old and new each marked as the worse or the better one (user decision 19.10.2026)
-check(speedLine and classOf(speedLine[2]):find("negative", 1, true) and classOf(speedLine[3]):find("positive", 1, true),
-	"stats: slower old value must be marked worse, faster new one better")
-local weightLine = lineOf(body, "Gewicht")
-check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
-local costLine = lineOf(body, "Betriebskosten/Jahr")
-check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
-local tractiveLine = lineOf(body, "Zugkraft")
--- equal as shown: the change column lists the value itself, without color (user decision 19.10.2026, like the store)
-check(tractiveLine and tractiveLine[4].props.text == "20 kN" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative")
-	and not classOf(tractiveLine[2]):find("positive") and not classOf(tractiveLine[2]):find("negative"), "stats: equal values must list the value without color")
-local noiseLine = lineOf(body, "Lärm")
--- emissions are inverted: less noise is better, shown as the game's rating words
-check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
-check(noiseLine and classOf(noiseLine[2]):find("negative", 1, true), "stats: the louder old rating must be marked worse")
-local pollutionLine = lineOf(body, "Verschmutzung")
-check(pollutionLine and pollutionLine[2].props.text == "Mittel" and pollutionLine[3].props.text == "Mittel"
-	and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative")
-	and not classOf(pollutionLine[2]):find("positive") and not classOf(pollutionLine[2]):find("negative"),
-	"stats: the same rating word must not be colored")
-check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
-check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
-local readsExpanded = #storeCalls
-check(readsExpanded == 2, "stats: each model read once: " .. table.concat(storeCalls, ","))
-detailsBody(detailsCardOf(content("stats again")), "stats again")
-check(#storeCalls == readsExpanded, "stats: redraw read the vehicle data again")
-check(not wouldRedraw(), "stats: expanded card makes the window redraw on its own")
+do -- own block: the main chunk is at the 200 local limit
+	t = chooseKasten("stats", 5000000)
+	local card, nCards = detailsCardOf(t)
+	check(nCards == 1, "stats: one details card expected, found " .. nCards)
+	check(card and card.title == "Details", "stats: card title")
+	-- expanded by default (user decision 19.10.2026; was collapsed until then)
+	check(card and card.collapsibleExpanded == true, "stats: card must be expanded by default")
+	-- collapse like the game's arrow button does: stays collapsed, and collapsed reads nothing
+	card.setCollapsibleExpanded(false)
+	card = detailsCardOf(content("stats collapsed"))
+	check(card and card.collapsibleExpanded == false, "stats: card does not stay collapsed")
+	check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
+	local stepStatesCollapsed = #stepStates
+	-- and expand again
+	card.setCollapsibleExpanded(true)
+	t = content("stats expanded")
+	card = detailsCardOf(t)
+	check(card and card.collapsibleExpanded == true, "stats: card does not stay expanded")
+	check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
+	local body = detailsBody(card, "stats expanded")
+	check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
+	-- the change right after the label, as the most important column (user decision 19.10.2026)
+	local header = statLines(body)[1] or {}
+	local headerText = {}
+	for k, c in ipairs(header) do headerText[k] = c.props.text end
+	check(table.concat(headerText, "|") == " |Änderung|Alt|Neu", "stats: column order " .. table.concat(headerText, "|"))
+	local speedLine = lineOf(body, "Höchsttempo")
+	check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
+	check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
+	-- old and new each marked as the worse or the better one (user decision 19.10.2026)
+	check(speedLine and classOf(speedLine[2]):find("negative", 1, true) and classOf(speedLine[3]):find("positive", 1, true),
+		"stats: slower old value must be marked worse, faster new one better")
+	local weightLine = lineOf(body, "Gewicht")
+	check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
+	local costLine = lineOf(body, "Betriebskosten/Jahr")
+	check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
+	local tractiveLine = lineOf(body, "Zugkraft")
+	-- equal as shown: the change column lists the value itself, without color (user decision 19.10.2026, like the store)
+	check(tractiveLine and tractiveLine[4].props.text == "20 kN" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative")
+		and not classOf(tractiveLine[2]):find("positive") and not classOf(tractiveLine[2]):find("negative"), "stats: equal values must list the value without color")
+	local noiseLine = lineOf(body, "Lärm")
+	-- emissions are inverted: less noise is better, shown as the game's rating words
+	check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
+	check(noiseLine and classOf(noiseLine[2]):find("negative", 1, true), "stats: the louder old rating must be marked worse")
+	local pollutionLine = lineOf(body, "Verschmutzung")
+	check(pollutionLine and pollutionLine[2].props.text == "Mittel" and pollutionLine[3].props.text == "Mittel"
+		and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative")
+		and not classOf(pollutionLine[2]):find("positive") and not classOf(pollutionLine[2]):find("negative"),
+		"stats: the same rating word must not be colored")
+	check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
+	check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
+	local readsExpanded = #storeCalls
+	check(readsExpanded == 2, "stats: each model read once: " .. table.concat(storeCalls, ","))
+	detailsBody(detailsCardOf(content("stats again")), "stats again")
+	check(#storeCalls == readsExpanded, "stats: redraw read the vehicle data again")
+	check(not wouldRedraw(), "stats: expanded card makes the window redraw on its own")
 
--- new model without data (the game's code throws): old values stay, no crash, no difference
-combos(content("stats missing"))[2].props.onValueChange("m13")
-t = content("stats missing new")
-body = detailsBody(detailsCardOf(t), "stats missing new")
-speedLine = lineOf(body, "Höchsttempo")
-check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "-" and speedLine[4].props.text == "", "stats: missing new data must show a dash")
+	-- new model without data (the game's code throws): old values stay, no crash, no difference
+	combos(content("stats missing"))[2].props.onValueChange("m13")
+	t = content("stats missing new")
+	body = detailsBody(detailsCardOf(t), "stats missing new")
+	speedLine = lineOf(body, "Höchsttempo")
+	check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "-" and speedLine[4].props.text == "", "stats: missing new data must show a dash")
 
--- a vehicle type without any data and no new model: the card says so
-openAndRender("stats tram", 502, true)
-t = content("stats tram")
-card = detailsCardOf(t)
-check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
-body = detailsBody(card, "stats tram")
-check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+	-- a vehicle type without any data and no new model: the card says so
+	openAndRender("stats tram", 502, true)
+	t = content("stats tram")
+	card = detailsCardOf(t)
+	check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
+	body = detailsBody(card, "stats tram")
+	check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
 
--- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
-storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
-storeStats.u901 = { totalCapacity = 240, speed = 140 / 3.6, power = 2400, weight = 170, runningCosts = 110000 }
-bankBalance = 10000000
-openAndRender("stats mu", 500, true)
-combos(content("stats mu"))[1].props.onValueChange("u900")
-combos(content("stats mu old"))[2].props.onValueChange("u901")
-body = detailsBody(detailsCardOf(content("stats mu new")), "stats mu")
-local capLine = lineOf(body, "Kapazität")
-check(capLine and capLine[2].props.text == "100" and capLine[3].props.text == "240" and capLine[4].props.text == "+140", "stats: multiple unit capacity per unit")
--- collapsing again hides the body
-card = detailsCardOf(content("stats mu collapse"))
-card.setCollapsibleExpanded(false)
-check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
-if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+	-- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
+	storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
+	storeStats.u901 = { totalCapacity = 240, speed = 140 / 3.6, power = 2400, weight = 170, runningCosts = 110000 }
+	bankBalance = 10000000
+	openAndRender("stats mu", 500, true)
+	combos(content("stats mu"))[1].props.onValueChange("u900")
+	combos(content("stats mu old"))[2].props.onValueChange("u901")
+	body = detailsBody(detailsCardOf(content("stats mu new")), "stats mu")
+	local capLine = lineOf(body, "Kapazität")
+	check(capLine and capLine[2].props.text == "100" and capLine[3].props.text == "240" and capLine[4].props.text == "+140", "stats: multiple unit capacity per unit")
+	-- collapsing again hides the body
+	card = detailsCardOf(content("stats mu collapse"))
+	card.setCollapsibleExpanded(false)
+	check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
+	if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+end
 
 print("== Sorting, Same cargo and details kept in the savegame")
 do -- own block: the main chunk is at the 200 local limit
