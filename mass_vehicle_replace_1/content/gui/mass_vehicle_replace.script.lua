@@ -7,6 +7,9 @@ local builtin = ug_require "::/gui/main/builtin.lua"
 local gui_react_util = ug_require "::/gui/main/gui_react_util.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local okGlobals, game_react_globals = pcall(ug_require, "::/gui/main/game_react_globals.tl")
+-- vehicle stats (#16): the purchase window's own data collection and the game's collapsible card. Missing: no details.
+local okStore, vehicle_store_util = pcall(ug_require, "::/gui/line_vehicle_mgmt/vehicle_store_util.tl")
+local okCard, content_card = pcall(ug_require, "::/gui/main/content_card.tl")
 
 local WINDOW_KEY = "mass_vehicle_replace.window"
 local CT = api.type.ComponentType
@@ -239,6 +242,14 @@ local function money(v)
 	return ok and s or tostring(v)
 end
 
+-- Net amount after residual value. Below 0 the player gets money back (the game books exactly that, measured
+-- 19.10.2026); the game's own button then shows a negative price (vehicle_store_window.tl:4277), we say
+-- "proceeds" with the positive amount instead (user decision 19.10.2026)
+local function netLine(cost)
+	if cost < 0 then return string.format(_("mvr_gain_net"), money(-cost)) end
+	return string.format(_("mvr_cost_net"), money(cost))
+end
+
 -- Vehicles in the game ------------------------------------------------------------------------------
 
 -- Groups of a vehicle: { from, to, path } with path = file name of the multiple unit or "" for single parts.
@@ -270,8 +281,16 @@ local function ownVehicles()
 	return api.engine.getEntitiesWithComponent(CT.TRANSPORT_VEHICLE, { requireOwnedByPlayer = api.engine.util.getPlayer() })
 end
 
+-- the models of a vehicle's parts in order, to notice a vehicle rebuilt under the same id (#10)
+local function partsOf(cfg)
+	local models = {}
+	for j, part in ipairs(cfg.vehicles) do models[j] = tostring(part.part.modelId) end
+	return table.concat(models, ",")
+end
+
+-- returns the entries by key and the parts of every vehicle read (partsOf)
 local function fleet()
-	local byKey = {}
+	local byKey, partsByVehicle = {}, {}
 	-- uses: every vehicle this entry is in, with the entry of each of its parts, so the residual value can
 	-- tell replaced parts from kept ones (#26). keys[j] is false for parts of an unknown multiple unit.
 	local function add(key, tv, seen)
@@ -284,6 +303,7 @@ local function fleet()
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
+			partsByVehicle[v] = partsOf(cfg)
 			local seen, keys = {}, {}
 			for __, g in ipairs(groupsOf(cfg)) do
 				if g.path ~= "" then
@@ -302,7 +322,7 @@ local function fleet()
 			for key in pairs(seen) do local u = byKey[key].uses; u[#u + 1] = use end
 		end
 	end
-	return byKey
+	return byKey, partsByVehicle
 end
 
 -- new part: paint from the old part; reversed from the old part or, in a multiple unit, from its definition
@@ -328,10 +348,73 @@ end
 -- come a frame later (api/tealdef/api/cmd.d.tl:2-10); until then the vehicles still look unchanged, so a
 -- second batch would replace the same vehicles again. Like the game (engine_react_util.tl:36-55, 66-98) we
 -- count pending callbacks for as long as the window is open; batch tells callbacks of an earlier window apart.
-local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "" }
+local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "", total = nil }
 
 local function pending()
 	return result.sent > result.ok + result.failed
+end
+
+-- Fleet of the window (#10): reading every vehicle on every redraw is the expensive part, so the window keeps the
+-- last fleet and builds it again only when the player's vehicles change. fleetSig runs every step and redraws the
+-- window on a change:
+-- - bought, sold or handed to another player: the list of ids changes (cheap, no components);
+-- - rebuilt under the same id (the game's own vehicle window, "Replace"): each step compares the parts of the next
+--   CHECK_PER_STEP vehicles with the fleet read last, in turn, so a large fleet is covered within a few steps.
+--   Game test 18.10.2026: the parts change at once; api.engine.getRevision did not (num[2] stayed 5 while the
+--   model changed), so revisions are not used;
+-- - the callbacks of our own batch.
+local CHECK_PER_STEP = 100
+-- the vehicle check runs only every SIG_EVERY steps (game test 18.10.2026: 1-3 fps less with 1808 vehicles when it
+-- ran every step); in between its last result stands. Opening the window (result.batch) and the callbacks of our
+-- own batch are cheap and count at once; a new batch also refreshes the vehicle part, so the fleet read on opening
+-- is not read a second time a few steps later.
+local SIG_EVERY = 6
+local cachedFleet = { sig = nil, byKey = nil, parts = nil, nextCheck = 1, rebuilt = 0, steps = 0, vehiclesSig = nil,
+	vehiclesBatch = nil }
+
+local function checkSomeParts(ids)
+	local parts = cachedFleet.parts
+	if not parts or #ids == 0 then return end
+	for __ = 1, math.min(CHECK_PER_STEP, #ids) do
+		local i = cachedFleet.nextCheck
+		if i > #ids then i = 1 end
+		cachedFleet.nextCheck = i + 1
+		local v = ids[i]
+		local ok, now = pcall(function() return partsOf(api.engine.getComponent(v, CT.TRANSPORT_VEHICLE).transportVehicleConfig) end)
+		if ok and parts[v] ~= nil and now ~= parts[v] then
+			parts[v] = now -- count each rebuild once; the fleet is read again anyway
+			cachedFleet.rebuilt = cachedFleet.rebuilt + 1
+		end
+	end
+end
+
+local function vehiclesSig()
+	local ids = ownVehicles()
+	checkSomeParts(ids)
+	-- order-free, so a different order of the same vehicles is no change
+	local sum, squares = 0, 0
+	for __, v in ipairs(ids) do
+		sum = sum + v
+		squares = (squares + v * v) % 2147483647
+	end
+	return tostring(#ids) .. ":" .. tostring(sum) .. ":" .. tostring(squares) .. ":" .. tostring(cachedFleet.rebuilt)
+end
+
+local function fleetSig()
+	cachedFleet.steps = cachedFleet.steps + 1
+	if cachedFleet.vehiclesSig == nil or cachedFleet.vehiclesBatch ~= result.batch or cachedFleet.steps % SIG_EVERY == 0 then
+		cachedFleet.vehiclesSig, cachedFleet.vehiclesBatch = vehiclesSig(), result.batch
+	end
+	return cachedFleet.vehiclesSig .. ":" .. tostring(result.batch) .. ":" .. tostring(result.ok + result.failed)
+end
+
+local function windowFleet(sig)
+	if cachedFleet.sig ~= sig or cachedFleet.byKey == nil then
+		-- sig only after a successful read: if fleet() throws, the next redraw tries again (as before #10)
+		cachedFleet.byKey, cachedFleet.parts = fleet()
+		cachedFleet.sig = sig
+	end
+	return cachedFleet.byKey
 end
 
 local function updateText()
@@ -339,8 +422,19 @@ local function updateText()
 		result.text = _("mvr_none_found")
 		return
 	end
+	-- the result shows once, when the game has answered every command (user decision 19.10.2026); until then
+	-- the button says "Replacing ..." and no half-counted line like "0 of 8" appears
+	if pending() then
+		result.text = ""
+		return
+	end
 	local s = string.format(_("mvr_replaced"), result.ok, result.sent)
-	if result.failed > 0 then s = s .. string.format(_("mvr_failed"), result.failed) end
+	-- partial (#23): of all vehicles with the old model, not only of those sent; same wording as a full batch,
+	-- the money was already named on the button (user decision 19.10.2026)
+	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced"), result.ok, result.total) end
+	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
+	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
+	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
 	result.text = s
 end
 
@@ -431,6 +525,14 @@ end
 -- what the window shows, read by its step states: price of the new parts, fleet entry and model being replaced
 local shown = { price = 0, e = nil, key = nil, cost = 0, time = nil }
 
+-- infinite money (sandbox mode, "no costs"): the game then hides the balance card in the depot window
+-- (maintenance_station_eow.script.tl conditionMaintenanceStationBalance, state.infiniteMoney); the balance is nil
+-- (vehicle_store_window.tl fundsState: "nil if infinite!")
+local function infiniteMoney()
+	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	return ok and funds == nil
+end
+
 local function enoughMoney(cost)
 	if cost <= 0 then return true end
 	-- nil means infinite money (vehicle_store_window.tl fundsState: "nil if infinite!")
@@ -451,23 +553,76 @@ end
 -- its "Modify" mode, which keeps some parts of a vehicle, also charges the kept parts at getPartPrice
 -- (vehicle_store_window.tl:3758-3768). Per vehicle: residual value minus the value of the parts that stay.
 -- A vehicle with an unreadable value credits nothing: it counts at the full price of its new parts.
+local function creditOf(use, key)
+	-- the window reads this every step, so a vehicle may be gone since fleet() saw it; the game also checks
+	-- its vehicles before valuing them (vehicle_store_window.tl:3496-3503). Gone: nothing to credit.
+	local okE, exists = pcall(api.engine.entityExists, use.vehicle)
+	local credit = okE and exists and readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle) or nil
+	for j, part in ipairs(use.parts) do
+		if credit and use.keys[j] ~= key then
+			local kept = readValue(api.engine.util.vehicle.getPartPrice, part)
+			credit = kept and credit - kept or nil
+		end
+	end
+	-- may be below 0 when the kept parts are worth more than the vehicle: the game charges that too
+	return credit or 0
+end
+
 local function residual(e, key)
 	local sum = 0
-	for __, use in ipairs(e and e.uses or {}) do
-		-- the window reads this every step, so a vehicle may be gone since fleet() saw it; the game also checks
-		-- its vehicles before valuing them (vehicle_store_window.tl:3496-3503). Gone: nothing to credit.
-		local okE, exists = pcall(api.engine.entityExists, use.vehicle)
-		local credit = okE and exists and readValue(api.engine.util.vehicle.getDepreciatedValue, use.vehicle) or nil
-		for j, part in ipairs(use.parts) do
-			if credit and use.keys[j] ~= key then
-				local kept = readValue(api.engine.util.vehicle.getPartPrice, part)
-				credit = kept and credit - kept or nil
-			end
-		end
-		-- may be below 0 when the kept parts are worth more than the vehicle: the game charges that too
-		if credit then sum = sum + credit end
-	end
+	for __, use in ipairs(e and e.uses or {}) do sum = sum + creditOf(use, key) end
 	return sum
+end
+
+-- Replacing only as many vehicles as the balance covers (#23). A vehicle (a whole train) is replaced completely
+-- or not at all; oldest first, by the purchase time of its oldest part; the cost of a vehicle is the price of its
+-- new units minus its credit, by the same rule as the whole batch.
+local function unitsIn(use, key, altInfo)
+	local n = 0
+	for j = 1, #use.parts do if use.keys[j] == key then n = n + 1 end end
+	-- a multiple unit is one unit with several parts (fleet() counts its groups the same way)
+	if altInfo and altInfo.mu then n = n / math.max(1, #altInfo.parts) end
+	return n
+end
+
+local function purchasedAt(use)
+	local oldest = math.huge
+	for __, part in ipairs(use.parts) do
+		-- tostring first: an engine value need not be a Lua number (lesson of #10)
+		local ok, t = pcall(function() return tonumber(tostring(part.purchaseTime)) end)
+		if ok and t and t < oldest then oldest = t end
+	end
+	return oldest
+end
+
+-- the vehicles of entry e the balance covers: set of vehicle ids, their number and the cost
+local function affordablePart(e, key, altInfo, neuInfo, funds)
+	local list = {}
+	for __, use in ipairs(e and e.uses or {}) do
+		list[#list + 1] = { vehicle = use.vehicle, age = purchasedAt(use),
+			cost = neuInfo.price * unitsIn(use, key, altInfo) - creditOf(use, key) }
+	end
+	table.sort(list, function(a, b)
+		if a.age ~= b.age then return a.age < b.age end
+		return a.vehicle < b.vehicle
+	end)
+	local picked, n, sum = {}, 0, 0
+	for __, x in ipairs(list) do
+		-- stop at the first vehicle the rest of the money does not cover, so the oldest go first
+		if sum + x.cost > funds then break end
+		sum = sum + x.cost
+		picked[x.vehicle] = true
+		n = n + 1
+	end
+	return picked, n, sum
+end
+
+-- the balance for partial replacing: a real, finite number or nil; nan or inf would let every comparison pass
+-- (a test with a nan balance replaced all vehicles), so they count as unreadable
+local function balance()
+	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	if ok and type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds end
+	return nil
 end
 
 local function gameTime()
@@ -487,8 +642,9 @@ local function shownCost()
 	return shown.cost
 end
 
--- Replaces alt with neu in every vehicle; the other parts stay as they are.
-local function replaceAll(altKey, neuKey)
+-- Replaces alt with neu in every vehicle; the other parts stay as they are. partial: only the vehicles the balance
+-- covers right now (#23), an explicit choice next to the disabled button; otherwise all or nothing.
+local function replaceAll(altKey, neuKey, partial)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if pending() then return end
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
@@ -499,13 +655,27 @@ local function replaceAll(altKey, neuKey)
 		return
 	end
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
+	-- partial: decided once, with the balance read now and a fresh fleet
+	local only, total = nil, nil
+	if partial then
+		local funds = balance()
+		if funds == nil then return end -- infinite or unreadable money: the normal button covers it
+		local e = fleet()[altKey]
+		local n
+		only, n = affordablePart(e, altKey, altInfo, neuInfo, funds)
+		if n == 0 then
+			result.text = _("mvr_not_enough_money")
+			return
+		end
+		total = e and #e.uses or n
+	end
 	-- build all first: either every vehicle is replaced or none, like the purchase window
 	local jobs, units = {}, 0
 	for __, v in ipairs(ownVehicles()) do
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		local conf, n = nil, 0
-		if cfg then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
+		if cfg and (only == nil or only[v]) then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
 			jobs[#jobs + 1] = { entity = v, conf = conf }
 			units = units + n
@@ -513,13 +683,13 @@ local function replaceAll(altKey, neuKey)
 	end
 	-- checked again here: the balance may have changed since the window was drawn; residual value by the
 	-- same rule as the window
-	if not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
+	if not partial and not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
 		result.text = _("mvr_not_enough_money")
 		return
 	end
 	-- counters are reset only here, right before sending: a refused click leaves the previous batch alone
 	local batch = result.batch
-	result.sent, result.ok, result.failed = 0, 0, 0
+	result.sent, result.ok, result.failed, result.total = 0, 0, 0, total
 	for __, job in ipairs(jobs) do
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
@@ -678,6 +848,191 @@ local function bigPicture(i)
 	return builtin.Component{ meta = { class = "mvr-big-image" } }
 end
 
+-- Vehicle stats (#16) ---------------------------------------------------------------------------------
+-- Collapsible "Details" card below the window, collapsed by default. Values come from the purchase window's own
+-- data collection: vehicle_store_util.makeVehicleData(repId, isMultipleUnit) (vehicle_store_util.tl:785-797) sums
+-- or picks per part like the store (collectVehicleData, vehicle_store_util.tl:122-391), so a multiple unit counts
+-- as the whole unit, like in the store. Model metadata does not change during a game, so each model is read once;
+-- the card's body is only built while it is expanded (content_card.tl:362-386), so collapsed costs nothing.
+local statsCache = {} -- key -> VehicleData, or false when unreadable
+
+local function statsOf(i)
+	if not (i and okStore and type(vehicle_store_util) == "table") then return nil end
+	local c = statsCache[i.key]
+	if c == nil then
+		local ok, d = pcall(vehicle_store_util.makeVehicleData, i.id, i.mu == true)
+		c = (ok and d) or false
+		if not ok then log("stats unreadable", tostring(i.key), tostring(d)) end
+		statsCache[i.key] = c
+	end
+	return c or nil
+end
+
+-- a field of the game's data that can be shown: a finite number (speed is math.huge without parts)
+local function statValue(d, field)
+	if not d then return nil end
+	local ok, v = pcall(function() return d[field] end)
+	if ok and type(v) == "number" and v == v and v > -math.huge and v < math.huge then return v end
+	return nil
+end
+
+-- like mathutil.mapClamp, which the store uses for its bars (vehicle_store_window.tl:574-588)
+local function mapClamp(v, a, b, lo, hi)
+	if b == a then return lo end
+	local t = math.max(0, math.min(1, (v - a) / (b - a)))
+	return lo + t * (hi - lo)
+end
+
+local function formatted(fn, v)
+	local ok, s = pcall(fn, v)
+	if ok and type(s) == "string" then return s end
+	return string.format("%.0f", v)
+end
+
+-- the units the store uses for each stat (vehicle_store_window.tl:497-623, 117-124)
+local function fmtSpeed(v) return formatted(function(x) return api.util.formatSpeed(x) end, v) end
+local function fmtPower(v) return formatted(function(x) return api.util.formatPower(x) end, v) end
+local function fmtForce(v) return formatted(function(x) return api.util.formatForce(x) end, v) end
+local function fmtWeight(v) return formatted(function(x) return api.util.formatWeight(x) end, v) end
+local function fmtLoad(v) return string.format("%.1fx", v) end
+local function fmtCount(v) return string.format("%.0f", v) end
+
+-- Rows in the order of the store. higher: true if a higher value is better. optional: the row only shows if one of
+-- the two models has a value above 0 (the store hides tractive effort, thrust and power the same way).
+-- rating: shown as a word ("Good") from the carrier's range for the current year, like the store's noise,
+-- pollution and comfort (vehicle_store_window.tl:552-598, vehicle_store_util.tl:393-406); inverted for emissions.
+local STATS = {
+	{ label = "mvr_stat_capacity", field = "totalCapacity", fmt = fmtCount, higher = true, optional = true },
+	{ label = "mvr_stat_speed", field = "speed", fmt = fmtSpeed, higher = true },
+	{ label = "mvr_stat_loading", field = "loadingSpeed", fmt = fmtLoad, higher = true, optional = true },
+	{ label = "mvr_stat_power", field = "power", fmt = fmtPower, higher = true, optional = true },
+	{ label = "mvr_stat_tractive", field = "tractiveEffort", fmt = fmtForce, higher = true, optional = true },
+	{ label = "mvr_stat_thrust", field = "thrust", fmt = fmtForce, higher = true, optional = true },
+	{ label = "mvr_stat_weight", field = "weight", fmt = fmtWeight, higher = false },
+	{ label = "mvr_stat_running", field = "runningCosts", fmt = function(v) return money(v) end, higher = false },
+	{ label = "mvr_stat_noise", field = "noise", rating = "noiseScoreRange", inverted = true },
+	{ label = "mvr_stat_pollution", field = "pollution", rating = "pollutionScoreRange", inverted = true },
+	{ label = "mvr_stat_comfort", field = "comfortFactor", rating = "comfortScoreRange", optional = true },
+}
+
+-- like the store's formatDelta (vehicle_store_window.tl:24-32, local there): "+" or "-" and the formatted
+-- difference; nothing when equal
+local function delta(new, old, fmt)
+	if new == old then return "" end
+	if new > old then return "+" .. fmt(new - old) end
+	return "-" .. fmt(old - new)
+end
+
+-- the carrier's ranges for the rating words; the store passes its carrier and year (vehicle_store_window.tl:1773-1777)
+local function rangesFor(d, carrier, year)
+	if not (d and carrier ~= nil) then return nil end
+	local ok, r = pcall(vehicle_store_util.getRangesFromData, d, carrier, year)
+	return ok and r or nil
+end
+
+local function ratingOf(v, ranges, s)
+	if v == nil or not ranges then return nil end
+	local ok, pct = pcall(function()
+		local r = ranges[s.rating]
+		if s.inverted then return mapClamp(v, r[1], r[2], 1, 0) end
+		return mapClamp(v, r[1], r[2], 0, 1)
+	end)
+	if not ok or type(pct) ~= "number" then return nil end
+	local okText, word = pcall(vehicle_store_util.goodnessToTextString, pct)
+	return pct, okText and type(word) == "string" and word or nil
+end
+
+-- one row: { label, old, new, change, better }; better: true, false or nil (equal or not comparable)
+local function statRow(s, oldData, newData, ranges)
+	local o, n = statValue(oldData, s.field), statValue(newData, s.field)
+	if s.optional and not ((o or 0) > 0 or (n or 0) > 0) then return nil end
+	if o == nil and n == nil then return nil end
+	if s.rating then
+		local po, wo = ratingOf(o, ranges, s)
+		local pn, wn = ratingOf(n, ranges, s)
+		if not (wo or wn) then return nil end
+		local better = nil
+		if po and pn and po ~= pn then better = pn > po end
+		return { label = _(s.label), old = wo or "-", new = wn or "-", change = "", better = better }
+	end
+	local better, change = nil, ""
+	if o and n then
+		change = delta(n, o, s.fmt)
+		if n ~= o then better = (n > o) == s.higher end
+	end
+	return { label = _(s.label), old = o and s.fmt(o) or "-", new = n and s.fmt(n) or "-", change = change, better = better }
+end
+
+-- rows for the selected models; carrier from the fleet (the vehicle component's carrier, like the store's)
+local function statRows(altInfo, neuInfo, carrier, year)
+	local oldData, newData = statsOf(altInfo), statsOf(neuInfo)
+	if not (oldData or newData) then return {} end
+	-- one range for both, like the store's comparison (both bars on the ranges of the shown vehicle)
+	local ranges = rangesFor(newData or oldData, carrier, year)
+	local rows = {}
+	for __, s in ipairs(STATS) do
+		local ok, r = pcall(statRow, s, oldData, newData, ranges)
+		if ok and r then rows[#rows + 1] = r elseif not ok then log("stat row failed", s.label, tostring(r)) end
+	end
+	return rows
+end
+
+local function statCell(s, class)
+	return builtin.TextView{ meta = { class = class }, text = s }
+end
+
+-- half of the table: header and rows in a TableLayout (columns label, old, new, change)
+local function statTable(rows)
+	local ANN = "font-scale-annotation"
+	local list = { builtin.Row{ cells = {
+		statCell(" ", ANN), statCell(_("mvr_stat_old"), ANN), statCell(_("mvr_stat_new"), ANN), statCell(_("mvr_stat_change"), ANN),
+	} } }
+	for __, r in ipairs(rows) do
+		-- the game's global text colors for better and worse (default.css.lua "!positive", "!negative")
+		local mark = r.better == true and ", positive" or r.better == false and ", negative" or ""
+		list[#list + 1] = builtin.Row{ cells = {
+			statCell(r.label, "font-scale-body"),
+			statCell(r.old, "font-scale-body"),
+			-- ratings have no difference: their new word carries the color instead
+			statCell(r.new, "font-scale-body" .. (r.change == "" and mark or "")),
+			statCell(r.change, "font-scale-body" .. (r.change ~= "" and mark or "")),
+		} }
+	end
+	return builtin.Component{
+		meta = { class = "mvr-stats-half" },
+		layout = builtin.TableLayout{ meta = { class = "mvr-stats" }, columnWeights = { 3, 2, 2, 2 }, rows = list },
+	}
+end
+
+-- body of the card: two halves side by side, like the store's stats table (left and right column), so the
+-- expanded card stays about half as tall
+local MvrStats = react.RegisterRecipe("MvrStats", function(p)
+	local rows = statRows(p.alt, p.neu, p.carrier, p.year)
+	if #rows == 0 then
+		return builtin.BoxLayout{ children = { text(_("mvr_stat_none")) } }
+	end
+	local half = math.ceil(#rows / 2)
+	local left, right = {}, {}
+	for k, r in ipairs(rows) do
+		if k <= half then left[#left + 1] = r else right[#right + 1] = r end
+	end
+	return builtin.BoxLayout{
+		orientation = builtin.type.Orientation.Horizontal,
+		children = { statTable(left), builtin.Component{ meta = { class = "mvr-mid" } }, statTable(right) },
+	}
+end)
+
+-- the card itself; nil without the game's card module or without an old model
+local function detailsCard(altInfo, neuInfo, carrier, year, expanded, setExpanded)
+	if not (altInfo and okCard and type(content_card) == "table" and okStore and type(vehicle_store_util) == "table") then return nil end
+	return builtin.BoxLayout{ child = content_card.ContentCard{
+		title = _("mvr_details"),
+		recipeAndParamCollapsible = content_card.makeRecipeAndParam(MvrStats, { alt = altInfo, neu = neuInfo, carrier = carrier, year = year }),
+		collapsibleExpanded = expanded,
+		setCollapsibleExpanded = setExpanded,
+	} }
+end
+
 -- vehicle types with the icons of the vehicle management; nil = all
 local CARRIERS = {}
 for __, c in ipairs({
@@ -765,7 +1120,8 @@ end
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- selection in the window; lives outside the recipe so every opening starts fresh
-local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true }
+-- details: the stats card is expanded (#16); collapsed at first, then kept for the session like the sorting
+local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = false }
 
 local function topBar(update)
 	local children = {}
@@ -811,7 +1167,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	end
 	local resultState = engine_react_util.useStepState(function() return result.text end)
 
-	local byKey = fleet()
+	-- redraw when the player's vehicles change; the fleet itself is built again only then (#10)
+	local byKey = windowFleet(engine_react_util.useStepState(fleetSig):old())
 	-- redraw at a year change, so models that expire or appear update while the window is open
 	engine_react_util.useStepState(function() return api.engine.util.getYear() end)
 	local year = api.engine.util.getYear()
@@ -887,21 +1244,42 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
 	local price = e and neuInfo and neuInfo.price * e.parts or 0
-	shown.price, shown.e, shown.key, shown.time = price, (e and neuInfo) and e or nil, altInfo and altInfo.key, nil
-	-- redraw when the cost changes while the game runs
-	engine_react_util.useStepState(shownCost)
+	-- with infinite money no cost line (#20), so no residual values are read either
+	local free = infiniteMoney()
+	shown.price, shown.e, shown.key, shown.time = price, (e and neuInfo and not free) and e or nil, altInfo and altInfo.key, nil
+	-- redraw when the cost changes while the game runs. Twice a second, not every step: shownCost reads the residual
+	-- value of every vehicle that would be replaced (1450 trucks in a game test, 18.10.2026), and residual values
+	-- drop slowly. useStepStateTimer is the game's own timed step state (engine_react_util.tl:126-157, 0.5 s).
+	engine_react_util.useStepStateTimer(shownCost, 0.5)
 	local cost = shownCost()
 	local refund = price - cost
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
-	engine_react_util.useStepState(function() return enoughMoney(shownCost()) end)
+	engine_react_util.useStepStateTimer(function() return enoughMoney(shownCost()) end, 0.5)
 	local affordable = enoughMoney(cost)
+	-- not enough for all (#23): how many the balance covers, oldest first. Read when drawing (like the cost line, so
+	-- a new selection never shows the number of the last one); the timer only redraws when it changes, twice a second
+	local function someCount()
+		if not (shown.e and neuInfo) or enoughMoney(shownCost()) then return 0, 0 end
+		local funds = balance()
+		if funds == nil then return 0, 0 end
+		local __, n, sum = affordablePart(shown.e, shown.key, altInfo, neuInfo, funds)
+		return n, sum
+	end
+	engine_react_util.useStepStateTimer(function() return (someCount()) end, 0.5)
+	local some, someCost = 0, 0
+	if not affordable and e and neuInfo then some, someCost = someCount() end
+	-- the button itself says "2 of 8" then (user decision 18.10.2026: no extra element, the label tells it)
+	local partial = some > 0
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
 	local busy = pending()
 	if e and neuInfo then
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
-		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(cost)) or string.format(_("mvr_price"), money(price))
+		local priceLine = refund ~= 0 and netLine(cost) or string.format(_("mvr_price"), money(price))
+		if free then priceLine = " " end
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
+		-- partial (#23): what the button does, so count, cost and label agree
+		if partial then summary = { count("mvr_will_replace", some), netLine(someCost) } end
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }
 	elseif not altInfo then
@@ -929,24 +1307,27 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	local button = builtin.Button{
 		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
+		-- not enough for all but for some (#23): enabled, labelled "2 of 8", tooltip explains which ones
 		meta = {
-			class = "primary, mvr-replace-btn" .. (affordable and "" or ", mvr-no-money"),
+			class = "primary, mvr-replace-btn" .. (affordable and "" or partial and ", mvr-partial" or ", mvr-no-money"),
 			-- disabled while the previous batch is still being replaced (issue #9)
-			enabled = affordable and not busy,
-			tooltip = not affordable and _("mvr_not_enough_money") or nil,
+			enabled = (affordable or partial) and not busy,
+			tooltip = partial and (some == 1 and string.format(_("mvr_replace_some_tip_1"), e.vehicles)
+				or string.format(_("mvr_replace_some_tip"), some, e.vehicles)) or not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(not affordable and _("mvr_not_enough_money") or busy and _("mvr_replacing") or _("mvr_replace")),
+					text(busy and _("mvr_replacing") or partial and string.format(_("mvr_replace_some"), some, e.vehicles)
+						or not affordable and _("mvr_not_enough_money") or _("mvr_replace")),
 				},
 			},
 		},
 		onClick = function()
 			if not (altInfo and neuInfo) then return end
-			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key)
+			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key, partial)
 			if not ok then
 				result.text = _("mvr_error") .. " " .. tostring(err)
 				log("error", tostring(err))
@@ -958,6 +1339,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	local summaryLines = {}
 	for k, line in ipairs(summary) do summaryLines[k] = text(line) end
+
 
 	local children = {
 		topBar(update),
@@ -972,6 +1354,10 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			button,
 		}),
 	}
+	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
+	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,
+		function(v) update(function() sel.details = v == true end) end)
+	if details then children[#children + 1] = details end
 
 	-- a recipe must return a layout, not a component
 	return builtin.BoxLayout{ children = {
@@ -985,7 +1371,11 @@ end)
 local windowOpen = false
 
 local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, function(p)
-	react.onUnmount(function() windowOpen = false end)
+	react.onUnmount(function()
+		windowOpen = false
+		-- the fleet holds a copy of every vehicle's parts; the next window reads it afresh anyway (#10)
+		cachedFleet.byKey, cachedFleet.parts, cachedFleet.sig = nil, nil, nil
+	end)
 	return builtin.Window{
 		meta = { class = "mvr-window" },
 		id = "mass_vehicle_replace.window",
@@ -1017,7 +1407,7 @@ local function openWindow(carrier)
 	result.text = ""
 	-- a new window starts without pending commands, like the game's counter that lives with its component
 	result.batch = result.batch + 1
-	result.sent, result.ok, result.failed = 0, 0, 0
+	result.sent, result.ok, result.failed, result.total = 0, 0, 0, nil
 	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("opening window failed", tostring(err)) end

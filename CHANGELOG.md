@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- When the money does not cover the whole replacement, the button turns yellow and says "Replace 7 of 8" (#23). It replaces only the vehicles the balance covers now, oldest first; each vehicle (a whole train) is replaced completely or not at all. Count and cost next to it are those of the vehicles it replaces, the result line says how many of all were replaced. The red "Not enough money" stays for when not even one vehicle is covered.
+- A collapsible "Details" card at the bottom of the window compares the old and the new model (#16): capacity, top speed, loading speed, power, tractive effort or thrust, weight, running costs per year, noise, pollution and comfort, each with the difference, better values in blue and worse ones in red. It is collapsed when first opened and stays as the player left it. The values come from the game's purchase window code, so a multiple unit counts as the whole unit like there; rows that apply to neither model are left out.
+- The result line after replacing shows once, when the game has answered for every vehicle, instead of counting up from "0 of 8". Vehicles the game refuses to replace are named apart from those skipped for money, e.g. "Replaced: 7 of 8 (1 planned vehicle was rejected by the game)"; before, a bare ", failed: 1" was added.
+
+### Changed
+
+- When the residual value of the old vehicles is higher than the price of the new ones, the window says "Proceeds after residual value: $100" instead of a negative cost ("$-100"). The game credits that amount.
+- With infinite money (sandbox mode, "no costs") the window no longer shows the cost line, like the game hides the balance in the depot window (#20). The prices in the model list stay.
+- The cost line updates twice a second instead of every frame while the game runs. With many vehicles of the selected model (1450 trucks in a test) the window cost frames, because every update reads the residual value of each vehicle.
+
+### Fixed
+
+- The window now notices when vehicles are bought, sold, handed to another player or rebuilt in the game's own vehicle window while it is open, and updates the count (#10). It also no longer reads the whole fleet again on every redraw, only when the fleet changes.
+
 ## [1.0.3] - 2026-10-17
 
 ### Changed
