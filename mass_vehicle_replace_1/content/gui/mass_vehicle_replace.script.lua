@@ -525,20 +525,34 @@ end
 -- what the window shows, read by its step states: price of the new parts, fleet entry and model being replaced
 local shown = { price = 0, e = nil, key = nil, cost = 0, time = nil }
 
--- infinite money (sandbox mode, "no costs"): the game then hides the balance card in the depot window
--- (maintenance_station_eow.script.tl conditionMaintenanceStationBalance, state.infiniteMoney); the balance is nil
--- (vehicle_store_window.tl fundsState: "nil if infinite!")
+-- The player's balance, read in one place; the three functions below each answer one question about it.
+-- ok is false when the call failed. funds nil means infinite money (sandbox mode, "no costs";
+-- vehicle_store_window.tl fundsState: "nil if infinite!").
+local function readBalance()
+	return pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+end
+
+-- infinite money: the game then hides the balance card in the depot window
+-- (maintenance_station_eow.script.tl conditionMaintenanceStationBalance, state.infiniteMoney)
 local function infiniteMoney()
-	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	local ok, funds = readBalance()
 	return ok and funds == nil
 end
 
+-- whether the balance covers cost, like the purchase window (funds >= cost): inf covers everything, nan nothing
 local function enoughMoney(cost)
 	if cost <= 0 then return true end
-	-- nil means infinite money (vehicle_store_window.tl fundsState: "nil if infinite!")
-	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	local ok, funds = readBalance()
 	if not ok then return true end -- unreadable: leave it to the game, as before
 	return funds == nil or funds >= cost
+end
+
+-- the balance for partial replacing: a real, finite number or nil; nan or inf would let every comparison pass
+-- (a test with a nan balance replaced all vehicles), so they count as unreadable
+local function balance()
+	local ok, funds = readBalance()
+	if ok and type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds end
+	return nil
 end
 
 -- a value the game gave us that can be counted: a number, not nan (value == value), not negative, finite
@@ -615,14 +629,6 @@ local function affordablePart(e, key, altInfo, neuInfo, funds)
 		n = n + 1
 	end
 	return picked, n, sum
-end
-
--- the balance for partial replacing: a real, finite number or nil; nan or inf would let every comparison pass
--- (a test with a nan balance replaced all vehicles), so they count as unreadable
-local function balance()
-	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
-	if ok and type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds end
-	return nil
 end
 
 local function gameTime()
