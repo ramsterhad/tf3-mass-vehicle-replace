@@ -737,8 +737,11 @@ check(combos(t)[2].props.value == "m3", "placeholder cleared the selection")
 
 print("== Sort by year")
 local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-check(#sorts == 2, "two sort buttons expected")
+-- each list has its own sort buttons (user decision 19.10.2026): old Name, old Year, new Name, new Year
+check(#sorts == 4, "two sort buttons per list expected: " .. #sorts)
 sorts[2].props.onValueChange(1)
+t = content("year old")
+find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[4].props.onValueChange(1)
 t = content("year")
 cs = combos(t)
 names = {}
@@ -1839,21 +1842,21 @@ do -- own block: the main chunk is at the 200 local limit
 	cargoToggle().props.onValueChange(0)
 	detailsCardOf(content("kept details")).setCollapsibleExpanded(false)
 	local kept = guiSaveData[MOD] or {}
-	check(kept.sort == "year" and kept.sameCargo == false and kept.details == false,
-		"kept: changes not written: sort " .. tostring(kept.sort) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
+	check(kept.sortOld == "year" and kept.sameCargo == false and kept.details == false,
+		"kept: changes not written: sortOld " .. tostring(kept.sortOld) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
 	-- another savegame with other values: the next opening takes them
-	guiSaveData[MOD] = { sort = "name", sameCargo = true, details = true }
+	guiSaveData[MOD] = { sortOld = "name", sortNew = "year", sameCargo = true, details = true }
 	openAndRender("kept other savegame", 500, true)
 	t = content("kept other savegame")
 	local sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-	check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+	check(sortOn[1].props.value == 1 and sortOn[4].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
 		"kept: saved values not read on opening")
 	-- odd values (another version, a broken savegame) keep what is there
-	guiSaveData[MOD] = { sort = "speed", sameCargo = "no", details = 1 }
+	guiSaveData[MOD] = { sortOld = "speed", sortNew = 2, sameCargo = "no", details = 1 }
 	openAndRender("kept odd values", 500, true)
 	t = content("kept odd values")
 	sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-	check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+	check(sortOn[1].props.value == 1 and sortOn[4].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
 		"kept: odd saved values must be ignored")
 	-- the game's save data unreachable: the window still opens and works
 	local savedGame = api.gui.game

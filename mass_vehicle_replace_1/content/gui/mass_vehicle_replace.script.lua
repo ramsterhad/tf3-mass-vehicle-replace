@@ -1190,7 +1190,8 @@ local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label
 
 -- selection in the window; lives outside the recipe so every opening starts fresh
 -- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
-local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = true }
+-- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026)
+local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "name", sortNew = "name", sameCargo = true, details = true }
 
 -- Sorting, "Same cargo" and the details card are kept in the savegame (user decision 19.10.2026), in the game's
 -- GUI save data per mod (api/tealdef/api/gui.d.tl:773-781 getGuiSaveData/setGuiSaveData). The game keeps its HUD
@@ -1199,7 +1200,8 @@ local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = tr
 local MOD_ID = "mass_vehicle_replace_1"
 local function isBool(v) return type(v) == "boolean" end
 local KEPT = {
-	sort = function(v) return v == "name" or v == "year" end,
+	sortOld = function(v) return v == "name" or v == "year" end,
+	sortNew = function(v) return v == "name" or v == "year" end,
 	sameCargo = isBool,
 	details = isBool,
 }
@@ -1243,12 +1245,18 @@ local function topBar(update)
 		value = sel.sameCargo and 1 or 0,
 		onValueChange = function(v) update(function() sel.sameCargo = v == 1; saveKept() end) end,
 	}
+	return row(children)
+end
+
+-- heading of one list with its own sort buttons on the right; field is "sortOld" or "sortNew"
+local function listHead(label, field, update)
+	local children = { text(label), gui_react_util.makeHorizontalSpacer() }
 	for __, s in ipairs(SORTS) do
 		children[#children + 1] = builtin.ToggleButton{
 			meta = { class = "mvr-sort" },
 			content = text(_(s.label), "font-scale-annotation"),
-			value = sel.sort == s.key and 1 or 0,
-			onValueChange = function() update(function() sel.sort = s.key; saveKept() end) end,
+			value = sel[field] == s.key and 1 or 0,
+			onValueChange = function() update(function() sel[field] = s.key; saveKept() end) end,
 		}
 	end
 	return row(children)
@@ -1283,7 +1291,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local function rank(i) return RANK[i.class] or 4 end
 	table.sort(alts, function(a, b)
 		if rank(a.i) ~= rank(b.i) then return rank(a.i) < rank(b.i) end
-		return compareModels(a.i, b.i, sel.sort, false)
+		return compareModels(a.i, b.i, sel.sortOld, false)
 	end)
 
 	local altInfo = sel.alt and byKey[sel.alt] and info(sel.alt) or nil
@@ -1310,7 +1318,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			if i and not i.noTags and not i.muPart and fits(i) and available(i, year) then neus[#neus + 1] = i end
 		end
 	end
-	table.sort(neus, function(a, b) return compareModels(a, b, sel.sort, true) end)
+	table.sort(neus, function(a, b) return compareModels(a, b, sel.sortNew, true) end)
 
 	local neuInfo = sel.neu and info(sel.neu) or nil
 	if neuInfo and not (fits(neuInfo) and available(neuInfo, year)) then neuInfo = nil end
@@ -1447,7 +1455,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	local children = {
 		topBar(update),
-		row({ cell("cell", text(_("mvr_old_model"))), cell("mid", empty()), cell("cell", text(_("mvr_new_model"))) }),
+		row({ cell("cell", listHead(_("mvr_old_model"), "sortOld", update)), cell("mid", empty()),
+			cell("cell", listHead(_("mvr_new_model"), "sortNew", update)) }),
 		row({ cell("cell", altCombo), cell("mid", swap), cell("cell", neuCombo) }),
 		row({ cell("cell", bigPicture(altInfo)), cell("mid", empty()), cell("cell", bigPicture(neuInfo)) }),
 		-- gap between images and text; the button stays centered on the text block
