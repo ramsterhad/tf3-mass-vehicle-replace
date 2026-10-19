@@ -1684,8 +1684,10 @@ step()
 print("== Vehicle stats of old and new model (issue #16)")
 storeStats.m10 = { totalCapacity = 10, speed = 60 / 3.6, loadingSpeed = 1, power = 50, tractiveEffort = 20, thrust = 0,
 	weight = 3, runningCosts = 5000, noise = 0.6, pollution = 0.6, comfortFactor = 0 }
-storeStats.m11 = { totalCapacity = 12, speed = 70 / 3.6, loadingSpeed = 1, power = 60, tractiveEffort = 20, thrust = 0,
-	weight = 3.5, runningCosts = 6000, noise = 0.4, pollution = 0.6, comfortFactor = 0 }
+-- tractive effort and pollution differ only below what is shown ("20 kN", "Mittel" on both sides): game test
+-- 19.10.2026, equal rating words were colored
+storeStats.m11 = { totalCapacity = 12, speed = 70 / 3.6, loadingSpeed = 1, power = 60, tractiveEffort = 20.3, thrust = 0,
+	weight = 3.5, runningCosts = 6000, noise = 0.4, pollution = 0.55, comfortFactor = 0 }
 storeCalls = {}
 local function detailsCardOf(tt)
 	local cards = find(tt, function(n) return n.kind == "recipe:ContentCard" end)
@@ -1745,6 +1747,10 @@ check(tractiveLine and tractiveLine[4].props.text == "" and not classOf(tractive
 local noiseLine = lineOf(body, "Lärm")
 -- emissions are inverted: less noise is better, shown as the game's rating words
 check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
+local pollutionLine = lineOf(body, "Verschmutzung")
+check(pollutionLine and pollutionLine[2].props.text == "Mittel" and pollutionLine[3].props.text == "Mittel"
+	and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative"),
+	"stats: the same rating word must not be colored")
 check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
 check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
 local readsExpanded = #storeCalls

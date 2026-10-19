@@ -1010,14 +1010,16 @@ local function statRow(s, oldData, newData, ranges)
 		local po, wo = ratingOf(o, ranges, s)
 		local pn, wn = ratingOf(n, ranges, s)
 		if not (wo or wn) then return nil end
+		-- colored only when the words differ: the same word on both sides reads as equal (game test 19.10.2026)
 		local better = nil
-		if po and pn and po ~= pn then better = pn > po end
+		if po and pn and wo ~= wn then better = pn > po end
 		return { label = _(s.label), old = wo or "-", new = wn or "-", change = "", better = better }
 	end
 	local better, change = nil, ""
-	if o and n then
+	-- equal as shown (the formatted values match): no difference and no color, not "+0 kN" in red
+	if o and n and s.fmt(n) ~= s.fmt(o) then
 		change = delta(n, o, s.fmt)
-		if n ~= o then better = (n > o) == s.higher end
+		better = (n > o) == s.higher
 	end
 	return { label = _(s.label), old = o and s.fmt(o) or "-", new = n and s.fmt(n) or "-", change = change, better = better }
 end
