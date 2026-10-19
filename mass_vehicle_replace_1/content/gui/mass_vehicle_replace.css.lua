@@ -128,5 +128,27 @@ function data()
 		margin = { 0, 16, 0, 0 },
 	})
 
+	-- queue window: the game's spacing values (tf3-ui-design skill). Card body rows 4 apart, 8 between a label
+	-- and its control (box-plugin-vertical-space, entity_window_util.css.lua); button rows 4 apart
+	a("!mvr-rows", {
+		innerSpacing = { 8, 4 },
+	})
+	a("!mvr-row", {
+		innerSpacing = { 8, 0 },
+	})
+	a("!mvr-tools", {
+		innerSpacing = { 4, 4 },
+	})
+
+	-- queue counter in the game bar: the same rules as the game's earnings display
+	-- (game_bar_display_earnings.css.lua), so it sits and spaces like its neighbours
+	a("R::MvrQueueBar", {
+		gravity = { 0.5, 0.5 },
+	})
+	a("R::MvrQueueBar BoxLayout", {
+		innerSpacing = { 8, 0 },
+		outerSpacing = { 14, 0 },
+	})
+
 	return result
 end

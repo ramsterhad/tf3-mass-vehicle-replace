@@ -72,6 +72,19 @@ react.iaHandler = function(f) return f end
 react.onUnmount = function() end
 react.onEvent = function() end
 react.getCurrentRecipeName = function() return currentRecipe end
+-- step and mount hooks of a recipe (react.d.tl:303-304, 340): collected per render, played by the test (hostFrame
+-- below). onStepTimer bodies run as deferred steps with a restricted api in the game (react.lua:525-534); the mock
+-- records them apart so a test can tell the two kinds.
+-- M: mock state of the queue tests in one table (the main chunk is near Lua's limit of 200 locals)
+local M = { hooks = { steps = {}, timers = {}, mounts = {} }, hooksOf = {} }
+react.onStep = function(fn) M.hooks.steps[#M.hooks.steps + 1] = fn end
+react.onStepTimer = function(fn, interval) M.hooks.timers[#M.hooks.timers + 1] = { fn = fn, interval = interval } end
+react.onMount = function(fn) M.hooks.mounts[#M.hooks.mounts + 1] = fn end
+-- a ref whose value is computed once (react.d.tl:316); the earnings plugin reads isMapEditor that way
+react.useRefLazy = function(fn)
+	local v = fn()
+	return { get = function() return v end }
+end
 -- like react.lua: recipes are known by id, a call goes to the replacement if one is set, and
 -- CallOriginalRecipe only works with a registered recipe (in the game a plain function fails here)
 _react = { recipeReplace = {} }
@@ -100,7 +113,9 @@ end }
 
 local function render(name, params)
 	currentRecipe, stateIdx = name, 0
+	M.hooks = { steps = {}, timers = {}, mounts = {} }
 	local out = recipes[name](params)
+	M.hooksOf[name] = M.hooks
 	currentRecipe = nil
 	return out
 end
@@ -129,6 +144,22 @@ local game_react_globals = { getDefaultWindowApi = function() return {
 	removeWindow = function(recipe, key) windows[key] = nil end,
 } end }
 local entity_window_util = { ActionButtonBar = gameRecipe("ActionButtonBar", function(ref, p) return { kind = "ActionButtonBar", props = p } end) }
+-- the inner panel of the game's windows (entity_window_util.tl:2467-2489): two positional arguments
+entity_window_util.ContentWidgetScrollContainer = function(children, first)
+	assert(type(children) == "table" and type(first) == "boolean", "ContentWidgetScrollContainer(children, first)")
+	return { kind = "ContentWidgetScrollContainer", props = { children = children } }
+end
+-- the game's text button (button_react_util.tl:6-30): 5th argument = disabled
+M.button_react_util = { makeTextButton = function(class, label, onClick, tooltip, disabled)
+	assert(type(class) == "string" and type(label) == "string", "makeTextButton(class, text, ...)")
+	return { kind = "Button", props = { meta = { class = class, tooltip = tooltip, enabled = disabled == nil and true or not disabled },
+		content = { kind = "TextView", props = { meta = { class = "font-scale-body" }, text = label } }, onClick = onClick } }
+end }
+-- the game's dialog (menu/dialog_react_util.tl, params in dialog_react_util.d.tl:4-26)
+M.dialog_react_util = { DialogWindow = makeRecipe("DialogWindow", function(p) return { kind = "Window", props = p } end) }
+-- the two extension points the queue uses (main/mod_entry_point.tl:5, game_bar/game_bar_widgets.tl:70)
+M.mod_entry_point = { ModEntryPointExtension = { id = "::ModEntryPointExtension" } }
+M.game_bar_widgets = { GameBarInfoDisplayExtension = { id = "::GameBarInfoDisplayExtension" } }
 local MaintenanceStationWindow = makeRecipe("MaintenanceStationWindow", function() return builtin.BoxLayout{} end)
 recipeIds[MaintenanceStationWindow] = "MaintenanceStationWindow"
 originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:MaintenanceStationWindow", props = params } end
@@ -180,6 +211,10 @@ local modules = {
 	["::/gui/main/engine_react_util.tl"] = engine_react_util,
 	["::/gui/main/game_react_globals.tl"] = game_react_globals,
 	["::/gui/entity_window/entity_window_util.tl"] = entity_window_util,
+	["::/gui/main/button_react_util.tl"] = M.button_react_util,
+	["::/gui/menu/dialog_react_util.tl"] = M.dialog_react_util,
+	["::/gui/main/mod_entry_point.tl"] = M.mod_entry_point,
+	["::/gui/game_bar/game_bar_widgets.tl"] = M.game_bar_widgets,
 	["::/gui/entity_window/maintenance_station/maintenance_station.tl"] = MaintenanceStationWindow,
 	["::/gui/entity_window/maintenance_station/maintenance_station_eow.script.tl"] = {
 		MaintenanceStationEowExtensionPoint = { id = "::MaintenanceStationEowExtensionPoint" },
@@ -193,7 +228,7 @@ end
 
 -- Game world -------------------------------------------------------------------------------------------
 local Carrier = { ROAD = 0, RAIL = 1, TRAM = 2, AIR = 3, WATER = 4 }
-local CT = { TRANSPORT_VEHICLE = "TV", GAME_TIME = "GT", VEHICLE_DEPOT = "VD" }
+local CT = { TRANSPORT_VEHICLE = "TV", GAME_TIME = "GT", VEHICLE_DEPOT = "VD", PLAYER_OWNED = "PO" }
 
 -- engine types of the game (api/tealdef/api/type.d.tl:1892); the values are made up, only equality counts
 local VehicleEngineType = { HORSE = 40, STEAM = 41, ELECTRIC = 42, DIESEL = 43 }
@@ -386,10 +421,19 @@ local function copyTable(t)
 	for k, v in pairs(t) do c[k] = copyTable(v) end
 	return c
 end
+-- real time of the application in seconds (api/tealdef/api/util.d.tl:176), advanced by the test
+M.appClock = 1000
+-- revision num[1] per vehicle (tf3-sdk knowledge/gui-change-detection-and-perf.md section 6): the engine's
+-- identity slot; a test raises it to stand for an entity id reused for another entity
+M.births = {}
+M.mapEditor = false
+-- native calls of the game API, for the budget checks of the queue (counted below)
+M.apiCalls, M.apiCallsByName = 0, {}
 api = {
 	gui = { game = {
 		getGuiSaveData = function(modId) return copyTable(guiSaveData[modId]) end,
 		setGuiSaveData = function(modId, data) assert(type(data) == "table", "setGuiSaveData: table expected"); guiSaveData[modId] = copyTable(data) end,
+		isMapEditor = function() return M.mapEditor end,
 	} },
 	type = {
 		ComponentType = CT,
@@ -439,8 +483,16 @@ api = {
 			if ct == CT.TRANSPORT_VEHICLE then return vehicles[e] end
 			if ct == CT.GAME_TIME then return { gameTime = gameTimeNow } end
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
+			-- the owner, the way the game's entity windows read it (eow_extension_util.tl:5-17)
+			if ct == CT.PLAYER_OWNED then return vehicles[e] and engineRecord("PlayerOwned", { player = owners[e] }) or nil end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
+		-- userdata with num = {rev0, rev1, rev2} (api/tealdef/api/engine.d.tl:15-18); what it does for an entity that
+		-- does not exist is not measured: the mock throws, so the code must check entityExists first
+		getRevision = function(e)
+			assert(vehicles[e], "revision of an unknown entity")
+			return engineRecord("Revision", { num = { M.births[e] or 1, 5, 0 } })
+		end,
 		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
 			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
@@ -464,6 +516,7 @@ api = {
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
 	util = { formatMoney = function(v) return "$" .. tostring(v) end,
+		getApplicationTime = function() return M.appClock end,
 		-- units as documented in api/tealdef/api/util.d.tl:36-96 (m/s, kW, kN, t)
 		formatSpeed = function(v) return string.format("%.0f km/h", v * 3.6) end,
 		formatPower = function(v) return string.format("%.0f kW", v) end,
@@ -487,6 +540,24 @@ api = {
 		end,
 	},
 }
+
+-- every function of the game API counts as one native call (budget checks of the queue)
+do
+	local function countCalls(t)
+		for k, v in pairs(t) do
+			if type(v) == "function" then
+				t[k] = function(...)
+					M.apiCalls = M.apiCalls + 1
+					M.apiCallsByName[k] = (M.apiCallsByName[k] or 0) + 1
+					return v(...)
+				end
+			elseif type(v) == "table" then
+				countCalls(v)
+			end
+		end
+	end
+	countCalls(api.engine); countCalls(api.util); countCalls(api.gui); countCalls(api.cmd)
+end
 
 -- Load the script ---------------------------------------------------------------------------------------
 -- the game's GUI Lua has no rawget (crashed at startup in 1.0.1 testing)

@@ -10,6 +10,14 @@ local okGlobals, game_react_globals = pcall(ug_require, "::/gui/main/game_react_
 -- vehicle stats (#16): the purchase window's own data collection and the game's collapsible card. Missing: no details.
 local okStore, vehicle_store_util = pcall(ug_require, "::/gui/line_vehicle_mgmt/vehicle_store_util.tl")
 local okCard, content_card = pcall(ug_require, "::/gui/main/content_card.tl")
+-- replacement queue: text buttons, the inner panel of the game's windows and its confirmation dialog
+local function optional(path)
+	local ok, m = pcall(ug_require, path)
+	return ok and type(m) == "table" and m or nil
+end
+local button_react_util = optional("::/gui/main/button_react_util.tl")
+local entity_window_util = optional("::/gui/entity_window/entity_window_util.tl")
+local dialog_react_util = optional("::/gui/menu/dialog_react_util.tl")
 
 local WINDOW_KEY = "mass_vehicle_replace.window"
 local CT = api.type.ComponentType
@@ -341,6 +349,28 @@ local function partsOf(cfg)
 	return table.concat(models, ",")
 end
 
+-- keys: the entry key of every part of a vehicle: "m<id>" for single parts, the multiple unit's key for its parts,
+-- false for parts of an unknown multiple unit (mod missing: not offered, kept as they are)
+local function useOf(v, cfg)
+	local keys, units = {}, {}
+	for __, g in ipairs(groupsOf(cfg)) do
+		if g.path ~= "" then
+			local mi = muOfPath(g.path)
+			if not mi and not unknownMu[g.path] then unknownMu[g.path] = true; log("unknown multiple unit in train", tostring(g.path)) end
+			for j = g.from, g.to do keys[j] = mi and mi.key or false end
+			units[#units + 1] = mi and mi.key or false
+		else
+			for j = g.from, g.to do
+				keys[j] = "m" .. cfg.vehicles[j].part.modelId
+				units[#units + 1] = keys[j]
+			end
+		end
+	end
+	-- one vehicle the way the cost functions see it: its parts with the entry key of each (creditOf, unitsIn);
+	-- units: one key per group, a multiple unit counts once (fleet)
+	return { vehicle = v, parts = cfg.vehicles, keys = keys, units = units }
+end
+
 -- returns the entries by key and the parts of every vehicle read (partsOf)
 local function fleet()
 	local byKey, partsByVehicle = {}, {}
@@ -357,21 +387,11 @@ local function fleet()
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
 			partsByVehicle[v] = partsOf(cfg)
-			local seen, keys = {}, {}
-			for __, g in ipairs(groupsOf(cfg)) do
-				if g.path ~= "" then
-					local mi = muOfPath(g.path)
-					if mi then add(mi.key, tv, seen) -- unknown multiple unit (mod missing): do not offer
-					elseif not unknownMu[g.path] then unknownMu[g.path] = true; log("unknown multiple unit in train", tostring(g.path)) end
-					for j = g.from, g.to do keys[j] = mi and mi.key or false end
-				else
-					for j = g.from, g.to do
-						keys[j] = "m" .. cfg.vehicles[j].part.modelId
-						add(keys[j], tv, seen)
-					end
-				end
+			local seen = {}
+			local use = useOf(v, cfg)
+			for __, key in ipairs(use.units) do
+				if key then add(key, tv, seen) end
 			end
-			local use = { vehicle = v, parts = cfg.vehicles, keys = keys }
 			for key in pairs(seen) do local u = byKey[key].uses; u[#u + 1] = use end
 		end
 	end
@@ -401,7 +421,12 @@ end
 -- come a frame later (api/tealdef/api/cmd.d.tl:2-10); until then the vehicles still look unchanged, so a
 -- second batch would replace the same vehicles again. Like the game (engine_react_util.tl:36-55, 66-98) we
 -- count pending callbacks for as long as the window is open; batch tells callbacks of an earlier window apart.
-local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "", total = nil }
+-- queued, dup, note: what the click queued, how many were already queued, "full" or "foreign" (replacement queue)
+local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "", total = nil, queued = 0, dup = 0, note = nil }
+-- the replacement queue: Queue holds its functions (filled below, in one block to stay within Lua's limit of 200
+-- locals per chunk), queue its state, replaced as a whole when a savegame is loaded
+local Queue = {}
+local queue
 
 local function pending()
 	return result.sent > result.ok + result.failed
@@ -471,7 +496,8 @@ local function windowFleet(sig)
 end
 
 local function updateText()
-	if result.sent == 0 then
+	local queued, dup = result.queued or 0, result.dup or 0
+	if result.sent == 0 and queued == 0 and dup == 0 and result.note == nil then
 		result.text = _("mvr_none_found")
 		return
 	end
@@ -485,9 +511,14 @@ local function updateText()
 	-- partial (#23): of all vehicles with the old model, not only of those sent; same wording as a full batch,
 	-- the money was already named on the button (user decision 19.10.2026)
 	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced"), result.ok, result.total) end
+	-- queued the rest: the same line names the queued ones
+	if queued > 0 or dup > 0 then s = string.format(_("mvr_replaced_queued"), result.ok, result.total or result.sent, queued) end
 	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
 	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
 	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
+	if dup > 0 then s = s .. " " .. count("mvr_already_queued", dup) end
+	if result.note == "full" then s = s .. " " .. string.format(_("mvr_queue_full"), Queue.MAX_QUEUED) end
+	if result.note == "foreign" then s = s .. " " .. _("mvr_queue_foreign") end
 	result.text = s
 end
 
@@ -662,7 +693,8 @@ local function purchasedAt(use)
 	return oldest
 end
 
--- the vehicles of entry e the balance covers: set of vehicle ids, their number and the cost
+-- the vehicles of entry e the balance covers: set of vehicle ids, their number and the cost; fourth value: all
+-- vehicles of the entry sorted oldest first (the queue takes the rest in that order)
 local function affordablePart(e, key, altInfo, neuInfo, funds)
 	local list = {}
 	for __, use in ipairs(e and e.uses or {}) do
@@ -681,7 +713,7 @@ local function affordablePart(e, key, altInfo, neuInfo, funds)
 		picked[x.vehicle] = true
 		n = n + 1
 	end
-	return picked, n, sum
+	return picked, n, sum, list
 end
 
 local function gameTime()
@@ -701,9 +733,516 @@ local function shownCost()
 	return shown.cost
 end
 
+-- Settings and queue in the savegame ---------------------------------------------------------------------
+-- selection in the window; lives outside the recipe so every opening starts fresh
+-- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
+-- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026)
+-- queueRest: "queue the rest" box in the window, off at first (plan 20.10.2026, section 4)
+local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "name", sortNew = "name", sortOldAsc = true, sortNewAsc = true,
+	sameCargo = true, details = true, queueRest = false }
+
+-- Sorting, "Same cargo", the details card and the queue are kept in the savegame (user decision 19.10.2026), in
+-- the game's GUI save data per mod (api/tealdef/api/gui.d.tl:773-781 getGuiSaveData/setGuiSaveData). The game
+-- keeps its HUD filters there (layer_hud_filter.tl:59-82), Clean HUD and Line Manager their settings. Settings are
+-- read on every opening of the window, the queue when the host mounts; written on every change; a missing or odd
+-- value keeps the default. Only strings and booleans are stored: those are measured to survive save, restart and
+-- load (tf3-sdk knowledge/ui.md, MVR #54).
+do
+local MOD_ID = "mass_vehicle_replace_1"
+local function isBool(v) return type(v) == "boolean" end
+local KEPT = {
+	sortOld = function(v) return v == "name" or v == "year" end,
+	sortNew = function(v) return v == "name" or v == "year" end,
+	sortOldAsc = isBool,
+	sortNewAsc = isBool,
+	sameCargo = isBool,
+	details = isBool,
+	queueRest = isBool,
+}
+
+-- the save data as last read, so a write keeps every field it does not own (another version of this mod may have
+-- written more; its queue must survive a sort change here)
+local savedRaw = {}
+
+local function readSaveData()
+	local ok, data = pcall(function() return api.gui.game.getGuiSaveData(MOD_ID) end)
+	if not ok or type(data) ~= "table" then return nil end
+	local copy = {}
+	if pcall(function() for k, v in pairs(data) do copy[k] = v end end) then savedRaw = copy end
+	return data
+end
+
+local function loadKept()
+	local data = readSaveData()
+	if data == nil then return end
+	for k, valid in pairs(KEPT) do
+		local okV, v = pcall(function() return data[k] end)
+		if okV and valid(v) then sel[k] = v end
+	end
+end
+
+-- Replacement queue ---------------------------------------------------------------------------------------
+-- Vehicles the money did not cover when the player clicked are queued and replaced one by one as the balance
+-- allows (#23 stage 2, plan of 20.10.2026). A job is one click: old model, new model and the vehicles left over,
+-- oldest first; jobs run one after the other (FIFO). The truth is in the vehicle, not in the queue: right before
+-- a command is sent, the head vehicle is checked against the game (exists, same entity, still the player's, still
+-- has the old model, new model still for sale), so the queue may be stale but never sends something wrong.
+-- Driven by a host plugin at the game's ModEntryPointExtension (gui/main/mod_entry_point.tl:5, always mounted and
+-- invisible, game.tl:83-89), stepping about once a second of real time; the game sends its own background
+-- commands from react.onStep too (game.tl:640-676, game speed).
+local QUEUE_FORMAT = "1"
+local TICK_S = 1.0 -- longest interval the game itself uses (construction.tl:4308-4311); money comes in slower
+local INFLIGHT_TIMEOUT_S = 10 -- a callback is not documented as guaranteed (tf3-sdk knowledge/commands.md)
+local DROPS_PER_TICK = 20 -- stale entries dropped per tick, bounds the work of one frame
+Queue.MAX_QUEUED = 10000 -- vehicles the queue holds at most; bounds the save data (about 12 bytes each)
+local ERRORS_TO_PAUSE = 5 -- Lua errors in a row before the queue pauses itself
+local FAILURES_TO_DROP = 3 -- commands the game answered with false before the vehicle is dropped
+
+local function newQueue()
+	return {
+		jobs = {}, -- { id, alt, neu, open = { { entity, birth, failures } ... }, done, skipped = { sold, replaced, reused, rejected }, blocked, cost, short }
+		byEntity = {}, -- entity -> job id, so a vehicle is queued once
+		reserve = 0, -- money that stays on the account
+		paused = false,
+		nextId = 1,
+		inflight = nil, -- { entity, job, sentAt, parts }: the one command waiting for its callback
+		nextTick = 0, -- application time of the next tick
+		cache = nil, -- { entity, cost }: last net cost of the head; a lower bound, the residual value only falls
+		loaded = false, -- read from the savegame
+		foreign = false, -- save data of another version or unreadable: not processed, never overwritten
+		editor = false, -- map editor: nothing to do
+		errors = 0, -- Lua errors in a row
+		lastError = nil,
+	}
+end
+queue = newQueue()
+
+local function num(v)
+	return string.format("%.0f", v)
+end
+
+-- a counted number from the game or the save data: finite, not nan, not negative
+local function countValue(v)
+	v = tonumber(v)
+	if v and v == v and v >= 0 and v < math.huge then return v end
+	return nil
+end
+
+local function emptySkipped()
+	return { sold = 0, replaced = 0, reused = 0, rejected = 0 }
+end
+
+-- Save format (string, version QUEUE_FORMAT): jobs separated by ";", each "id,alt,neu,done,sold,replaced,reused,
+-- rejected:entity/birth,entity/birth". Replaced and skipped vehicles are not stored, only their counters.
+local function serializeQueue()
+	local jobs = {}
+	for k, j in ipairs(queue.jobs) do
+		local es = {}
+		for i, e in ipairs(j.open) do es[i] = num(e.entity) .. "/" .. num(e.birth) end
+		local s = j.skipped
+		jobs[k] = table.concat({ num(j.id), j.alt, j.neu, num(j.done), num(s.sold), num(s.replaced), num(s.reused), num(s.rejected) }, ",")
+			.. ":" .. table.concat(es, ",")
+	end
+	return table.concat(jobs, ";")
+end
+
+-- jobs and the entity index from the saved string; nil when anything in it is not as written by serializeQueue
+local function parseQueue(s)
+	if type(s) ~= "string" then return nil end
+	local jobs, byEntity, maxId = {}, {}, 0
+	if s == "" then return jobs, byEntity, maxId end
+	for jobStr in (s .. ";"):gmatch("([^;]*);") do
+		local head, tail = jobStr:match("^([^:]*):(.*)$")
+		if not head then return nil end
+		local f = {}
+		for x in (head .. ","):gmatch("([^,]*),") do f[#f + 1] = x end
+		if #f ~= 8 then return nil end
+		local id, done = countValue(f[1]), countValue(f[4])
+		local skipped = { sold = countValue(f[5]), replaced = countValue(f[6]), reused = countValue(f[7]), rejected = countValue(f[8]) }
+		if not (id and done and skipped.sold and skipped.replaced and skipped.reused and skipped.rejected) then return nil end
+		if not (f[2]:match("^[mu]%d+$") and f[3]:match("^[mu]%d+$")) then return nil end
+		local job = { id = id, alt = f[2], neu = f[3], open = {}, done = done, skipped = skipped }
+		if tail ~= "" then
+			for piece in (tail .. ","):gmatch("([^,]*),") do
+				local e, b = piece:match("^(%d+)/(%d+)$")
+				e, b = countValue(e), countValue(b)
+				if not (e and b) then return nil end
+				-- a vehicle in two jobs (should not happen): the first keeps it
+				if not byEntity[e] then
+					job.open[#job.open + 1] = { entity = e, birth = b, failures = 0 }
+					byEntity[e] = id
+				end
+			end
+		end
+		jobs[#jobs + 1] = job
+		if id > maxId then maxId = id end
+	end
+	return jobs, byEntity, maxId
+end
+
+-- reads the queue from the savegame; replaces whatever was in memory (a new savegame may be loaded)
+local function loadQueue()
+	local q = newQueue()
+	q.loaded = true
+	local data = readSaveData()
+	if data ~= nil then
+		local okF, fmt = pcall(function() return data.queueFormat end)
+		if okF and fmt ~= nil then
+			local jobs, byEntity, maxId
+			if fmt == QUEUE_FORMAT then
+				local okQ, s = pcall(function() return data.queue end)
+				jobs, byEntity, maxId = parseQueue(okQ and s or nil)
+			end
+			if jobs then
+				q.jobs, q.byEntity = jobs, byEntity
+				local okR, r = pcall(function() return data.queueReserve end)
+				q.reserve = okR and countValue(r) or 0
+				local okP, p = pcall(function() return data.queuePaused end)
+				q.paused = okP and p == true
+				local okN, n = pcall(function() return data.queueNextId end)
+				n = okN and countValue(n) or nil
+				q.nextId = (n and n > maxId) and n or maxId + 1
+			else
+				-- another version wrote this (or it is damaged): leave it alone, the other version may read it again
+				q.foreign = true
+				log("queue in the savegame is from another version or unreadable, format", tostring(fmt), "- not processed, not overwritten")
+			end
+		end
+	end
+	queue = q
+end
+
+local function ensureLoaded()
+	if not queue.loaded then loadQueue() end
+end
+
+-- writes settings and queue together; fields this version does not know are written back as read
+local function writeSaveData()
+	ensureLoaded()
+	local data = {}
+	for k, v in pairs(savedRaw) do data[k] = v end
+	for k in pairs(KEPT) do data[k] = sel[k] end
+	if not queue.foreign then
+		data.queueFormat = QUEUE_FORMAT
+		data.queue = serializeQueue()
+		data.queueReserve = num(queue.reserve)
+		data.queuePaused = queue.paused == true
+		data.queueNextId = num(queue.nextId)
+	end
+	local ok, err = pcall(function() api.gui.game.setGuiSaveData(MOD_ID, data) end)
+	if not ok then log("settings not saved", tostring(err)) else savedRaw = data end
+end
+
+local function openCount()
+	ensureLoaded()
+	local n = 0
+	for __, j in ipairs(queue.jobs) do n = n + #j.open end
+	return n
+end
+
+local function jobById(id)
+	for k, j in ipairs(queue.jobs) do
+		if j.id == id then return j, k end
+	end
+	return nil
+end
+
+-- num[1] of the vehicle's revision, copied as a Lua number: it changes when an entity id is reused for another
+-- entity (scripts/entity_util.tl:35-39 entityChanged0; 0 = unreadable, then the check is skipped)
+local function birthOf(v)
+	local ok, b = pcall(function() return tonumber(tostring(api.engine.getRevision(v).num[1])) end)
+	return ok and countValue(b) or 0
+end
+
+-- queues the vehicles of list (as sorted by affordablePart) as one job; returns how many were queued, how many
+-- were already queued, and a note: "full" (limit reached) or "foreign" (queue of another version, nothing queued)
+local function enqueue(altKey, neuKey, list)
+	ensureLoaded()
+	if queue.foreign then return 0, 0, "foreign" end
+	local job = { id = queue.nextId, alt = altKey, neu = neuKey, open = {}, done = 0, skipped = emptySkipped() }
+	local dup, note = 0, nil
+	local total = openCount()
+	for __, x in ipairs(list) do
+		local v = x.vehicle
+		if queue.byEntity[v] then
+			dup = dup + 1
+		elseif total >= Queue.MAX_QUEUED then
+			note = "full"
+		else
+			job.open[#job.open + 1] = { entity = v, birth = birthOf(v), failures = 0 }
+			queue.byEntity[v] = job.id
+			total = total + 1
+		end
+	end
+	if #job.open == 0 then return 0, dup, note end
+	queue.nextId = queue.nextId + 1
+	queue.jobs[#queue.jobs + 1] = job
+	queue.cache = nil
+	writeSaveData()
+	return #job.open, dup, note
+end
+
+local function removeJob(id)
+	local job, k = jobById(id)
+	if not job then return end
+	for __, e in ipairs(job.open) do queue.byEntity[e.entity] = nil end
+	table.remove(queue.jobs, k)
+	queue.cache = nil
+	writeSaveData()
+end
+
+local function cancelAll()
+	for __, job in ipairs(queue.jobs) do
+		for __, e in ipairs(job.open) do queue.byEntity[e.entity] = nil end
+	end
+	queue.jobs = {}
+	queue.cache = nil
+	writeSaveData()
+end
+
+local function setReserve(v)
+	ensureLoaded()
+	queue.reserve = countValue(v) or 0
+	writeSaveData()
+end
+
+local function setPaused(p)
+	ensureLoaded()
+	queue.paused = p == true
+	if not p then queue.errors, queue.lastError = 0, nil end
+	writeSaveData()
+end
+
+-- the first job with open vehicles that can run: a job whose new model is unknown (mod removed) or no longer
+-- for sale is marked blocked and skipped, the jobs behind it go on; it runs again once the model is back
+local function headJob(year)
+	for __, j in ipairs(queue.jobs) do
+		if #j.open > 0 then
+			local neuInfo = info(j.neu)
+			if not (neuInfo and info(j.alt)) then
+				j.blocked = "unknown"
+			elseif not available(neuInfo, year) then
+				j.blocked = "model"
+			else
+				j.blocked = nil
+				return j
+			end
+		end
+	end
+	return nil
+end
+
+local function finishHead(job)
+	local e = table.remove(job.open, 1)
+	queue.byEntity[e.entity] = nil
+	job.done = job.done + 1
+	job.cost, job.short = nil, nil
+	queue.cache = nil
+end
+
+local function dropHead(job, reason)
+	local e = table.remove(job.open, 1)
+	queue.byEntity[e.entity] = nil
+	job.skipped[reason] = job.skipped[reason] + 1
+	job.cost, job.short = nil, nil
+	queue.cache = nil
+end
+
+local function failHead(job, entry)
+	entry.failures = entry.failures + 1
+	if entry.failures >= FAILURES_TO_DROP then dropHead(job, "rejected") end
+end
+
+-- the balance for the queue: a finite number, or nil with infinite = true for infinite money (sandbox mode, "no
+-- costs"), or nil, false when it cannot be read: then the queue sends nothing (the window leaves that to the game,
+-- but a click is the player's decision, a tick is not)
+local function queueFunds()
+	local ok, funds = readBalance()
+	if not ok then return nil, false end
+	if funds == nil then return nil, true end
+	if type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds, false end
+	return nil, false
+end
+
+-- Checks the head vehicle of job against the game and builds its command. Returns a table { conf, cost, parts }
+-- when it can be replaced, or nil and the reason to drop it: "sold" (gone, or another player's), "reused" (the
+-- entity id now belongs to something else), "replaced" (the old model is no longer in it, e.g. replaced by hand
+-- in the game's vehicle window: the id stays, the parts change at once, game test 18.10.2026).
+local function checkHead(job, entry, t)
+	local e = entry.entity
+	if not api.engine.entityExists(e) then return nil, "sold" end
+	if entry.birth ~= 0 then
+		local b = birthOf(e)
+		if b ~= 0 and b ~= entry.birth then return nil, "reused" end
+	end
+	-- the owner from PLAYER_OWNED, the way the game's entity windows read it (eow_extension_util.tl:5-17); a vehicle
+	-- without the component is nobody's (campaign missions hand vehicles to AI players, tf3-sdk knowledge/ownership.md)
+	local okO, mine = pcall(function()
+		local po = api.engine.getComponent(e, CT.PLAYER_OWNED)
+		return po ~= nil and po.player == api.engine.util.getPlayer()
+	end)
+	if okO and not mine then return nil, "sold" end
+	local tv = api.engine.getComponent(e, CT.TRANSPORT_VEHICLE)
+	local cfg = tv and tv.transportVehicleConfig
+	if not cfg then return nil, "sold" end
+	local altInfo, neuInfo = info(job.alt), info(job.neu)
+	local conf, units = rebuild(cfg, altInfo, neuInfo, t)
+	if not conf then return nil, "replaced" end
+	-- the same formula as the window and the batch (#26, #37): new units at list price minus the credit for this vehicle
+	local cost = neuInfo.price * units - creditOf(useOf(e, cfg), job.alt)
+	return { conf = conf, cost = cost, parts = partsOf(cfg) }
+end
+
+-- Sends the one command; sent counts only once sendCommand returned, a throwing command gets no callback (#9).
+-- The callback comes a frame after the command ran (api/tealdef/api/cmd.d.tl:2-10); a callback of a cancelled or
+-- reloaded queue finds no matching inflight entry and does nothing.
+local function sendHead(job, entry, checked, now)
+	local e = entry.entity
+	queue.inflight = { entity = e, job = job.id, sentAt = now, parts = checked.parts }
+	local ok, err = pcall(api.cmd.sendCommand, api.cmd.makeVehicleReplaceCmd(e, checked.conf), function(__, success)
+		local f = queue.inflight
+		if not f or f.entity ~= e then return end
+		queue.inflight = nil
+		local j = jobById(f.job)
+		local head = j and j.open[1]
+		if not head or head.entity ~= e then return end
+		if success then
+			finishHead(j)
+		else
+			-- the game gives no reason (tf3-sdk knowledge/commands.md); it is not the money, that goes through
+			log("queue: replace refused by the game", e)
+			failHead(j, head)
+		end
+		writeSaveData()
+	end)
+	if not ok then
+		queue.inflight = nil
+		log("queue: command not sent", e, tostring(err))
+		failHead(job, entry)
+		writeSaveData()
+	end
+end
+
+-- No callback within INFLIGHT_TIMEOUT_S: the vehicle tells what happened. Other parts than when the command was
+-- sent: it was replaced, the entry is done. Unchanged: the entry stays at the head and is sent again next tick.
+local function resolveInflight()
+	local f = queue.inflight
+	queue.inflight = nil
+	local j = jobById(f.job)
+	local head = j and j.open[1]
+	if not head or head.entity ~= f.entity then return end
+	local ok, partsNow = pcall(function() return partsOf(api.engine.getComponent(f.entity, CT.TRANSPORT_VEHICLE).transportVehicleConfig) end)
+	local replaced = ok and partsNow ~= f.parts
+	log("queue: no answer for vehicle", f.entity, "after", INFLIGHT_TIMEOUT_S, "s, replaced:", tostring(replaced))
+	if replaced then
+		finishHead(j)
+		writeSaveData()
+	end
+end
+
+local function appTime()
+	return api.util.getApplicationTime()
+end
+
+-- One tick. Per frame with nothing queued: a few Lua comparisons. Per frame with a queue: one getApplicationTime.
+-- Per tick: one balance read; the head is validated (about ten native calls) only when the balance minus the
+-- reserve reaches its last known net cost, which only rises as the residual value falls (user decision 20.10.2026).
+local function queueTick()
+	ensureLoaded()
+	if queue.paused or queue.foreign or queue.editor then return end
+	local hasOpen = false
+	for __, j in ipairs(queue.jobs) do
+		if #j.open > 0 then hasOpen = true; break end
+	end
+	if not hasOpen and not queue.inflight then return end
+	local now = appTime()
+	if now < queue.nextTick then return end
+	queue.nextTick = now + TICK_S
+	if queue.inflight then
+		if now - queue.inflight.sentAt > INFLIGHT_TIMEOUT_S then resolveInflight() end
+		return
+	end
+	-- the window's own batch is still being answered: its vehicles still look unchanged (#9), so wait
+	if pending() then return end
+	local year = api.engine.util.getYear()
+	local job = headJob(year)
+	if not job then return end
+	local funds, infinite = queueFunds()
+	if funds == nil and not infinite then return end
+	local spendable = funds and funds - queue.reserve or nil
+	local c, head = queue.cache, job.open[1]
+	if c and spendable and c.entity == head.entity and spendable < c.cost then
+		job.cost, job.short = c.cost, c.cost - spendable
+		return
+	end
+	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
+	local dirty = false
+	for __ = 1, DROPS_PER_TICK do
+		head = job.open[1]
+		local checked, reason = checkHead(job, head, t)
+		if checked then
+			job.cost = checked.cost
+			if spendable and spendable < checked.cost then
+				job.short = checked.cost - spendable
+				queue.cache = { entity = head.entity, cost = checked.cost }
+			else
+				job.short = nil
+				sendHead(job, head, checked, now)
+			end
+			break
+		end
+		dropHead(job, reason)
+		dirty = true
+		if #job.open == 0 then
+			job = headJob(year)
+			if not job then break end
+		end
+	end
+	if dirty then writeSaveData() end
+end
+
+-- a Lua error in a tick never reaches the game's UI: logged, the next tick waits, after several in a row the
+-- queue pauses itself and the window shows the error
+local function tickFailed(err)
+	queue.errors = queue.errors + 1
+	queue.lastError = tostring(err)
+	log("queue: error", tostring(err))
+	queue.nextTick = appTime() + 10 * TICK_S
+	if queue.errors >= ERRORS_TO_PAUSE and not queue.paused then
+		queue.paused = true
+		writeSaveData()
+	end
+end
+
+local okEntry, mod_entry_point = pcall(ug_require, "::/gui/main/mod_entry_point.tl")
+local MvrQueueHost = okEntry and type(mod_entry_point) == "table" and mod_entry_point.ModEntryPointExtension
+	and react.RegisterPluginRecipe(mod_entry_point.ModEntryPointExtension, "MvrQueueHost", function()
+		react.onMount(function()
+			-- the host hangs below the game UI root (game.tl:73-96): mounted anew for every savegame, so the queue
+			-- of the loaded game replaces whatever was in memory (plan 20.10.2026, probe 7.1)
+			loadQueue()
+			local okE, editor = pcall(function() return api.gui.game.isMapEditor() end)
+			queue.editor = okE and editor == true
+			log("queue host mounted, queued vehicles:", openCount(), "editor:", tostring(queue.editor))
+		end)
+		react.onStep(function()
+			local ok, err = pcall(queueTick)
+			if not ok then tickFailed(err) end
+		end)
+		-- a recipe must return a layout; this one shows nothing
+		return builtin.BoxLayout{ children = {} }
+	end) or nil
+if not MvrQueueHost then log("mod entry point not available, queue host disabled") end
+
+Queue.loadKept, Queue.ensureLoaded, Queue.writeSaveData, Queue.openCount, Queue.jobById = loadKept, ensureLoaded, writeSaveData, openCount, jobById
+Queue.enqueue, Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused = enqueue, removeJob, cancelAll, setReserve, setPaused
+Queue.num, Queue.host = num, MvrQueueHost
+end
+
 -- Replaces alt with neu in every vehicle; the other parts stay as they are. partial: only the vehicles the balance
--- covers right now (#23), an explicit choice next to the disabled button; otherwise all or nothing.
-local function replaceAll(altKey, neuKey, partial)
+-- covers right now (#23), an explicit choice next to the disabled button; otherwise all or nothing. queueRest: the
+-- vehicles the balance does not cover now are queued (affordable ones, if any, are replaced at once).
+local function replaceAll(altKey, neuKey, partial, queueRest)
 	local altInfo, neuInfo = info(altKey), info(neuKey)
 	if pending() then return end
 	if not (altInfo and neuInfo) or altInfo.class ~= neuInfo.class then return end
@@ -715,18 +1254,26 @@ local function replaceAll(altKey, neuKey, partial)
 	end
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
 	-- partial: decided once, with the balance read now and a fresh fleet
-	local only, total = nil, nil
-	if partial then
+	local only, total, rest = nil, nil, nil
+	if partial or queueRest then
 		local funds = balance()
 		if funds == nil then return end -- infinite or unreadable money: the normal button covers it
 		local e = fleet()[altKey]
-		local n
-		only, n = affordablePart(e, altKey, altInfo, neuInfo, funds)
-		if n == 0 then
+		local part = { affordablePart(e, altKey, altInfo, neuInfo, funds) }
+		local n, sorted = part[2], part[4]
+		only = part[1]
+		if n == 0 and not queueRest then
 			result.text = _("mvr_not_enough_money")
 			return
 		end
 		total = e and #e.uses or n
+		if queueRest then
+			-- the rest, oldest first; the vehicle the queue is replacing right now is already in the queue
+			rest = {}
+			for __, x in ipairs(sorted) do
+				if not only[x.vehicle] and not (queue.inflight and queue.inflight.entity == x.vehicle) then rest[#rest + 1] = x end
+			end
+		end
 	end
 	-- build all first: either every vehicle is replaced or none, like the purchase window
 	local jobs, units = {}, 0
@@ -734,7 +1281,9 @@ local function replaceAll(altKey, neuKey, partial)
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		local conf, n = nil, 0
-		if cfg and (only == nil or only[v]) then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
+		-- a vehicle the queue has just sent a command for would be replaced twice
+		local inflight = queue.inflight and queue.inflight.entity == v
+		if cfg and (only == nil or only[v]) and not inflight then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
 			jobs[#jobs + 1] = { entity = v, conf = conf }
 			units = units + n
@@ -742,13 +1291,15 @@ local function replaceAll(altKey, neuKey, partial)
 	end
 	-- checked again here: the balance may have changed since the window was drawn; residual value by the
 	-- same rule as the window
-	if not partial and not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
+	if not partial and not queueRest and not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
 		result.text = _("mvr_not_enough_money")
 		return
 	end
 	-- counters are reset only here, right before sending: a refused click leaves the previous batch alone
 	local batch = result.batch
 	result.sent, result.ok, result.failed, result.total = 0, 0, 0, total
+	result.queued, result.dup, result.note = 0, 0, nil
+	if rest then result.queued, result.dup, result.note = Queue.enqueue(altKey, neuKey, rest) end
 	for __, job in ipairs(jobs) do
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
@@ -1193,43 +1744,6 @@ end
 
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
--- selection in the window; lives outside the recipe so every opening starts fresh
--- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
--- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026)
-local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "name", sortNew = "name", sortOldAsc = true, sortNewAsc = true,
-	sameCargo = true, details = true }
-
--- Sorting, "Same cargo" and the details card are kept in the savegame (user decision 19.10.2026), in the game's
--- GUI save data per mod (api/tealdef/api/gui.d.tl:773-781 getGuiSaveData/setGuiSaveData). The game keeps its HUD
--- filters there (layer_hud_filter.tl:59-82), Clean HUD and Line Manager their settings. Read on every opening,
--- written on every change; a missing or odd value keeps the default.
-local MOD_ID = "mass_vehicle_replace_1"
-local function isBool(v) return type(v) == "boolean" end
-local KEPT = {
-	sortOld = function(v) return v == "name" or v == "year" end,
-	sortNew = function(v) return v == "name" or v == "year" end,
-	sortOldAsc = isBool,
-	sortNewAsc = isBool,
-	sameCargo = isBool,
-	details = isBool,
-}
-
-local function loadKept()
-	local ok, data = pcall(function() return api.gui.game.getGuiSaveData(MOD_ID) end)
-	if not ok or type(data) ~= "table" then return end
-	for k, valid in pairs(KEPT) do
-		local okV, v = pcall(function() return data[k] end)
-		if okV and valid(v) then sel[k] = v end
-	end
-end
-
-local function saveKept()
-	local data = {}
-	for k in pairs(KEPT) do data[k] = sel[k] end
-	local ok, err = pcall(function() api.gui.game.setGuiSaveData(MOD_ID, data) end)
-	if not ok then log("settings not saved", tostring(err)) end
-end
-
 local function topBar(update)
 	local children = {}
 	for __, c in ipairs(CARRIERS) do
@@ -1251,7 +1765,7 @@ local function topBar(update)
 		meta = { class = "mvr-cargo-filter", tooltip = _("mvr_same_cargo_tip") },
 		content = text(_("mvr_same_cargo"), "font-scale-annotation"),
 		value = sel.sameCargo and 1 or 0,
-		onValueChange = function(v) update(function() sel.sameCargo = v == 1; saveKept() end) end,
+		onValueChange = function(v) update(function() sel.sameCargo = v == 1; Queue.writeSaveData() end) end,
 	}
 	return row(children)
 end
@@ -1288,13 +1802,24 @@ local function listHead(label, field, update)
 					else
 						sel[field], sel[ascField] = s.key, defaultAscending(s.key, field)
 					end
-					saveKept()
+					Queue.writeSaveData()
 				end)
 			end,
 		}
 	end
 	return row(children)
 end
+
+-- a text button the way the game makes them (button_react_util.makeTextButton, 5th argument = disabled); the same
+-- shape by hand should the module be missing
+local function textButton(class, label, onClick, tooltip, disabled)
+	if button_react_util and button_react_util.makeTextButton then
+		return button_react_util.makeTextButton(class, label, onClick, tooltip, disabled)
+	end
+	return builtin.Button{ meta = { class = class, tooltip = tooltip, enabled = not disabled }, content = text(label), onClick = onClick }
+end
+
+local openQueueWindow -- defined with the queue window below; the replace window has a button to it
 
 local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	react.useInputAction("IA_MENU_BACK", react.iaHandler(p.onClose))
@@ -1413,6 +1938,10 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	if not affordable and e and neuInfo then some, someCost = someCount() end
 	-- the button itself says "2 of 8" then (user decision 18.10.2026: no extra element, the label tells it)
 	local partial = some > 0
+	-- the rest can be queued when the money does not cover all and can be counted (not infinite, not unreadable);
+	-- with nothing affordable and the box ticked the button queues everything (replacement queue)
+	local canQueue = (e and neuInfo and not affordable and not free and balance() ~= nil) == true
+	local queueAll = canQueue and not partial and sel.queueRest == true
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
 	local busy = pending()
@@ -1452,11 +1981,12 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		-- like the purchase window: disabled, red (mass_vehicle_replace.css.lua), labelled and with tooltip when the money is not enough
 		-- not enough for all but for some (#23): enabled, labelled "2 of 8", tooltip explains which ones
 		meta = {
-			class = "primary, mvr-replace-btn" .. (affordable and "" or partial and ", mvr-partial" or ", mvr-no-money"),
+			class = "primary, mvr-replace-btn" .. (affordable and "" or (partial or queueAll) and ", mvr-partial" or ", mvr-no-money"),
 			-- disabled while the previous batch is still being replaced (issue #9)
-			enabled = (affordable or partial) and not busy,
+			enabled = (affordable or partial or queueAll) and not busy,
 			tooltip = partial and (some == 1 and string.format(_("mvr_replace_some_tip_1"), e.vehicles)
-				or string.format(_("mvr_replace_some_tip"), some, e.vehicles)) or not affordable and _("mvr_not_enough_money") or nil,
+				or string.format(_("mvr_replace_some_tip"), some, e.vehicles)) or queueAll and _("mvr_queue_rest_tip")
+				or not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
@@ -1464,13 +1994,14 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 				children = {
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
 					text(busy and _("mvr_replacing") or partial and string.format(_("mvr_replace_some"), some, e.vehicles)
+						or queueAll and count("mvr_queue_all", e.vehicles)
 						or not affordable and _("mvr_not_enough_money") or _("mvr_replace")),
 				},
 			},
 		},
 		onClick = function()
 			if not (altInfo and neuInfo) then return end
-			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key, partial)
+			local ok, err = pcall(replaceAll, altInfo.key, neuInfo.key, partial, canQueue and sel.queueRest == true)
 			if not ok then
 				result.text = _("mvr_error") .. " " .. tostring(err)
 				log("error", tostring(err))
@@ -1490,6 +2021,20 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		text = engineWarning or " ",
 	}
 
+	-- replacement queue: "queue the rest" box while the money does not cover all, and the way to the queue window;
+	-- the row is always there so the window keeps its height
+	local queueBox = builtin.Component{}
+	if canQueue then
+		queueBox = builtin.CheckBox{
+			meta = { tooltip = _("mvr_queue_rest_tip") },
+			label = count("mvr_queue_rest", e.vehicles - some),
+			value = sel.queueRest and 1 or 0,
+			onValueChange = function(v) update(function() sel.queueRest = v == 1; Queue.writeSaveData() end) end,
+		}
+	end
+	local queueRow = row({ queueBox, gui_react_util.makeHorizontalSpacer(),
+		textButton("secondary", _("mvr_queue_open"), function() openQueueWindow() end, _("mvr_queue_open_tip")) })
+
 
 	local children = {
 		topBar(update),
@@ -1504,10 +2049,11 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			gui_react_util.makeHorizontalSpacer(),
 			button,
 		}),
+		queueRow,
 	}
 	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
 	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,
-		function(v) update(function() sel.details = v == true; saveKept() end) end)
+		function(v) update(function() sel.details = v == true; Queue.writeSaveData() end) end)
 	if details then children[#children + 1] = details end
 
 	-- a recipe must return a layout, not a component
@@ -1559,10 +2105,241 @@ local function openWindow(carrier)
 	-- a new window starts without pending commands, like the game's counter that lives with its component
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed, result.total = 0, 0, 0, nil
+	result.queued, result.dup, result.note = 0, 0, nil
 	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
-	loadKept()
+	Queue.loadKept()
+	Queue.ensureLoaded()
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
 	if ok then windowOpen = true else log("opening window failed", tostring(err)) end
+end
+
+-- Queue window ---------------------------------------------------------------------------------------------
+-- A window like the game's entity windows (class entity-window, top right): cards in the game's scroll container
+-- (entity_window_util.tl:2467-2489), one card with the settings, one per job. Redrawn twice a second from a
+-- signature string of the queue, so an unchanged queue costs nothing (tf3-ui-design skill, tf3-sdk ui.md).
+do
+local ensureLoaded, openCount, num, jobById = Queue.ensureLoaded, Queue.openCount, Queue.num, Queue.jobById
+local removeJob, cancelAll, setReserve, setPaused = Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused
+local QUEUE_WINDOW_KEY = "mass_vehicle_replace.queue"
+local CONFIRM_KEY = "mass_vehicle_replace.confirm"
+
+local function modelName(key)
+	local i = info(key)
+	return i and oneLine(i.name) or tostring(key)
+end
+
+local function jobSig(j)
+	local s = j.skipped
+	return table.concat({ num(j.id), #j.open, j.done, s.sold, s.replaced, s.reused, s.rejected, j.blocked or "",
+		j.cost and num(j.cost) or "", j.short and num(j.short) or "" }, ":")
+end
+
+local function queueSig()
+	ensureLoaded()
+	local parts = { queue.paused and "p" or "r", num(queue.reserve), queue.foreign and "f" or "", queue.lastError or "",
+		queue.inflight and num(queue.inflight.entity) or "" }
+	for __, j in ipairs(queue.jobs) do parts[#parts + 1] = jobSig(j) end
+	return table.concat(parts, "|")
+end
+
+local function spacer()
+	return gui_react_util.makeHorizontalSpacer()
+end
+
+local function vbox(class, children)
+	return builtin.BoxLayout{ meta = { class = class }, orientation = builtin.type.Orientation.Vertical, children = children }
+end
+
+local function hbox(class, children)
+	return builtin.BoxLayout{ meta = { class = class }, orientation = builtin.type.Orientation.Horizontal, children = children }
+end
+
+-- a card the way the game's entity windows build theirs (content_card.tl:207-455): the card is the frame, the body
+-- a recipe with plain layouts
+local function card(key, title, recipe, params)
+	return builtin.BoxLayout{ child = content_card.ContentCard{
+		meta = { localKey = key },
+		title = title,
+		initialCalloutTextPermanent = "",
+		recipeAndParamPermanent = content_card.makeRecipeAndParam(recipe, params),
+	} }
+end
+
+local function confirmCancelAll()
+	local wc = windowApi()
+	local dialog = dialog_react_util and dialog_react_util.DialogWindow or nil
+	if not (wc and dialog) then cancelAll(); return end
+	local function close() pcall(wc.removeWindow, dialog, CONFIRM_KEY) end
+	-- the game's dialog, with an own key, never as a singleton (tf3-ui-design skill, rule 12)
+	local ok, err = pcall(wc.addWindow, dialog, CONFIRM_KEY, {
+		x = 0.5, y = 0.5,
+		windowTitle = _("mvr_cancel_all"),
+		displayText = _("mvr_cancel_all_q"),
+		choices = {
+			{ text = _("mvr_cancel_all"), onClick = function() cancelAll(); close() end },
+			{ text = _("mvr_keep"), onClick = close, isSecondary = true },
+		},
+		onClose = close,
+	})
+	if not ok then log("confirmation not opened", tostring(err)) end
+end
+
+-- settings card: reserve, paused, a status line, "cancel all"
+local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
+	ensureLoaded()
+	local open = openCount()
+	local status
+	if queue.foreign then
+		status = _("mvr_queue_foreign")
+	elseif queue.paused and queue.lastError then
+		status = string.format(_("mvr_queue_error"), queue.lastError)
+	elseif queue.paused then
+		status = _("mvr_paused")
+	elseif open == 0 then
+		status = _("mvr_queue_empty")
+	else
+		status = count("mvr_queue_n_open", open)
+	end
+	return vbox("mvr-rows", {
+		hbox("mvr-row", {
+			builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_reserve_tip") }, text = _("mvr_reserve") },
+			spacer(),
+			-- the game's money field (game_bar.tl:252-266 uses it for the balance); no upper bound
+			builtin.DoubleSpinBox{ meta = { tooltip = _("mvr_reserve_tip") }, min = 0, step = 100000, value = queue.reserve,
+				onValueChange = function(v) setReserve(v) end },
+		}),
+		builtin.CheckBox{ label = _("mvr_paused"), value = queue.paused and 1 or 0, onValueChange = function(v) setPaused(v == 1) end },
+		text(status, "font-scale-annotation"),
+		hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0) }),
+	})
+end)
+
+-- one job: counters, what the queue is doing with it, cancel
+local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
+	local j = jobById(p.id)
+	if not j then return builtin.BoxLayout{ children = {} } end
+	local s = j.skipped
+	local skipped = s.sold + s.replaced + s.reused + s.rejected
+	local status
+	local class = "font-scale-body"
+	if j.blocked == "model" then
+		status, class = _("mvr_queue_blocked_model"), "font-scale-body, error"
+	elseif j.blocked == "unknown" then
+		status, class = _("mvr_queue_blocked_unknown"), "font-scale-body, error"
+	elseif #j.open == 0 then
+		status = _("mvr_queue_done")
+	elseif not p.head then
+		status = _("mvr_queue_waiting")
+	elseif j.short then
+		status, class = string.format(_("mvr_queue_next_short"), money(j.cost), money(j.short)), "font-scale-body, warning"
+	elseif j.cost then
+		status = string.format(_("mvr_queue_next"), money(j.cost))
+	else
+		status = _("mvr_queue_checking")
+	end
+	return vbox("mvr-rows", {
+		-- a vehicle whose id now belongs to something else is gone like a sold one
+		builtin.TextView{ meta = { class = "font-scale-body", tooltip = string.format(_("mvr_queue_skipped_tip"), s.sold + s.reused, s.replaced, s.rejected) },
+			text = string.format(_("mvr_queue_counts"), #j.open, j.done, skipped) },
+		text(status, class),
+		hbox("mvr-tools", { spacer(), textButton("secondary", #j.open > 0 and _("mvr_cancel_job") or _("mvr_remove_job"), function() removeJob(p.id) end) }),
+	})
+end)
+
+local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
+	react.useInputAction("IA_MENU_BACK", react.iaHandler(p.onClose))
+	ensureLoaded()
+	-- redraw when anything in the queue changes; the signature is a short string compared twice a second
+	engine_react_util.useStepStateTimer(queueSig, 0.5)
+	local headId = nil
+	for __, j in ipairs(queue.jobs) do
+		if #j.open > 0 and not j.blocked then headId = j.id; break end
+	end
+	local cards = { card("settings", _("mvr_queue_settings"), MvrQueueSettings, { sig = queueSig() }) }
+	for __, j in ipairs(queue.jobs) do
+		cards[#cards + 1] = card("job" .. num(j.id), string.format(_("mvr_queue_job"), modelName(j.alt), modelName(j.neu)),
+			MvrQueueJob, { id = j.id, head = j.id == headId, sig = jobSig(j) })
+	end
+	local panel
+	if entity_window_util and entity_window_util.ContentWidgetScrollContainer then
+		-- the inner panel of the game's windows: two positional arguments
+		panel = entity_window_util.ContentWidgetScrollContainer(cards, true)
+	else
+		panel = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = cards }
+	end
+	return builtin.BoxLayout{ children = { panel } }
+end)
+
+local queueWindowOpen = false
+
+local MvrQueueWindow = react.RegisterWrapperRecipe("MvrQueueWindow", builtin.Window, function(p)
+	react.onUnmount(function() queueWindowOpen = false end)
+	return builtin.Window{
+		meta = { class = "entity-window" },
+		id = QUEUE_WINDOW_KEY,
+		-- top right like the game's entity windows
+		initialX = 1,
+		initialY = 0,
+		title = _("mvr_queue_title"),
+		onClose = p.onClose,
+		closable = true,
+		movable = true,
+		autoFocusOnBecomingVisible = true,
+		content = MvrQueueContent{ onClose = p.onClose },
+	}
+end)
+
+local function closeQueueWindow()
+	queueWindowOpen = false
+	local wc = windowApi()
+	if wc then pcall(wc.removeWindow, MvrQueueWindow, QUEUE_WINDOW_KEY) end
+end
+
+openQueueWindow = function()
+	local wc = windowApi()
+	if not wc then log("no window access"); return end
+	if not (okCard and type(content_card) == "table") then log("queue window needs the game's content card"); return end
+	if queueWindowOpen then closeQueueWindow() end
+	ensureLoaded()
+	local ok, err = pcall(wc.addWindow, MvrQueueWindow, QUEUE_WINDOW_KEY, { onClose = closeQueueWindow })
+	if ok then queueWindowOpen = true else log("opening queue window failed", tostring(err)) end
+end
+
+-- Counter in the game bar ----------------------------------------------------------------------------------
+-- Built exactly like the game's earnings display (game_bar_display_earnings.script.tl:7-38): a plugin at
+-- GameBarInfoDisplayExtension, two headline texts in a component with a tooltip, nothing when the queue is empty.
+-- Not clickable: a flat button there would need own colours (custom), not approved (user decision 20.10.2026).
+local okBar, game_bar_widgets = pcall(ug_require, "::/gui/game_bar/game_bar_widgets.tl")
+local MvrQueueBar = okBar and type(game_bar_widgets) == "table" and game_bar_widgets.GameBarInfoDisplayExtension
+	and react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "MvrQueueBar", function()
+		local isMapEditorRef = react.useRefLazy(function()
+			local ok, v = pcall(function() return api.gui.game.isMapEditor() end)
+			return ok and v == true
+		end)
+		-- the count is two Lua numbers; the recipe redraws only when it changes
+		local countState = engine_react_util.useStepStateTimer(openCount, 0.5)
+		if isMapEditorRef:get() then return nil end
+		local n = countState:old()
+		if n == 0 then return builtin.BoxLayout{ children = {} } end
+		return builtin.BoxLayout{
+			orientation = builtin.type.Orientation.Horizontal,
+			children = {
+				builtin.Component{
+					meta = { tooltip = count("mvr_queue_bar_tip", n) },
+					layout = builtin.BoxLayout{
+						orientation = builtin.type.Orientation.Horizontal,
+						children = {
+							text(_("mvr_queue_bar"), "font-scale-headline"),
+							text(num(n), "font-scale-headline"),
+						},
+					},
+				},
+			},
+		}
+	end) or nil
+if not MvrQueueBar then log("game bar extension not available, queue counter disabled") end
+
+Queue.window, Queue.bar = MvrQueueWindow, MvrQueueBar
 end
 
 -- "Replace Vehicles" button in the depot window, to the right of "Manage Vehicles".
@@ -1575,10 +2352,9 @@ end
 --    mod installed earlier. The module field stays untouched: other mods pass it to react.CallOriginalRecipe,
 --    which only works with the registered recipe. There is no extension point for the button bar.
 local MANAGE_TAG = "entityWindow.maintenanceStation.manageVehicle"
-local okEwu, entity_window_util = pcall(ug_require, "::/gui/entity_window/entity_window_util.tl")
 local okEow, maintenance_station_eow = pcall(ug_require, "::/gui/entity_window/maintenance_station/maintenance_station_eow.script.tl")
 -- captured at load: other mods may overwrite the module field later
-local ActionButtonBar = okEwu and type(entity_window_util) == "table" and entity_window_util.ActionButtonBar or nil
+local ActionButtonBar = entity_window_util and entity_window_util.ActionButtonBar or nil
 
 local depotOfWindow -- depot of the depot window that is rendering right now
 
@@ -1676,5 +2452,9 @@ function data()
 		doReplace = doReplace,
 		depotProbe = MvrDepotProbe,
 		depotProbeCondition = depotProbeCondition,
+		queueHost = Queue.host,
+		queueBar = Queue.bar,
+		-- for the offline UI check (tf3-sdk ui_check), not referenced by a resource
+		queueWindow = Queue.window,
 	}
 end
