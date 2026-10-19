@@ -961,12 +961,14 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local e = altInfo and byKey[altInfo.key]
 	local price = e and neuInfo and neuInfo.price * e.parts or 0
 	shown.price, shown.e, shown.key, shown.time = price, (e and neuInfo) and e or nil, altInfo and altInfo.key, nil
-	-- redraw when the cost changes while the game runs
-	engine_react_util.useStepState(shownCost)
+	-- redraw when the cost changes while the game runs. Twice a second, not every step: shownCost reads the residual
+	-- value of every vehicle that would be replaced (1450 trucks in a game test, 18.10.2026), and residual values
+	-- drop slowly. useStepStateTimer is the game's own timed step state (engine_react_util.tl:126-157, 0.5 s).
+	engine_react_util.useStepStateTimer(shownCost, 0.5)
 	local cost = shownCost()
 	local refund = price - cost
 	-- the check below reads the balance now; this state only redraws the window when that answer changes
-	engine_react_util.useStepState(function() return enoughMoney(shownCost()) end)
+	engine_react_util.useStepStateTimer(function() return enoughMoney(shownCost()) end, 0.5)
 	local affordable = enoughMoney(cost)
 	-- redraw when the last callback of a batch arrives, so the button comes back
 	engine_react_util.useStepState(pending)
