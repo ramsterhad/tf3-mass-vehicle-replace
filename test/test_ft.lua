@@ -1714,8 +1714,17 @@ local function statLines(body)
 	end
 	return lines
 end
+-- a row's cells as { label, old, new, change }, found by the header texts, so the checks do not depend on the
+-- column order (that one is checked on its own below)
 local function lineOf(body, label)
-	for _i, cells in ipairs(statLines(body)) do if cells[1].props.text == label then return cells end end
+	local lines = statLines(body)
+	local col = {}
+	for k, c in ipairs(lines[1] or {}) do col[c.props.text] = k end
+	for _i, cells in ipairs(lines) do
+		if cells[1].props.text == label then
+			return { cells[1], cells[col["Alt"] or 2], cells[col["Neu"] or 3], cells[col["Änderung"] or 4] }
+		end
+	end
 	return nil
 end
 local function classOf(cell) return tostring(cell and cell.props.meta and cell.props.meta.class) end
@@ -1735,6 +1744,11 @@ check(card and card.collapsibleExpanded == true, "stats: card does not stay expa
 check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
 local body = detailsBody(card, "stats expanded")
 check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
+-- the change right after the label, as the most important column (user decision 19.10.2026)
+local header = statLines(body)[1] or {}
+local headerText = {}
+for k, c in ipairs(header) do headerText[k] = c.props.text end
+check(table.concat(headerText, "|") == " |Änderung|Alt|Neu", "stats: column order " .. table.concat(headerText, "|"))
 local speedLine = lineOf(body, "Höchsttempo")
 check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
 check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")

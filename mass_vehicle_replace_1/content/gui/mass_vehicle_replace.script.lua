@@ -1042,21 +1042,22 @@ local function statCell(s, class)
 	return builtin.TextView{ meta = { class = class }, text = s }
 end
 
--- half of the table: header and rows in a TableLayout (columns label, old, new, change)
+-- half of the table: header and rows in a TableLayout (columns label, change, old, new; the change first as the
+-- most important column, user decision 19.10.2026)
 local function statTable(rows)
 	local ANN = "font-scale-annotation"
 	local list = { builtin.Row{ cells = {
-		statCell(" ", ANN), statCell(_("mvr_stat_old"), ANN), statCell(_("mvr_stat_new"), ANN), statCell(_("mvr_stat_change"), ANN),
+		statCell(" ", ANN), statCell(_("mvr_stat_change"), ANN), statCell(_("mvr_stat_old"), ANN), statCell(_("mvr_stat_new"), ANN),
 	} } }
 	for __, r in ipairs(rows) do
 		-- the game's global text colors for better and worse (default.css.lua "!positive", "!negative")
 		local mark = r.better == true and ", positive" or r.better == false and ", negative" or ""
 		list[#list + 1] = builtin.Row{ cells = {
 			statCell(r.label, "font-scale-body"),
+			statCell(r.change, "font-scale-body" .. (r.change ~= "" and mark or "")),
 			statCell(r.old, "font-scale-body"),
 			-- ratings have no difference: their new word carries the color instead
 			statCell(r.new, "font-scale-body" .. (r.change == "" and mark or "")),
-			statCell(r.change, "font-scale-body" .. (r.change ~= "" and mark or "")),
 		} }
 	end
 	return builtin.Component{
