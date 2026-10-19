@@ -87,6 +87,20 @@ function data()
 			backgroundColor1 = colors.Error,
 		})
 	end
+	-- money for some, not all (#23): yellow, the game's warning color with dark text on it, like its speed warning
+	-- (entity_window.css.lua "R::SpeedIndicator TextView!warning": Warning background, NeutralDarkest text)
+	if okColors and colors and colors.Warning then
+		a([[Window!mvr-window Button!mvr-partial!mvr-partial!mvr-partial,
+			Window!mvr-window Button!mvr-partial!mvr-partial!mvr-partial:hover]], {
+			backgroundColor1 = colors.Warning,
+		})
+		if colors.NeutralDarkest then
+			a([[Window!mvr-window Button!mvr-partial TextView,
+				Window!mvr-window Button!mvr-partial ImageView]], {
+				color = colors.NeutralDarkest,
+			})
+		end
+	end
 
 	a("Window!mvr-window ToggleButton!mvr-filter", {
 		padding = { 0, 0, 0, 0 },

@@ -287,6 +287,7 @@ local costPerCommand = 560000
 -- commands waiting for the next simulation step; holdSteps keeps them waiting (game paused, slow step)
 local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
+local refused = {}
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
 local residualReads, deadReads = 0, 0
@@ -377,13 +378,15 @@ api = {
 		makeVehicleReplaceCmd = function(e, conf) return { e = e, conf = conf } end,
 		-- like the game in the GUI state (api/tealdef/api/cmd.d.tl:2-10): the command runs in the next
 		-- simulation step and its callback comes a frame later; step() below plays that out.
-		-- Each executed command books a fixed amount.
+		-- Each executed command books a fixed amount, whatever the balance: measured 19.10.2026, the game carries out
+		-- a replace it cannot pay for and lets the balance go negative (tf3-sdk knowledge/vehicles.md).
+		-- refused[e]: the game answers this vehicle's command with success == false (cmd.d.tl callback).
 		sendCommand = function(c, cb)
 			if throwAtCommand and #sent + 1 == throwAtCommand then error("command rejected") end
 			sent[#sent + 1] = c
 			queuedCommands[#queuedCommands + 1] = function()
 				if bankBalance then bankBalance = bankBalance - costPerCommand end
-				if cb then cb(c, commandSucceeds, {}) end
+				if cb then cb(c, commandSucceeds and not refused[c.e], {}) end
 			end
 		end,
 	},
@@ -1064,7 +1067,8 @@ local function chooseKasten(label, b)
 end
 costPerCommand = 61000
 
-t = chooseKasten("too little money", 487999)
+-- not one truck covered (one truck costs 61000): the red, disabled button; partly covered see issue #23 below
+t = chooseKasten("too little money", 60999)
 local btnPoor = replaceButton(t)
 check(btnPoor.props.meta.enabled == false, "button not disabled without enough money")
 check(btnPoor.props.meta.class:find("mvr-no-money", 1, true) ~= nil, "button without mvr-no-money class")
@@ -1074,13 +1078,52 @@ local function buttonText(btn)
 	local tv = find(btn, function(n) return n.kind == "TextView" end)
 	return tv[1] and tv[1].props.text
 end
+-- the money covers the whole replacement: the plain enabled "Ersetzen" (one short: "n von m" or "Nicht genug Geld", #23)
+local function fullyCovered(btn)
+	return btn.props.meta.enabled == true and buttonText(btn) == "Ersetzen"
+end
 check(buttonText(btnPoor) == "Nicht genug Geld", "button text without enough money: " .. tostring(buttonText(btnPoor)))
 sent = {}
 btnPoor.props.onClick() -- the game ignores clicks on disabled buttons; the click itself checks again anyway
 check(#sent == 0, "replaced without enough money: " .. #sent)
-check(bankBalance == 487999, "balance changed without a replacement")
+check(bankBalance == 60999, "balance changed without a replacement")
 t = content("too little money, after click")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nicht genug Geld" end) == 1, "no message after the refused click")
+
+print("== Replace as many as the money covers (issue #23)")
+-- not enough for all: the main button itself says "7 von 8 ersetzen", yellow (mvr-partial), enabled
+t = chooseKasten("partial, 487999", 487999)
+local partBtn = replaceButton(t)
+check(buttonText(partBtn) == "7 von 8 ersetzen", "partial: button text " .. tostring(buttonText(partBtn)))
+check(partBtn.props.meta.enabled == true, "partial: button disabled")
+check(partBtn.props.meta.tooltip == "Nicht genug Geld: Es werden nur 7 von 8 ersetzt (älteste zuerst).", "partial: tooltip " .. tostring(partBtn.props.meta.tooltip))
+check(partBtn.props.meta.class:find("mvr-partial", 1, true) and not partBtn.props.meta.class:find("mvr-no-money", 1, true), "partial: class " .. partBtn.props.meta.class)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "7 Fahrzeuge werden ersetzt." end) == 1, "partial: count line does not match the button")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Kosten nach Restwert: $427000" end) == 1, "partial: cost line does not match the button")
+-- 200000 covers 3 trucks at 61000; truck 115 is the oldest, the rest by id
+vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+t = chooseKasten("partial", 200000)
+partBtn = replaceButton(t)
+check(buttonText(partBtn) == "3 von 8 ersetzen", "partial: button text " .. tostring(buttonText(partBtn)))
+sent = {}
+partBtn.props.onClick()
+local partialIds = {}
+for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
+table.sort(partialIds)
+check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
+t = content("partial, after the click")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8" end) == 1, "partial: result line")
+check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
+vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
+-- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
+-- money for exactly one truck: the tooltip uses its singular text
+t = chooseKasten("partial, one", 61000)
+check(buttonText(replaceButton(t)) == "1 von 8 ersetzen", "partial, one: button text " .. tostring(buttonText(replaceButton(t))))
+check(replaceButton(t).props.meta.tooltip == "Nicht genug Geld: Es wird nur 1 von 8 ersetzt (das älteste).", "partial, one: tooltip " .. tostring(replaceButton(t).props.meta.tooltip))
+t = chooseKasten("partial, too poor", 60999)
+check(buttonText(replaceButton(t)) == "Nicht genug Geld" and replaceButton(t).props.meta.enabled == false, "partial: not one truck covered")
+t = chooseKasten("partial, rich", 488000)
+check(buttonText(replaceButton(t)) == "Ersetzen", "partial: money covers all")
 
 t = chooseKasten("exactly enough", 488000)
 check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
@@ -1183,6 +1226,8 @@ check(#sent == 8, "second click on the same button sent again: " .. #sent)
 t = content("double click, redrawn")
 check(replaceButton(t).props.meta.enabled == false, "button enabled while the batch is running")
 check(buttonText(replaceButton(t)) == "Wird ersetzt …", "button text while running: " .. tostring(buttonText(replaceButton(t))))
+-- no half-counted result while the game has not answered yet: the line shows once, at the end
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("Ersetzt:", 1, true) end) == 0, "result line shown before the game answered")
 combos(t)[2].props.onValueChange("m11") -- the user picks the new model again
 t = content("double click, chosen again")
 replaceButton(t).props.onClick()
@@ -1200,9 +1245,25 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "failing commands: 8 sent expected, " .. #sent)
 holdSteps = false
 t = content("failing commands, step done")
-check(hasText(t, "Ersetzt: 0 von 8, Fehler: 8"), "failure count not shown")
+check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)"), "failure count not shown")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
 commandSucceeds = true
+
+print("== Refused commands are told apart from the vehicles skipped for money")
+step()
+refused[113] = true
+t = chooseKasten("one refused", nil)
+replaceButton(t).props.onClick()
+t = content("one refused, done")
+check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "one refused: result line")
+-- partial: 3 trucks planned (200000 covers 3 x 61000), one of them refused
+refused[113], refused[110] = nil, true
+t = chooseKasten("partial, one refused", 200000)
+replaceButton(t).props.onClick()
+t = content("partial, one refused, done")
+check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
+refused = {}
+bankBalance = nil
 
 print("== A command that throws does not leave the button stuck (issue #9)")
 -- review finding on #28: counted before sending, a throwing command never got its callback
@@ -1244,10 +1305,10 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 8, "price minus residual covered: 8 commands expected, " .. #sent)
 t = chooseKasten("residual, one short", 479999)
-check(replaceButton(t).props.meta.enabled == false, "button enabled one short of price minus residual")
+check(not fullyCovered(replaceButton(t)), "button enabled one short of price minus residual")
 sent = {}
 replaceButton(t).props.onClick()
-check(#sent == 0, "replaced one short of price minus residual: " .. #sent)
+check(#sent < 8, "replaced all one short of price minus residual: " .. #sent)
 
 print("== The cost follows the residual value while the game runs (issue #26)")
 -- in-game 17.10.2026: the line was read, the game ran on, the charge was 5120 higher
@@ -1323,10 +1384,10 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 3, "partly replaced trains, exactly enough: 3 commands expected, " .. #sent)
 t = chooseBr103("partly replaced, one short", 3849999)
-check(replaceButton(t).props.meta.enabled == false, "partly replaced trains: button enabled one short")
+check(not fullyCovered(replaceButton(t)), "partly replaced trains: button enabled one short")
 sent = {}
 replaceButton(t).props.onClick()
-check(#sent == 0, "partly replaced trains replaced one short: " .. #sent)
+check(#sent < 3, "partly replaced trains: all replaced one short: " .. #sent)
 
 print("== Kept parts worth more than the vehicle's residual value cost extra, like the game (issue #26)")
 residuals, partValues = {}, {}
@@ -1336,7 +1397,7 @@ t = chooseBr103("kept parts worth more", 5000000)
 check(hasText(t, "Kosten nach Restwert: $5000000"), "kept parts worth more: cost line")
 check(replaceButton(t).props.meta.enabled == true, "kept parts worth more: button disabled with enough money")
 t = chooseBr103("kept parts worth more, one short", 4999999)
-check(replaceButton(t).props.meta.enabled == false, "kept parts worth more: button enabled below the game's cost")
+check(not fullyCovered(replaceButton(t)), "kept parts worth more: button enabled below the game's cost")
 
 print("== Part value unreadable: that vehicle counts at the full price (issue #26)")
 partlyReplacedValues()
@@ -1344,7 +1405,7 @@ partValueThrows = true
 t = chooseBr103("part value unreadable", 4500000)
 check(priceText(t) == "Kaufpreis: $4500000", "part value unreadable: price line " .. tostring(priceText(t)))
 t = chooseBr103("part value unreadable, one short", 4499999)
-check(replaceButton(t).props.meta.enabled == false, "part value unreadable: credited although the kept parts are unknown")
+check(not fullyCovered(replaceButton(t)), "part value unreadable: credited although the kept parts are unknown")
 -- vehicles without kept parts do not need a part value: the trucks still get their residual value
 for v = 110, 117 do residuals[v] = 1000 end
 t = chooseKasten("part value unreadable, whole trucks", 480000)
@@ -1355,13 +1416,13 @@ partValue(102, 2, 0 / 0) -- nan: train 102 counts at the full price, 107 and 108
 t = chooseBr103("part value nan", 4250000)
 check(replaceButton(t).props.meta.enabled == true, "part value nan: the other trains lost their credit")
 t = chooseBr103("part value nan, one short", 4249999)
-check(replaceButton(t).props.meta.enabled == false, "part value nan: train 102 credited anyway")
+check(not fullyCovered(replaceButton(t)), "part value nan: train 102 credited anyway")
 partlyReplacedValues()
 partValue(107, 2, -1); partValue(108, 2, math.huge) -- 107 and 108 count at the full price, 102 credits 400000
 t = chooseBr103("part value negative and infinite", 4100000)
 check(replaceButton(t).props.meta.enabled == true, "part value negative/infinite: train 102 lost its credit")
 t = chooseBr103("part value negative and infinite, one short", 4099999)
-check(replaceButton(t).props.meta.enabled == false, "part value negative/infinite: trains 107 or 108 credited anyway")
+check(not fullyCovered(replaceButton(t)), "part value negative/infinite: trains 107 or 108 credited anyway")
 
 print("== A train with an unknown multiple unit: its parts stay and are charged (issue #26)")
 -- the multiple unit's mod is missing: rebuild keeps the group, so it counts as kept like any other part
@@ -1376,7 +1437,7 @@ sent = {}
 replaceButton(t).props.onClick()
 check(#sent == 4, "unknown multiple unit: 4 commands expected, " .. #sent)
 t = chooseBr103("unknown multiple unit, one short", 4849999)
-check(replaceButton(t).props.meta.enabled == false, "unknown multiple unit: its parts were not charged")
+check(not fullyCovered(replaceButton(t)), "unknown multiple unit: its parts were not charged")
 vehicles[140] = nil
 
 print("== Multiple units: whole and partly replaced trains (issue #26)")
@@ -1401,7 +1462,7 @@ t = chooseEt423("multiple units, enough", 4900000) -- 3 units x 2200000 - 100000
 check(hasText(t, "Kosten nach Restwert: $4900000"), "multiple units: cost line missing")
 check(replaceButton(t).props.meta.enabled == true, "multiple units: residual value not counted")
 t = chooseEt423("multiple units, one short", 4899999)
-check(replaceButton(t).props.meta.enabled == false, "multiple units: the kept wagon was not charged")
+check(not fullyCovered(replaceButton(t)), "multiple units: the kept wagon was not charged")
 -- an ET 420 end car standing alone is a single model, not the multiple unit: not replaced, not credited
 vehicle(141, { 50 })
 residuals[141] = 5000000
@@ -1413,13 +1474,22 @@ check(#sent == 2, "loose multiple unit car: 2 commands expected, " .. #sent)
 vehicles[141] = nil
 residuals, partValues = {}, {}
 
+print("== Residual value above the price: proceeds, not a negative cost")
+-- 8 trucks worth 100000 each, replaced for 61000 each: the player gets 312000 back
+for v = 110, 117 do residuals[v] = 100000 end
+t = chooseKasten("proceeds", 0)
+check(hasText(t, "Erlös nach Restwert: $312000"), "proceeds: line missing")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("$-", 1, true) end) == 0, "proceeds: negative amount shown")
+check(replaceButton(t).props.meta.enabled == true, "proceeds: button disabled with a balance of 0")
+residuals = {}
+
 print("== Residual value unreadable counts as none (issue #26)")
 residualThrows = true
 t = chooseKasten("residual unreadable, full price", 488000)
 check(replaceButton(t).props.meta.enabled == true, "residual unreadable: button disabled with the full price")
 check(priceText(t) == "Kaufpreis: $488000", "residual unreadable: price line " .. tostring(priceText(t)))
 t = chooseKasten("residual unreadable, one short", 487999)
-check(replaceButton(t).props.meta.enabled == false, "residual unreadable: button enabled below the full price")
+check(not fullyCovered(replaceButton(t)), "residual unreadable: button enabled below the full price")
 residualThrows = false
 -- nan, negative and infinite values count as none (review finding: only the error path was tested)
 for v = 110, 117 do residuals[v] = 1000 end
@@ -1428,7 +1498,7 @@ t = chooseKasten("odd residual values", 483000) -- 488000 - 5 x 1000
 check(replaceButton(t).props.meta.enabled == true, "odd residual values: button disabled with price minus the valid residual")
 check(hasText(t, "Kosten nach Restwert: $483000"), "odd residual values: cost line")
 t = chooseKasten("odd residual values, one short", 482999)
-check(replaceButton(t).props.meta.enabled == false, "odd residual values: button enabled one short")
+check(not fullyCovered(replaceButton(t)), "odd residual values: button enabled one short")
 residuals = {}
 step()
 bankBalance = 5000000
