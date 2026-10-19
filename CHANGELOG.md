@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A collapsible "Details" card at the bottom of the window compares the old and the new model value by value (#16), the better value in blue and the worse one in red.
 - The result line after replacing shows once, when the game has answered for every vehicle, instead of counting up from "0 of 8".
 - Vehicles the game refuses to replace are named apart from those skipped for money, e.g. "Replaced: 7 of 8 (1 planned vehicle was rejected by the game)".
+- The window keeps sorting, the "Same cargo" filter and whether the "Details" card is open in the savegame, so they survive a restart.
 
 ### Changed
 

@@ -1831,37 +1831,37 @@ if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.win
 
 print("== Sorting, Same cargo and details kept in the savegame")
 do -- own block: the main chunk is at the 200 local limit
-local MOD = "mass_vehicle_replace_1"
-openAndRender("kept settings", 500, true)
-t = content("kept settings")
-find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
-cargoToggle().props.onValueChange(0)
-detailsCardOf(content("kept details")).setCollapsibleExpanded(false)
-local kept = guiSaveData[MOD] or {}
-check(kept.sort == "year" and kept.sameCargo == false and kept.details == false,
-	"kept: changes not written: sort " .. tostring(kept.sort) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
--- another savegame with other values: the next opening takes them
-guiSaveData[MOD] = { sort = "name", sameCargo = true, details = true }
-openAndRender("kept other savegame", 500, true)
-t = content("kept other savegame")
-local sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
-	"kept: saved values not read on opening")
--- odd values (another version, a broken savegame) keep what is there
-guiSaveData[MOD] = { sort = "speed", sameCargo = "no", details = 1 }
-openAndRender("kept odd values", 500, true)
-t = content("kept odd values")
-sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
-	"kept: odd saved values must be ignored")
--- the game's save data unreachable: the window still opens and works
-local savedGame = api.gui.game
-api.gui.game = nil
-openAndRender("kept unreachable", 500, true)
-find(content("kept unreachable"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
-check(find(content("kept unreachable after"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.value == 1,
-	"kept: without save data the sorting must still switch")
-api.gui.game = savedGame
+	local MOD = "mass_vehicle_replace_1"
+	openAndRender("kept settings", 500, true)
+	t = content("kept settings")
+	find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
+	cargoToggle().props.onValueChange(0)
+	detailsCardOf(content("kept details")).setCollapsibleExpanded(false)
+	local kept = guiSaveData[MOD] or {}
+	check(kept.sort == "year" and kept.sameCargo == false and kept.details == false,
+		"kept: changes not written: sort " .. tostring(kept.sort) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
+	-- another savegame with other values: the next opening takes them
+	guiSaveData[MOD] = { sort = "name", sameCargo = true, details = true }
+	openAndRender("kept other savegame", 500, true)
+	t = content("kept other savegame")
+	local sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
+	check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+		"kept: saved values not read on opening")
+	-- odd values (another version, a broken savegame) keep what is there
+	guiSaveData[MOD] = { sort = "speed", sameCargo = "no", details = 1 }
+	openAndRender("kept odd values", 500, true)
+	t = content("kept odd values")
+	sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
+	check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+		"kept: odd saved values must be ignored")
+	-- the game's save data unreachable: the window still opens and works
+	local savedGame = api.gui.game
+	api.gui.game = nil
+	openAndRender("kept unreachable", 500, true)
+	find(content("kept unreachable"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
+	check(find(content("kept unreachable after"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.value == 1,
+		"kept: without save data the sorting must still switch")
+	api.gui.game = savedGame
 end
 
 print("== Robust against mods that overwrite the module field")
