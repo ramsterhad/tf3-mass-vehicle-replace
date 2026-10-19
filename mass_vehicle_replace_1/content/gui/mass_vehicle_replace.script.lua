@@ -503,6 +503,14 @@ end
 -- what the window shows, read by its step states: price of the new parts, fleet entry and model being replaced
 local shown = { price = 0, e = nil, key = nil, cost = 0, time = nil }
 
+-- infinite money (sandbox mode, "no costs"): the game then hides the balance card in the depot window
+-- (maintenance_station_eow.script.tl conditionMaintenanceStationBalance, state.infiniteMoney); the balance is nil
+-- (vehicle_store_window.tl fundsState: "nil if infinite!")
+local function infiniteMoney()
+	local ok, funds = pcall(function() return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) end)
+	return ok and funds == nil
+end
+
 local function enoughMoney(cost)
 	if cost <= 0 then return true end
 	-- nil means infinite money (vehicle_store_window.tl fundsState: "nil if infinite!")
@@ -960,7 +968,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local summary = { " ", " " }
 	local e = altInfo and byKey[altInfo.key]
 	local price = e and neuInfo and neuInfo.price * e.parts or 0
-	shown.price, shown.e, shown.key, shown.time = price, (e and neuInfo) and e or nil, altInfo and altInfo.key, nil
+	-- with infinite money no cost line (#20), so no residual values are read either
+	local free = infiniteMoney()
+	shown.price, shown.e, shown.key, shown.time = price, (e and neuInfo and not free) and e or nil, altInfo and altInfo.key, nil
 	-- redraw when the cost changes while the game runs. Twice a second, not every step: shownCost reads the residual
 	-- value of every vehicle that would be replaced (1450 trucks in a game test, 18.10.2026), and residual values
 	-- drop slowly. useStepStateTimer is the game's own timed step state (engine_react_util.tl:126-157, 0.5 s).
@@ -976,6 +986,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	if e and neuInfo then
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
 		local priceLine = refund ~= 0 and string.format(_("mvr_cost_net"), money(cost)) or string.format(_("mvr_price"), money(price))
+		if free then priceLine = " " end
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }

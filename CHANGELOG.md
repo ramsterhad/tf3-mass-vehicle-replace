@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- With infinite money (sandbox mode, "no costs") the window no longer shows the cost line, like the game hides the balance in the depot window (#20). The prices in the model list stay.
 - The cost line updates twice a second instead of every frame while the game runs. With many vehicles of the selected model (1450 trucks in a test) the window cost frames, because every update reads the residual value of each vehicle.
 
 ### Fixed
