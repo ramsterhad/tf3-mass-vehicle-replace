@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A warning below the cost line when the new model has a different engine type than the old one, e.g. diesel to electric (#50). The tooltip reminds you to check that every line is equipped for it, such as with catenary.
 - When the money does not cover the whole replacement, the button turns yellow and says "Replace 7 of 8" (#23). It replaces only the vehicles the balance covers now, oldest first; each vehicle (a whole train) is replaced completely or not at all. The result line says how many of all were replaced. The red "Not enough money" stays for when not even one vehicle is covered.
 - A collapsible "Details" card at the bottom of the window compares the old and the new model value by value (#16), better values in blue and worse ones in red.
 - The result line after replacing shows once, when the game has answered for every vehicle, instead of counting up from "0 of 8".
