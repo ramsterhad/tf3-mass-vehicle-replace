@@ -501,6 +501,11 @@ local function updateText()
 		result.text = _("mvr_none_found")
 		return
 	end
+	-- nothing sent and nothing queued because the queue belongs to another version: only that
+	if result.sent == 0 and result.note == "foreign" then
+		result.text = _("mvr_queue_foreign")
+		return
+	end
 	-- the result shows once, when the game has answered every command (user decision 19.10.2026); until then
 	-- the button says "Replacing ..." and no half-counted line like "0 of 8" appears
 	if pending() then
@@ -982,11 +987,13 @@ local function enqueue(altKey, neuKey, list)
 	return #job.open, dup, note
 end
 
+-- a cancelled job's command may still be running: its answer no longer matters, the vehicle tells (checkHead)
 local function removeJob(id)
 	local job, k = jobById(id)
 	if not job then return end
 	for __, e in ipairs(job.open) do queue.byEntity[e.entity] = nil end
 	table.remove(queue.jobs, k)
+	if queue.inflight and queue.inflight.job == id then queue.inflight = nil end
 	queue.cache = nil
 	writeSaveData()
 end
@@ -996,7 +1003,7 @@ local function cancelAll()
 		for __, e in ipairs(job.open) do queue.byEntity[e.entity] = nil end
 	end
 	queue.jobs = {}
-	queue.cache = nil
+	queue.inflight, queue.cache = nil, nil
 	writeSaveData()
 end
 

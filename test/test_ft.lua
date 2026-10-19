@@ -75,11 +75,12 @@ react.getCurrentRecipeName = function() return currentRecipe end
 -- step and mount hooks of a recipe (react.d.tl:303-304, 340): collected per render, played by the test (hostFrame
 -- below). onStepTimer bodies run as deferred steps with a restricted api in the game (react.lua:525-534); the mock
 -- records them apart so a test can tell the two kinds.
--- M: mock state of the queue tests in one table (the main chunk is near Lua's limit of 200 locals)
-local M = { hooks = { steps = {}, timers = {}, mounts = {} }, hooksOf = {} }
-react.onStep = function(fn) M.hooks.steps[#M.hooks.steps + 1] = fn end
-react.onStepTimer = function(fn, interval) M.hooks.timers[#M.hooks.timers + 1] = { fn = fn, interval = interval } end
-react.onMount = function(fn) M.hooks.mounts[#M.hooks.mounts + 1] = fn end
+-- MOCK: mock state of the queue tests in one table
+-- MOCK: a global on purpose: the main chunk of this file is at Lua's limit of 200 locals
+MOCK = { hooks = { steps = {}, timers = {}, mounts = {} }, hooksOf = {} }
+react.onStep = function(fn) MOCK.hooks.steps[#MOCK.hooks.steps + 1] = fn end
+react.onStepTimer = function(fn, interval) MOCK.hooks.timers[#MOCK.hooks.timers + 1] = { fn = fn, interval = interval } end
+react.onMount = function(fn) MOCK.hooks.mounts[#MOCK.hooks.mounts + 1] = fn end
 -- a ref whose value is computed once (react.d.tl:316); the earnings plugin reads isMapEditor that way
 react.useRefLazy = function(fn)
 	local v = fn()
@@ -113,9 +114,9 @@ end }
 
 local function render(name, params)
 	currentRecipe, stateIdx = name, 0
-	M.hooks = { steps = {}, timers = {}, mounts = {} }
+	MOCK.hooks = { steps = {}, timers = {}, mounts = {} }
 	local out = recipes[name](params)
-	M.hooksOf[name] = M.hooks
+	MOCK.hooksOf[name] = MOCK.hooks
 	currentRecipe = nil
 	return out
 end
@@ -150,16 +151,16 @@ entity_window_util.ContentWidgetScrollContainer = function(children, first)
 	return { kind = "ContentWidgetScrollContainer", props = { children = children } }
 end
 -- the game's text button (button_react_util.tl:6-30): 5th argument = disabled
-M.button_react_util = { makeTextButton = function(class, label, onClick, tooltip, disabled)
+MOCK.button_react_util = { makeTextButton = function(class, label, onClick, tooltip, disabled)
 	assert(type(class) == "string" and type(label) == "string", "makeTextButton(class, text, ...)")
 	return { kind = "Button", props = { meta = { class = class, tooltip = tooltip, enabled = disabled == nil and true or not disabled },
 		content = { kind = "TextView", props = { meta = { class = "font-scale-body" }, text = label } }, onClick = onClick } }
 end }
 -- the game's dialog (menu/dialog_react_util.tl, params in dialog_react_util.d.tl:4-26)
-M.dialog_react_util = { DialogWindow = makeRecipe("DialogWindow", function(p) return { kind = "Window", props = p } end) }
+MOCK.dialog_react_util = { DialogWindow = makeRecipe("DialogWindow", function(p) return { kind = "Window", props = p } end) }
 -- the two extension points the queue uses (main/mod_entry_point.tl:5, game_bar/game_bar_widgets.tl:70)
-M.mod_entry_point = { ModEntryPointExtension = { id = "::ModEntryPointExtension" } }
-M.game_bar_widgets = { GameBarInfoDisplayExtension = { id = "::GameBarInfoDisplayExtension" } }
+MOCK.mod_entry_point = { ModEntryPointExtension = { id = "::ModEntryPointExtension" } }
+MOCK.game_bar_widgets = { GameBarInfoDisplayExtension = { id = "::GameBarInfoDisplayExtension" } }
 local MaintenanceStationWindow = makeRecipe("MaintenanceStationWindow", function() return builtin.BoxLayout{} end)
 recipeIds[MaintenanceStationWindow] = "MaintenanceStationWindow"
 originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:MaintenanceStationWindow", props = params } end
@@ -211,10 +212,10 @@ local modules = {
 	["::/gui/main/engine_react_util.tl"] = engine_react_util,
 	["::/gui/main/game_react_globals.tl"] = game_react_globals,
 	["::/gui/entity_window/entity_window_util.tl"] = entity_window_util,
-	["::/gui/main/button_react_util.tl"] = M.button_react_util,
-	["::/gui/menu/dialog_react_util.tl"] = M.dialog_react_util,
-	["::/gui/main/mod_entry_point.tl"] = M.mod_entry_point,
-	["::/gui/game_bar/game_bar_widgets.tl"] = M.game_bar_widgets,
+	["::/gui/main/button_react_util.tl"] = MOCK.button_react_util,
+	["::/gui/menu/dialog_react_util.tl"] = MOCK.dialog_react_util,
+	["::/gui/main/mod_entry_point.tl"] = MOCK.mod_entry_point,
+	["::/gui/game_bar/game_bar_widgets.tl"] = MOCK.game_bar_widgets,
 	["::/gui/entity_window/maintenance_station/maintenance_station.tl"] = MaintenanceStationWindow,
 	["::/gui/entity_window/maintenance_station/maintenance_station_eow.script.tl"] = {
 		MaintenanceStationEowExtensionPoint = { id = "::MaintenanceStationEowExtensionPoint" },
@@ -422,18 +423,22 @@ local function copyTable(t)
 	return c
 end
 -- real time of the application in seconds (api/tealdef/api/util.d.tl:176), advanced by the test
-M.appClock = 1000
+MOCK.appClock = 1000
 -- revision num[1] per vehicle (tf3-sdk knowledge/gui-change-detection-and-perf.md section 6): the engine's
 -- identity slot; a test raises it to stand for an entity id reused for another entity
-M.births = {}
-M.mapEditor = false
+MOCK.births = {}
+MOCK.mapEditor = false
+MOCK.ownedReal = { player = PLAYER }
+MOCK.owned = engineRecord("PlayerOwned", MOCK.ownedReal)
+MOCK.revisionReal = { num = { 1, 5, 0 } }
+MOCK.revision = engineRecord("Revision", MOCK.revisionReal)
 -- native calls of the game API, for the budget checks of the queue (counted below)
-M.apiCalls, M.apiCallsByName = 0, {}
+MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
 api = {
 	gui = { game = {
 		getGuiSaveData = function(modId) return copyTable(guiSaveData[modId]) end,
 		setGuiSaveData = function(modId, data) assert(type(data) == "table", "setGuiSaveData: table expected"); guiSaveData[modId] = copyTable(data) end,
-		isMapEditor = function() return M.mapEditor end,
+		isMapEditor = function() return MOCK.mapEditor end,
 	} },
 	type = {
 		ComponentType = CT,
@@ -483,15 +488,21 @@ api = {
 			if ct == CT.TRANSPORT_VEHICLE then return vehicles[e] end
 			if ct == CT.GAME_TIME then return { gameTime = gameTimeNow } end
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
-			-- the owner, the way the game's entity windows read it (eow_extension_util.tl:5-17)
-			if ct == CT.PLAYER_OWNED then return vehicles[e] and engineRecord("PlayerOwned", { player = owners[e] }) or nil end
+			-- the owner, the way the game's entity windows read it (eow_extension_util.tl:5-17); one shared record
+			-- (a file handle each), its field set per call
+			if ct == CT.PLAYER_OWNED then
+				if not vehicles[e] then return nil end
+				MOCK.ownedReal.player = owners[e]
+				return MOCK.owned
+			end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
 		-- userdata with num = {rev0, rev1, rev2} (api/tealdef/api/engine.d.tl:15-18); what it does for an entity that
 		-- does not exist is not measured: the mock throws, so the code must check entityExists first
 		getRevision = function(e)
 			assert(vehicles[e], "revision of an unknown entity")
-			return engineRecord("Revision", { num = { M.births[e] or 1, 5, 0 } })
+			MOCK.revisionReal.num = { MOCK.births[e] or 1, 5, 0 }
+			return MOCK.revision
 		end,
 		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
@@ -516,7 +527,7 @@ api = {
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
 	util = { formatMoney = function(v) return "$" .. tostring(v) end,
-		getApplicationTime = function() return M.appClock end,
+		getApplicationTime = function() return MOCK.appClock end,
 		-- units as documented in api/tealdef/api/util.d.tl:36-96 (m/s, kW, kN, t)
 		formatSpeed = function(v) return string.format("%.0f km/h", v * 3.6) end,
 		formatPower = function(v) return string.format("%.0f kW", v) end,
@@ -547,8 +558,8 @@ do
 		for k, v in pairs(t) do
 			if type(v) == "function" then
 				t[k] = function(...)
-					M.apiCalls = M.apiCalls + 1
-					M.apiCallsByName[k] = (M.apiCallsByName[k] or 0) + 1
+					MOCK.apiCalls = MOCK.apiCalls + 1
+					MOCK.apiCallsByName[k] = (MOCK.apiCallsByName[k] or 0) + 1
 					return v(...)
 				end
 			elseif type(v) == "table" then
@@ -1982,6 +1993,648 @@ do -- own block: the main chunk is at the 200 local limit
 	check(find(content("kept unreachable after"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.value == 1,
 		"kept: without save data the sorting must still switch")
 	api.gui.game = savedGame
+end
+
+print("== Replacement queue (#23 stage 2)")
+do -- own block: the main chunk is at the 200 local limit
+	local MOD = "mass_vehicle_replace_1"
+	-- every scenario in a pcall: against a script without the queue the recipes are missing, and the counter-check
+	-- (new tests against the old code) must count failures instead of stopping at the first error
+	local function section(name, fn)
+		print("== queue: " .. name)
+		local ok, err = pcall(fn)
+		if not ok then fail("queue: " .. name .. ": " .. tostring(err)) end
+	end
+	-- the host: an invisible plugin at the mod entry point; mounting reads the queue from the savegame, every
+	-- frame runs its step hooks, a tick is one second of application time
+	local function mountHost()
+		local tree = render("MvrQueueHost", {})
+		rules(tree, "queue host")
+		for _i, fn in ipairs(MOCK.hooksOf.MvrQueueHost.mounts) do fn() end
+	end
+	local function frame()
+		for _i, fn in ipairs(MOCK.hooksOf.MvrQueueHost.steps) do fn() end
+	end
+	local function hostTick(n)
+		for _i = 1, n or 1 do
+			MOCK.appClock = MOCK.appClock + 1
+			frame()
+		end
+	end
+	local function saved() return guiSaveData[MOD] or {} end
+	local function openEntries()
+		local n = 0
+		for _e in tostring(saved().queue or ""):gmatch("%d+/%d+") do n = n + 1 end
+		return n
+	end
+	local function sentIds()
+		local ids = {}
+		for _i, c in ipairs(sent) do ids[#ids + 1] = c.e end
+		return table.concat(ids, ",")
+	end
+	local function queueBox(tt)
+		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):find("vormerken", 1, true) ~= nil end)[1]
+	end
+	local function queueButton(tt)
+		return find(tt, function(n) return n.kind == "Button" and buttonText(n) == "Warteschlange …" end)[1]
+	end
+	local function buttonIn(tree, label)
+		return find(tree, function(n) return n.kind == "Button" and buttonText(n) == label end)[1]
+	end
+	-- the queue window: its content and the body of every card, rendered like the game's card does it
+	local function queueWindow(label)
+		local w = windows["mass_vehicle_replace.queue"]
+		check(w ~= nil, label .. ": queue window not open")
+		if not w then return { cards = {}, bodies = {}, titles = {} } end
+		local win = render("MvrQueueWindow", w.params)
+		check(win.kind == "Window" and win.props.meta.class == "entity-window", label .. ": queue window must use the game's entity-window class")
+		if not holdSteps then step() end
+		stepStates = {}
+		local tt = render("MvrQueueContent", { onClose = function() end })
+		rules(tt, label)
+		local cards = find(tt, function(n) return n.kind == "recipe:ContentCard" end)
+		local out = { tree = tt, cards = cards, bodies = {}, titles = {} }
+		for k, c in ipairs(cards) do
+			local rp = c.props.recipeAndParamPermanent
+			check(rp and rp.recipe and rp.param, label .. ": card " .. k .. " without a permanent body")
+			local body = render(rp.recipe.name, rp.param)
+			rules(body, label .. " card " .. k)
+			out.bodies[k] = body
+			out.titles[k] = c.props.title
+		end
+		return out
+	end
+	local function openQueue(tt, label)
+		local b = queueButton(tt)
+		check(b ~= nil, label .. ": queue button missing in the replace window")
+		if b then b.props.onClick() end
+		return queueWindow(label)
+	end
+	local function closeQueue()
+		local w = windows["mass_vehicle_replace.queue"]
+		if w then w.params.onClose() end
+	end
+	-- "cancel all" through the window and the game's dialog, like the player
+	local function clearQueue(tt)
+		local q = openQueue(tt, "clear")
+		local b = buttonIn(q.bodies[1], "Alle abbrechen")
+		check(b ~= nil, "clear: cancel all button missing")
+		if b and b.props.meta.enabled ~= false then
+			b.props.onClick()
+			local d = windows["mass_vehicle_replace.confirm"]
+			check(d ~= nil, "clear: confirmation dialog not opened with its own key")
+			if d then d.params.choices[1].onClick() end
+			check(windows["mass_vehicle_replace.confirm"] == nil, "clear: dialog not closed")
+		end
+		closeQueue()
+		check(openEntries() == 0, "clear: entries left: " .. tostring(saved().queue))
+	end
+	local function queueTrucks(label, b)
+		local tt = chooseKasten(label, b)
+		local box = queueBox(tt)
+		if box and box.props.value == 0 then box.props.onValueChange(1); tt = content(label .. ", box on") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		return content(label .. ", queued")
+	end
+	local function lineOf(body, prefix)
+		local hit = find(body, function(n) return n.kind == "TextView" and tostring(n.props.text):find(prefix, 1, true) == 1 end)[1]
+		return hit and hit.props.text or nil, hit
+	end
+	local function newSession()
+		-- a new game session: the script loads again (fresh memory), the savegame data stays
+		_react.recipeReplace.ActionButtonBar = nil
+		chunk()
+		exports = data()
+		MOCK.appClock = MOCK.appClock + 100
+	end
+	local PRICE = 61000
+
+	residuals, partValues, refused = {}, {}, {}
+	commandSucceeds, holdSteps, throwAtCommand = true, false, nil
+	costPerCommand = PRICE
+	vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1 -- the oldest truck
+	guiSaveData[MOD] = {}
+
+	section("the box shows only while the money does not cover all", function()
+		local tt = chooseKasten("box, one short", 487999)
+		local box = queueBox(tt)
+		check(box ~= nil and box.props.label == "Übriges vormerken, ersetzen sobald das Geld reicht", "box, one short: " .. tostring(box and box.props.label))
+		check(box and box.props.value == 0, "box must be off at first")
+		check(queueButton(tt) ~= nil, "queue window button missing")
+		check(queueBox(chooseKasten("box, enough", 488000)) == nil, "box shown although the money covers all")
+		check(queueBox(chooseKasten("box, infinite", nil)) == nil, "box shown with infinite money")
+		box = queueBox(chooseKasten("box, nothing", 60999))
+		check(box ~= nil and box.props.label == "Übrige 8 vormerken, ersetzen sobald das Geld reicht", "box, nothing affordable: " .. tostring(box and box.props.label))
+	end)
+
+	section("nothing affordable: the box turns the button into Queue 8", function()
+		local tt = chooseKasten("queue all", 60999)
+		queueBox(tt).props.onValueChange(1)
+		check(saved().queueRest == true, "box state not kept in the savegame")
+		tt = content("queue all, box on")
+		local b = replaceButton(tt)
+		check(buttonText(b) == "8 vormerken", "button text: " .. tostring(buttonText(b)))
+		check(b.props.meta.enabled == true and b.props.meta.class:find("mvr-partial", 1, true) ~= nil, "button must be enabled and yellow")
+		sent = {}
+		b.props.onClick()
+		check(#sent == 0, "queue all sent commands: " .. #sent)
+		check(saved().queueFormat == "1", "queueFormat: " .. tostring(saved().queueFormat))
+		check(saved().queue == "1,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "queue, oldest first: " .. tostring(saved().queue))
+		check(saved().queueNextId == "2" and saved().queueReserve == "0" and saved().queuePaused == false, "queue fields")
+		tt = content("queue all, after")
+		check(hasText(tt, "Ersetzt: 0 von 8, 8 vorgemerkt"), "result line after queueing")
+		-- a second click: every vehicle is already queued
+		tt = chooseKasten("queue all again", 60999)
+		replaceButton(tt).props.onClick()
+		tt = content("queue all again, after")
+		check(hasText(tt, "Ersetzt: 0 von 8, 0 vorgemerkt (8 waren schon vorgemerkt)"), "second click must report the duplicates")
+		check(openEntries() == 8, "duplicates queued again: " .. openEntries())
+		clearQueue(tt)
+	end)
+
+	section("box off: replacing as before, nothing queued (regression, passes on 1.1.0 too)", function()
+		local tt = chooseKasten("box off", 200000)
+		local box = queueBox(tt)
+		if box and box.props.value == 1 then box.props.onValueChange(0); tt = content("box off, off") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(#sent == 3, "box off: 3 commands expected, " .. #sent)
+		check(openEntries() == 0, "box off: vehicles queued")
+		check(hasText(content("box off, after"), "Ersetzt: 3 von 8"), "box off: result line")
+	end)
+
+	section("partial click queues the rest, oldest first", function()
+		local tt = queueTrucks("partial queue", 200000)
+		local ids = {}
+		for _i, c in ipairs(sent) do ids[#ids + 1] = c.e end
+		table.sort(ids)
+		check(#sent == 3 and table.concat(ids, ",") == "110,111,115", "partial queue: oldest three sent: " .. sentIds())
+		check(tostring(saved().queue):match("^%d+,m10,m11,0,0,0,0,0:112/1,113/1,114/1,116/1,117/1$") ~= nil, "partial queue: " .. tostring(saved().queue))
+		check(hasText(tt, "Ersetzt: 3 von 8, 5 vorgemerkt"), "partial queue: result line")
+	end)
+
+	section("host: one command per tick when the balance covers the head", function()
+		mountHost()
+		bankBalance, sent = 0, {}
+		hostTick(3)
+		check(#sent == 0, "sent without money")
+		bankBalance = PRICE - 1
+		hostTick()
+		check(#sent == 0, "sent one short")
+		bankBalance = PRICE
+		hostTick()
+		check(#sent == 1 and sent[1].e == 112, "exactly one command for the head expected: " .. sentIds())
+		holdSteps = true
+		hostTick(2)
+		check(#sent == 1, "second command while the first is in flight")
+		holdSteps = false
+		step()
+		check(bankBalance == 0, "balance after the command: " .. tostring(bankBalance))
+		check(tostring(saved().queue):match("^%d+,m10,m11,1,0,0,0,0:113/1,114/1,116/1,117/1$") ~= nil, "after the callback: " .. tostring(saved().queue))
+		-- the head is checked only when the money could cover it (its net cost only rises): one balance read per tick
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		hostTick(10)
+		-- one validation reads three components (owner, vehicle, game time)
+		check((MOCK.apiCallsByName.getComponent or 0) == 3, "head validated more than once while the money stays short: " .. tostring(MOCK.apiCallsByName.getComponent))
+		check((MOCK.apiCallsByName.getPlayersBalance or 0) == 10, "balance reads: " .. tostring(MOCK.apiCallsByName.getPlayersBalance))
+	end)
+
+	section("queue window: cards, counters, the next vehicle and what is short", function()
+		local tt = content("window")
+		local q = openQueue(tt, "window")
+		check(#q.cards == 2 and q.titles[1] == "Einstellungen" and q.titles[2] == "Benz Dreitonner Kipper → Benz Dreitonner Kasten", "cards: " .. table.concat(q.titles, "|"))
+		check(lineOf(q.bodies[2], "Offen: 4 · Ersetzt: 1 · Übersprungen: 0") ~= nil, "counts line")
+		check(lineOf(q.bodies[2], "Nächstes: ca. $61000, es fehlen $61000") ~= nil, "next line with the shortfall")
+		local _t, node = lineOf(q.bodies[2], "Nächstes")
+		check(node and node.props.meta.class:find("warning", 1, true) ~= nil, "shortfall in the warning colour")
+		check(lineOf(q.bodies[1], "4 Fahrzeuge warten auf Ersatz.") ~= nil, "settings status line")
+		check(buttonIn(q.bodies[2], "Abbrechen") ~= nil, "cancel button of the job")
+		-- a plain tree, no own classes without a rule (rules() checked that), and the game's spacing classes on the rows
+		check(#find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end) == 1, "settings rows without the spacing class")
+		closeQueue()
+	end)
+
+	section("reserve stays on the account", function()
+		local q = openQueue(content("reserve"), "reserve")
+		local spin = find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1]
+		check(spin ~= nil and spin.props.min == 0 and spin.props.value == 0, "reserve spin box")
+		spin.props.onValueChange(100000)
+		check(saved().queueReserve == "100000", "reserve not kept: " .. tostring(saved().queueReserve))
+		q = queueWindow("reserve set")
+		check(find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1].props.value == 100000, "spin box does not show the reserve")
+		closeQueue()
+		bankBalance, sent = PRICE + 99999, {}
+		hostTick()
+		check(#sent == 0, "sent into the reserve")
+		bankBalance = PRICE + 100000
+		hostTick()
+		check(#sent == 1 and sent[1].e == 113, "reserve covered: " .. sentIds())
+		step()
+		openQueue(content("reserve back"), "reserve back")
+		find(queueWindow("reserve back").bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1].props.onValueChange(0)
+		closeQueue()
+	end)
+
+	section("a sold vehicle is dropped and the next one checked in the same tick", function()
+		local truck = vehicles[114]
+		vehicles[114] = nil
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 116, "next vehicle not sent in the same tick: " .. sentIds())
+		step()
+		local q = openQueue(content("sold"), "sold")
+		check(lineOf(q.bodies[2], "Offen: 1 · Ersetzt: 3 · Übersprungen: 1") ~= nil, "counts after a sold vehicle")
+		local _t, node = lineOf(q.bodies[2], "Offen")
+		check(node and node.props.meta.tooltip == "1 verkauft, 0 schon ersetzt, 0 vom Spiel abgelehnt", "skipped tooltip: " .. tostring(node and node.props.meta.tooltip))
+		closeQueue()
+		vehicles[114] = truck
+	end)
+
+	section("an entity id reused for another entity is dropped", function()
+		MOCK.births[117] = 2
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 0, "reused id replaced: " .. sentIds())
+		local q = openQueue(content("reused"), "reused")
+		check(lineOf(q.bodies[2], "Offen: 0 · Ersetzt: 3 · Übersprungen: 2") ~= nil, "counts after a reused id")
+		check(lineOf(q.bodies[2], "Erledigt") ~= nil and buttonIn(q.bodies[2], "Entfernen") ~= nil, "finished job must say so and offer Remove")
+		buttonIn(q.bodies[2], "Entfernen").props.onClick()
+		q = queueWindow("reused removed")
+		check(#q.cards == 1, "finished job not removed")
+		closeQueue()
+		MOCK.births[117] = nil
+	end)
+
+	section("a vehicle replaced by hand is dropped, the next one goes on", function()
+		local tt = queueTrucks("by hand", 0)
+		check(openEntries() == 8, "by hand: 8 queued")
+		vehicle(115, { 11 }) -- the oldest got the new model in the game's own window; the id stays
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 110, "by hand: 110 expected after dropping 115: " .. sentIds())
+		step()
+		local q = openQueue(content("by hand, window"), "by hand")
+		local _t, node = lineOf(q.bodies[2], "Offen: 6 · Ersetzt: 1 · Übersprungen: 1")
+		check(node and node.props.meta.tooltip == "0 verkauft, 1 schon ersetzt, 0 vom Spiel abgelehnt", "by hand: tooltip " .. tostring(node and node.props.meta.tooltip))
+		closeQueue()
+		clearQueue(tt)
+		vehicle(115, { 10 })
+		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+	end)
+
+	section("a train rebuilt by hand keeps the new locomotive, the queue swaps only the wagons", function()
+		-- Bm 235 (3) in trains 100 and 102; the player swaps the locomotive of 102 meanwhile
+		step()
+		bankBalance = 0
+		openAndRender("train queue", 500, true)
+		local tt = content("train queue")
+		combos(tt)[1].props.onValueChange("m3")
+		tt = content("train queue, Bm 235")
+		combos(tt)[2].props.onValueChange("m2")
+		tt = content("train queue, Avmz")
+		local box = queueBox(tt)
+		check(box ~= nil, "train queue: box missing")
+		if box and box.props.value == 0 then box.props.onValueChange(1); tt = content("train queue, box on") end
+		check(buttonText(replaceButton(tt)) == "2 vormerken", "train queue: button " .. tostring(buttonText(replaceButton(tt))))
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(openEntries() == 2, "train queue: 2 trains expected: " .. tostring(saved().queue))
+		local saved102 = vehicles[102]
+		vehicle(102, { 4, 3, 3 })
+		bankBalance = nil
+		hostTick()
+		step()
+		hostTick()
+		check(#sent == 2 and sentIds() == "100,102", "train queue: both trains in order: " .. sentIds())
+		local ids = {}
+		for _j, part in ipairs(sent[2] and sent[2].conf.vehicles or {}) do ids[#ids + 1] = part.part.modelId end
+		check(table.concat(ids, ",") == "4,2,2", "train queue: new locomotive kept, wagons swapped: " .. table.concat(ids, ","))
+		step()
+		vehicles[102] = saved102
+		clearQueue(content("train queue, clear"))
+	end)
+
+	section("new model expires: the job waits, blocked, and goes on when it is back", function()
+		step()
+		bankBalance = 0
+		openAndRender("expiring queue", 501, true)
+		local tt = content("expiring queue")
+		combos(tt)[2].props.onValueChange("m15")
+		tt = content("expiring queue, Auslauf")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("expiring queue, box on") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(openEntries() == 8, "expiring queue: 8 queued")
+		currentYear = 1981
+		bankBalance = nil
+		hostTick(2)
+		check(#sent == 0, "expired model still replaced: " .. #sent)
+		local q = openQueue(content("expiring queue, window"), "expiring")
+		local _t, node = lineOf(q.bodies[2], "Neues Modell nicht erhältlich, wartet")
+		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
+		closeQueue()
+		currentYear = 1980
+		hostTick()
+		check(#sent == 1, "model back: not resumed")
+		step()
+		clearQueue(content("expiring queue, clear"))
+	end)
+
+	section("infinite money: one vehicle per tick until the queue is empty", function()
+		local tt = queueTrucks("infinite queue", 0)
+		bankBalance, sent = nil, {}
+		for k = 1, 8 do
+			hostTick()
+			check(#sent == k, "tick " .. k .. ": " .. #sent .. " commands")
+			step()
+		end
+		hostTick(2)
+		check(#sent == 8 and openEntries() == 0, "queue not empty after 8: " .. tostring(saved().queue))
+		clearQueue(tt)
+	end)
+
+	section("negative balance: nothing", function()
+		local tt = queueTrucks("negative", 0)
+		bankBalance, sent = -5, {}
+		hostTick(3)
+		check(#sent == 0, "sent with a negative balance")
+		clearQueue(tt)
+		bankBalance = 0
+	end)
+
+	section("two jobs run one after the other", function()
+		step()
+		queueTrucks("fifo trucks", 0)
+		openAndRender("fifo trains", 500, true)
+		local tt = content("fifo trains")
+		combos(tt)[1].props.onValueChange("m3")
+		tt = content("fifo trains, Bm 235")
+		combos(tt)[2].props.onValueChange("m2")
+		tt = content("fifo trains, Avmz")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("fifo, box on") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(openEntries() == 10, "fifo: 10 queued: " .. tostring(saved().queue))
+		local q = openQueue(tt, "fifo")
+		check(#q.cards == 3 and lineOf(q.bodies[3], "Wartet auf die Aufträge darüber") ~= nil, "second job must say it waits")
+		closeQueue()
+		bankBalance = nil
+		for _k = 1, 10 do hostTick(); step() end
+		check(sentIds() == "115,110,111,112,113,114,116,117,100,102", "fifo: order " .. sentIds())
+		check(openEntries() == 0, "fifo: entries left")
+		clearQueue(content("fifo, clear"))
+	end)
+
+	section("cancelling a job while its command is in flight", function()
+		local tt = queueTrucks("cancel", 0)
+		holdSteps, bankBalance, sent = true, nil, {}
+		hostTick()
+		check(#sent == 1, "cancel: one in flight")
+		local q = openQueue(tt, "cancel")
+		buttonIn(q.bodies[2], "Abbrechen").props.onClick()
+		q = queueWindow("cancelled")
+		check(#q.cards == 1 and openEntries() == 0, "cancel: job not removed")
+		closeQueue()
+		holdSteps = false
+		step() -- the callback of the cancelled job arrives
+		hostTick()
+		check(#sent == 1 and openEntries() == 0 and tostring(saved().queue) == "", "cancel: the late callback revived something: " .. tostring(saved().queue))
+	end)
+
+	section("paused: nothing until the box is cleared", function()
+		local tt = queueTrucks("paused", 0)
+		local q = openQueue(tt, "paused")
+		local box = find(q.bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1]
+		check(box ~= nil and box.props.value == 0, "paused box")
+		box.props.onValueChange(1)
+		check(saved().queuePaused == true, "paused not kept")
+		q = queueWindow("paused on")
+		check(lineOf(q.bodies[1], "Pausiert") ~= nil, "status must say paused")
+		closeQueue()
+		bankBalance, sent = nil, {}
+		hostTick(3)
+		check(#sent == 0, "sent while paused")
+		openQueue(content("paused off"), "paused off")
+		find(queueWindow("paused off").bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1].props.onValueChange(0)
+		closeQueue()
+		hostTick()
+		check(#sent == 1, "not resumed")
+		step()
+		clearQueue(content("paused, clear"))
+	end)
+
+	section("refused three times: dropped as rejected", function()
+		local tt = queueTrucks("refused", 0)
+		refused[115] = true
+		bankBalance, sent = nil, {}
+		for _k = 1, 3 do hostTick(); step() end
+		check(sentIds() == "115,115,115", "refused: three tries expected: " .. sentIds())
+		hostTick()
+		check(sentIds() == "115,115,115,110", "refused: next vehicle after three tries: " .. sentIds())
+		step()
+		local q = openQueue(content("refused, window"), "refused")
+		local _t, node = lineOf(q.bodies[2], "Offen")
+		check(node and node.props.meta.tooltip == "0 verkauft, 0 schon ersetzt, 1 vom Spiel abgelehnt", "refused: tooltip " .. tostring(node and node.props.meta.tooltip))
+		closeQueue()
+		refused = {}
+		clearQueue(tt)
+	end)
+
+	section("no callback: the vehicle tells whether it was replaced", function()
+		local tt = queueTrucks("no callback", 0)
+		holdSteps, bankBalance, sent = true, nil, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 115, "no callback: first command")
+		hostTick(5)
+		check(#sent == 1, "resent before the timeout")
+		MOCK.appClock = MOCK.appClock + 11
+		frame() -- the timeout: parts unchanged, so the vehicle stays at the head
+		hostTick()
+		check(#sent == 2 and sent[2].e == 115, "no callback, unchanged: not sent again: " .. sentIds())
+		-- this time the vehicle changed meanwhile: done, the next one is sent
+		vehicle(115, { 11 })
+		MOCK.appClock = MOCK.appClock + 11
+		frame()
+		hostTick()
+		check(#sent == 3 and sent[3].e == 110, "no callback, changed: next vehicle expected: " .. sentIds())
+		queuedCommands = {}
+		holdSteps = false
+		local q = openQueue(content("no callback, window"), "no callback")
+		check(lineOf(q.bodies[2], "Offen: 7 · Ersetzt: 1 · Übersprungen: 0") ~= nil, "no callback: counts")
+		closeQueue()
+		vehicle(115, { 10 })
+		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+		clearQueue(tt)
+	end)
+
+	section("budget: an empty queue costs no native call, a waiting one only the clock", function()
+		MOCK.apiCalls = 0
+		for _k = 1, 100 do frame() end
+		hostTick(5)
+		check(MOCK.apiCalls == 0, "empty queue: " .. MOCK.apiCalls .. " native calls")
+		local tt = queueTrucks("budget", 0)
+		bankBalance = 0
+		hostTick() -- the first tick validates the head
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		for _k = 1, 100 do frame() end
+		check(MOCK.apiCalls == 100 and MOCK.apiCallsByName.getApplicationTime == 100, "frames between ticks: " .. MOCK.apiCalls .. " calls")
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		hostTick(10)
+		check((MOCK.apiCallsByName.getComponent or 0) == 0 and (MOCK.apiCallsByName.getEntitiesWithComponent or 0) == 0, "waiting for money: the fleet or the head read again")
+		clearQueue(tt)
+	end)
+
+	section("1000 stale vehicles: at most 20 dropped per tick", function()
+		for id = 2000, 2999 do
+			vehicle(id, { 10 })
+			vehicles[id].transportVehicleConfig.vehicles[1].purchaseTime = 0 -- older than the eight
+		end
+		local tt = queueTrucks("stale", 0)
+		check(openEntries() == 1008, "stale: 1008 queued, " .. openEntries())
+		for id = 2000, 2999 do vehicles[id] = nil end
+		bankBalance, sent = nil, {}
+		hostTick()
+		check(openEntries() == 988 and #sent == 0, "stale: 20 dropped expected, " .. (1008 - openEntries()) .. " dropped, " .. #sent .. " sent")
+		hostTick()
+		check(openEntries() == 968, "stale: second tick, " .. openEntries() .. " left")
+		clearQueue(tt)
+	end)
+
+	section("the window's own batch and the queue never hit the same vehicle", function()
+		local tt = queueTrucks("race", 0)
+		holdSteps, bankBalance, sent = true, nil, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 115, "race: queue sent the oldest")
+		-- the player picks the new model again in the open window (no step passes: the queue's command is still
+		-- waiting) and replaces everything with infinite money
+		combos(tt)[2].props.onValueChange("m11")
+		tt = content("race, window")
+		check(buttonText(replaceButton(tt)) == "Ersetzen", "race: button " .. tostring(buttonText(replaceButton(tt))))
+		replaceButton(tt).props.onClick()
+		check(#sent == 8 and not sentIds():find(",115", 1, true), "race: the window must leave the queue's vehicle out: " .. sentIds())
+		hostTick(3)
+		check(#sent == 8, "race: queue sent while the window's batch is pending")
+		holdSteps = false
+		step()
+		clearQueue(content("race, clear"))
+	end)
+
+	section("game bar: Queued n, nothing while empty, nothing in the map editor", function()
+		local bar = render("MvrQueueBar", {})
+		check(bar.kind == "BoxLayout" and #find(bar, function(n) return n.kind == "TextView" end) == 0, "empty queue must give an empty layout")
+		local tt = queueTrucks("bar", 0)
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		bar = render("MvrQueueBar", {})
+		rules(bar, "game bar")
+		local texts = {}
+		for _i, n in ipairs(find(bar, function(n) return n.kind == "TextView" end)) do texts[#texts + 1] = n.props.text .. ":" .. n.props.meta.class end
+		check(table.concat(texts, "|") == "Vorgemerkt:font-scale-headline|8:font-scale-headline", "bar texts: " .. table.concat(texts, "|"))
+		local tip = find(bar, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.tooltip end)[1]
+		check(tip and tip.props.meta.tooltip == "8 Fahrzeuge warten auf Ersatz. Die Warteschlange steht im Fenster „Fahrzeuge ersetzen“ eines Depots.", "bar tooltip: " .. tostring(tip and tip.props.meta.tooltip))
+		-- isMapEditor once per mount, like the game's earnings display; nothing from the engine
+		check(MOCK.apiCalls == (MOCK.apiCallsByName.isMapEditor or 0) and (MOCK.apiCallsByName.getComponent or 0) == 0, "bar reads the engine: " .. MOCK.apiCalls)
+		MOCK.mapEditor = true
+		check(render("MvrQueueBar", {}) == nil, "bar shown in the map editor")
+		MOCK.mapEditor = false
+		clearQueue(tt)
+	end)
+
+	section("an error in the tick never reaches the UI; five in a row pause the queue", function()
+		local tt = queueTrucks("error", 0)
+		bankBalance, sent = nil, {}
+		local realGet = api.engine.getComponent
+		api.engine.getComponent = function(e, ct) if ct == CT.TRANSPORT_VEHICLE then error("component unreadable") end return realGet(e, ct) end
+		local okFrame = true
+		for _k = 1, 5 do
+			MOCK.appClock = MOCK.appClock + 11
+			okFrame = okFrame and pcall(frame)
+		end
+		api.engine.getComponent = realGet
+		check(okFrame, "error: the step hook threw")
+		check(#sent == 0 and saved().queuePaused == true, "error: queue not paused after five errors")
+		local q = openQueue(content("error, window"), "error")
+		check(lineOf(q.bodies[1], "Fehler, Warteschlange pausiert: ") ~= nil, "error: window does not show it")
+		find(q.bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1].props.onValueChange(0)
+		closeQueue()
+		MOCK.appClock = MOCK.appClock + 11
+		hostTick()
+		check(#sent == 1, "error: not resumed after unpausing")
+		step()
+		clearQueue(tt)
+	end)
+
+	section("savegame: a new session continues the queue, garbage is left alone", function()
+		local tt = queueTrucks("session", 0)
+		local before = saved().queue
+		newSession()
+		mountHost()
+		bankBalance, sent = nil, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 115, "session: queue not continued after loading: " .. sentIds())
+		step()
+		check(saved().queue ~= before and openEntries() == 7, "session: progress not written")
+		-- another version wrote the queue: not processed, not overwritten, said in the window
+		guiSaveData[MOD] = { sortOld = "name", queueFormat = "2", queue = "whatever", queueReserve = "5" }
+		newSession()
+		mountHost()
+		sent = {}
+		hostTick(3)
+		check(#sent == 0, "foreign format processed")
+		local hit = false
+		for _i, l in ipairs(logs) do if l:find("another version", 1, true) then hit = true end end
+		check(hit, "foreign format: no log line")
+		tt = chooseKasten("foreign, sort", 60999)
+		find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
+		check(saved().sortOld == "year" and saved().queueFormat == "2" and saved().queue == "whatever" and saved().queueReserve == "5", "foreign format overwritten by a settings change")
+		tt = content("foreign, queue")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("foreign, box on") end
+		replaceButton(tt).props.onClick()
+		tt = content("foreign, clicked")
+		check(hasText(tt, "Die Warteschlange in diesem Spielstand stammt von einer anderen Version von Mass Vehicle Replace und bleibt unangetastet."), "foreign format: click must say why nothing was queued")
+		check(saved().queue == "whatever", "foreign format overwritten by a click")
+		local q = openQueue(tt, "foreign")
+		check(lineOf(q.bodies[1], "Die Warteschlange in diesem Spielstand") ~= nil, "foreign format: window does not say so")
+		closeQueue()
+		-- damaged string of our own format: the same
+		guiSaveData[MOD] = { queueFormat = "1", queue = "1,m10,m11,0,0,0,0,0:115/x" }
+		newSession()
+		mountHost()
+		hostTick(2)
+		check(#sent == 0 and saved().queue == "1,m10,m11,0,0,0,0,0:115/x", "damaged queue processed or overwritten")
+		-- an old savegame without a queue, and none at all
+		guiSaveData[MOD] = { sortOld = "year" }
+		newSession()
+		mountHost()
+		hostTick(2)
+		guiSaveData[MOD] = nil
+		newSession()
+		mountHost()
+		hostTick(2)
+		check(#sent == 0, "old savegame: commands from nowhere")
+		tt = queueTrucks("old savegame, queue", 0)
+		check(openEntries() == 8 and saved().queueFormat == "1", "old savegame: queueing must start a queue")
+		clearQueue(tt)
+	end)
+
+	section("map editor: the host does nothing", function()
+		MOCK.mapEditor = true
+		local tt = queueTrucks("editor", 0)
+		newSession()
+		mountHost()
+		bankBalance, sent = nil, {}
+		hostTick(3)
+		check(#sent == 0, "editor: commands sent")
+		MOCK.mapEditor = false
+		newSession()
+		mountHost()
+		clearQueue(chooseKasten("editor, clear", 0))
+	end)
+
+	-- back to the state the following tests expect
+	bankBalance, holdSteps, refused, residuals = 5000000, false, {}, {}
+	vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
+	if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
 end
 
 print("== Robust against mods that overwrite the module field")
