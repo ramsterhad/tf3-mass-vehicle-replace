@@ -749,6 +749,41 @@ for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i
 print("  old: " .. table.concat(names, " | "))
 check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "year: 1924, 1969, then locomotives 1927, 1939, 1970")
 
+do -- own block: the main chunk is at the 200 local limit
+	-- a click on the active button turns the direction round (user decision 19.10.2026); it shows the game's icon
+	local function sortButtons(tt) return find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end) end
+	local function iconOf(b)
+		local ic = find(b, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-sort-icon" end)
+		return ic[1] and ic[1].props.path or nil
+	end
+	local function oldNames(tt)
+		local c, list = combos(tt)[1], {}
+		for i = 2, itemCount(c) do list[#list + 1] = itemTexts(c.props.items[i])[1] end
+		return table.concat(list, "|")
+	end
+	local sb = sortButtons(t)
+	check(iconOf(sb[2]) and iconOf(sb[2]):find("ascending", 1, true) and iconOf(sb[1]) == nil,
+		"sort: the active old Year button must show the ascending icon, the inactive one none")
+	check(iconOf(sb[4]) and iconOf(sb[4]):find("descending", 1, true), "sort: new list by year must start descending")
+	sb[2].props.onValueChange(0) -- the active button clicked again
+	t = content("year old flipped")
+	check(oldNames(t) == "ET 420|ACF M-300|BR 103|BR 50|Ae 4/7", "sort: second click must sort the old list newest first: " .. oldNames(t))
+	check(iconOf(sortButtons(t)[2]):find("descending", 1, true), "sort: flipped button must show the descending icon")
+	check(guiSaveData["mass_vehicle_replace_1"] and guiSaveData["mass_vehicle_replace_1"].sortOldAsc == false,
+		"sort: direction not kept in the savegame")
+	-- by name, Z to A on a second click
+	sortButtons(t)[1].props.onValueChange(1)
+	t = content("name old")
+	check(oldNames(t) == "ACF M-300|ET 420|Ae 4/7|BR 50|BR 103", "sort: name must start A to Z: " .. oldNames(t))
+	sortButtons(t)[1].props.onValueChange(0)
+	t = content("name old flipped")
+	check(oldNames(t) == "ET 420|ACF M-300|BR 103|BR 50|Ae 4/7", "sort: name second click must be Z to A: " .. oldNames(t))
+	-- back to the state the following tests expect: old list by year, oldest first
+	sortButtons(t)[2].props.onValueChange(1)
+	t = content("year old again")
+	check(oldNames(t) == "ACF M-300|ET 420|Ae 4/7|BR 50|BR 103", "sort: switching to year must start oldest first again: " .. oldNames(t))
+end
+
 print("== Replace")
 sent = {}
 local btn = find(t, function(n) return n.kind == "Button" and n.props.meta.class:find("mvr%-replace%-btn") end)[1]

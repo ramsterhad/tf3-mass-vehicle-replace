@@ -1174,15 +1174,17 @@ local function naturalKey(s)
 	return key
 end
 
-local function compareModels(a, b, sort, newestFirst)
-	-- by year each list in the order a player looks for (user decision 19.10.2026): the old models oldest first (those
-	-- are the ones to replace), the new models newest first; models without a year (0) at the end of the new list
+-- ascending: A to Z or oldest first. Equal years go by name A to Z.
+local function compareModels(a, b, sort, ascending)
 	if sort == "year" and a.yearFrom ~= b.yearFrom then
-		if newestFirst then return a.yearFrom > b.yearFrom end
-		return a.yearFrom < b.yearFrom
+		if ascending then return a.yearFrom < b.yearFrom end
+		return a.yearFrom > b.yearFrom
 	end
 	local ka, kb = naturalKey(a.name), naturalKey(b.name)
-	if ka ~= kb then return ka < kb end
+	if ka ~= kb then
+		if sort == "name" and not ascending then return ka > kb end
+		return ka < kb
+	end
 	return a.key < b.key
 end
 
@@ -1191,7 +1193,8 @@ local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label
 -- selection in the window; lives outside the recipe so every opening starts fresh
 -- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
 -- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026)
-local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "name", sortNew = "name", sameCargo = true, details = true }
+local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "name", sortNew = "name", sortOldAsc = true, sortNewAsc = true,
+	sameCargo = true, details = true }
 
 -- Sorting, "Same cargo" and the details card are kept in the savegame (user decision 19.10.2026), in the game's
 -- GUI save data per mod (api/tealdef/api/gui.d.tl:773-781 getGuiSaveData/setGuiSaveData). The game keeps its HUD
@@ -1202,6 +1205,8 @@ local function isBool(v) return type(v) == "boolean" end
 local KEPT = {
 	sortOld = function(v) return v == "name" or v == "year" end,
 	sortNew = function(v) return v == "name" or v == "year" end,
+	sortOldAsc = isBool,
+	sortNewAsc = isBool,
 	sameCargo = isBool,
 	details = isBool,
 }
@@ -1249,14 +1254,40 @@ local function topBar(update)
 end
 
 -- heading of one list with its own sort buttons on the right; field is "sortOld" or "sortNew"
+-- Direction per list (user decision 19.10.2026): a click on the active button turns it round, a click on the other
+-- one starts in the list's own direction: the old list oldest first (those are the ones to replace), the new list
+-- newest first; by name A to Z on both. The active button shows the direction with the purchase window's icons
+-- (vehicle_store_window.tl:2016-2017, 2090-2099).
+local SORT_ICON = { [true] = "::/gui/line_vehicle_mgmt/icons/sorting_bars_ascending.tga",
+	[false] = "::/gui/line_vehicle_mgmt/icons/sorting_bars_descending.tga" }
+local function defaultAscending(sortKey, field)
+	return not (sortKey == "year" and field == "sortNew")
+end
+
 local function listHead(label, field, update)
+	local ascField = field .. "Asc"
 	local children = { text(label), gui_react_util.makeHorizontalSpacer() }
 	for __, s in ipairs(SORTS) do
+		local active = sel[field] == s.key
+		local content = text(_(s.label), "font-scale-annotation")
+		if active then
+			content = row({ content, builtin.ImageView{ meta = { class = "mvr-sort-icon" }, path = SORT_ICON[sel[ascField] ~= false],
+				scaling = builtin.type.ImageViewScaling.AutoFit } })
+		end
 		children[#children + 1] = builtin.ToggleButton{
 			meta = { class = "mvr-sort" },
-			content = text(_(s.label), "font-scale-annotation"),
-			value = sel[field] == s.key and 1 or 0,
-			onValueChange = function() update(function() sel[field] = s.key; saveKept() end) end,
+			content = content,
+			value = active and 1 or 0,
+			onValueChange = function()
+				update(function()
+					if sel[field] == s.key then
+						sel[ascField] = not (sel[ascField] ~= false)
+					else
+						sel[field], sel[ascField] = s.key, defaultAscending(s.key, field)
+					end
+					saveKept()
+				end)
+			end,
 		}
 	end
 	return row(children)
@@ -1291,7 +1322,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local function rank(i) return RANK[i.class] or 4 end
 	table.sort(alts, function(a, b)
 		if rank(a.i) ~= rank(b.i) then return rank(a.i) < rank(b.i) end
-		return compareModels(a.i, b.i, sel.sortOld, false)
+		return compareModels(a.i, b.i, sel.sortOld, sel.sortOldAsc ~= false)
 	end)
 
 	local altInfo = sel.alt and byKey[sel.alt] and info(sel.alt) or nil
@@ -1318,7 +1349,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			if i and not i.noTags and not i.muPart and fits(i) and available(i, year) then neus[#neus + 1] = i end
 		end
 	end
-	table.sort(neus, function(a, b) return compareModels(a, b, sel.sortNew, true) end)
+	table.sort(neus, function(a, b) return compareModels(a, b, sel.sortNew, sel.sortNewAsc ~= false) end)
 
 	local neuInfo = sel.neu and info(sel.neu) or nil
 	if neuInfo and not (fits(neuInfo) and available(neuInfo, year)) then neuInfo = nil end
