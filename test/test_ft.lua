@@ -744,7 +744,8 @@ cs = combos(t)
 names = {}
 for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
-check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "year: 1924, 1969, then locomotives 1927, 1939, 1970")
+-- newest first (user decision 19.10.2026; was oldest first)
+check(names[1] == "ET 420" and names[2] == "ACF M-300" and names[3] == "BR 103" and names[4] == "BR 50" and names[5] == "Ae 4/7", "year: newest first, 1969, 1924, then locomotives 1970, 1939, 1927")
 
 print("== Replace")
 sent = {}

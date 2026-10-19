@@ -1175,7 +1175,8 @@ local function naturalKey(s)
 end
 
 local function compareModels(a, b, sort)
-	if sort == "year" and a.yearFrom ~= b.yearFrom then return a.yearFrom < b.yearFrom end
+	-- newest first: a player looks for the latest model (user decision 19.10.2026); without a year (0) at the end
+	if sort == "year" and a.yearFrom ~= b.yearFrom then return a.yearFrom > b.yearFrom end
 	local ka, kb = naturalKey(a.name), naturalKey(b.name)
 	if ka ~= kb then return ka < kb end
 	return a.key < b.key
