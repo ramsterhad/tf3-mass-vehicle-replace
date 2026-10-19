@@ -43,8 +43,7 @@
 		"mvr_n_parts_1": "1 car",
 		"mvr_replace_some": "Replace %d of %d",
 		"mvr_replace_some_tip": "Replaces the %d oldest of %d vehicles. More is not affordable right now.",
-		"mvr_replace_some_tip_1": "Replaces the oldest of %d vehicles. More is not affordable right now.",
-		"mvr_replaced_partial": "Only %d of %d replaced due to insufficient funds."
+		"mvr_replace_some_tip_1": "Replaces the oldest of %d vehicles. More is not affordable right now."
 	},
 	"de": {
 		"mvr_title": "Mass Vehicle Replace",
@@ -90,7 +89,6 @@
 		"mvr_n_parts_1": "1-teilig",
 		"mvr_replace_some": "%d von %d ersetzen",
 		"mvr_replace_some_tip": "Nicht genug Geld: Es werden nur %d von %d ersetzt (älteste zuerst).",
-		"mvr_replace_some_tip_1": "Nicht genug Geld: Es wird nur 1 von %d ersetzt (das älteste).",
-		"mvr_replaced_partial": "%d von %d ersetzt: nicht genug Geld."
+		"mvr_replace_some_tip_1": "Nicht genug Geld: Es wird nur 1 von %d ersetzt (das älteste)."
 	}
 }

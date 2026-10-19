@@ -397,8 +397,9 @@ local function updateText()
 		return
 	end
 	local s = string.format(_("mvr_replaced"), result.ok, result.sent)
-	-- partial (#23): of all vehicles with the old model, not only of those sent
-	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced_partial"), result.ok, result.total) end
+	-- partial (#23): of all vehicles with the old model, not only of those sent; same wording as a full batch,
+	-- the money was already named on the button (user decision 19.10.2026)
+	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced"), result.ok, result.total) end
 	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
 	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
 	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
