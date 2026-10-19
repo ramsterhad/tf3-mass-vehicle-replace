@@ -1106,7 +1106,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			class = "primary, mvr-replace-btn" .. (affordable and "" or partial and ", mvr-partial" or ", mvr-no-money"),
 			-- disabled while the previous batch is still being replaced (issue #9)
 			enabled = (affordable or partial) and not busy,
-			tooltip = partial and _("mvr_replace_some_tip") or not affordable and _("mvr_not_enough_money") or nil,
+			tooltip = partial and (some == 1 and string.format(_("mvr_replace_some_tip_1"), e.vehicles)
+				or string.format(_("mvr_replace_some_tip"), some, e.vehicles)) or not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{

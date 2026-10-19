@@ -1093,6 +1093,7 @@ t = chooseKasten("partial, 487999", 487999)
 local partBtn = replaceButton(t)
 check(buttonText(partBtn) == "7 von 8 ersetzen", "partial: button text " .. tostring(buttonText(partBtn)))
 check(partBtn.props.meta.enabled == true, "partial: button disabled")
+check(partBtn.props.meta.tooltip == "Ersetzt die 7 ältesten von 8 Fahrzeugen. Mehr ist derzeit nicht bezahlbar.", "partial: tooltip " .. tostring(partBtn.props.meta.tooltip))
 check(partBtn.props.meta.class:find("mvr-partial", 1, true) and not partBtn.props.meta.class:find("mvr-no-money", 1, true), "partial: class " .. partBtn.props.meta.class)
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "7 Fahrzeuge werden ersetzt." end) == 1, "partial: count line does not match the button")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Kosten nach Restwert: $427000" end) == 1, "partial: cost line does not match the button")
@@ -1108,10 +1109,14 @@ for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
 table.sort(partialIds)
 check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
 t = content("partial, after the click")
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8, mehr deckte das Geld nicht" end) == 1, "partial: result line")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nur 3 von 8 ersetzt: nicht genug Geld." end) == 1, "partial: result line")
 check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
 -- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
+-- money for exactly one truck: the tooltip uses its singular text
+t = chooseKasten("partial, one", 61000)
+check(buttonText(replaceButton(t)) == "1 von 8 ersetzen", "partial, one: button text " .. tostring(buttonText(replaceButton(t))))
+check(replaceButton(t).props.meta.tooltip == "Ersetzt das älteste von 8 Fahrzeugen. Mehr ist derzeit nicht bezahlbar.", "partial, one: tooltip " .. tostring(replaceButton(t).props.meta.tooltip))
 t = chooseKasten("partial, too poor", 60999)
 check(buttonText(replaceButton(t)) == "Nicht genug Geld" and replaceButton(t).props.meta.enabled == false, "partial: not one truck covered")
 t = chooseKasten("partial, rich", 488000)
