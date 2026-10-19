@@ -673,8 +673,10 @@ print("  second lines: " .. table.concat(secondLines, " | "))
 local long = find(t, function(n) return n.kind == "TextView" and n.props.text:find("…") end)
 check(#long > 0, "long name is not shortened")
 check(long[1] and long[1].props.meta.tooltip ~= nil, "shortened name without tooltip")
--- placeholder selected in the new list
-check(cs[2].props.value == "none", "new list without selection should show the placeholder")
+-- nothing chosen in the new list: its top model is preselected, no placeholder line (user decision 19.10.2026; until
+-- then the placeholder was selected)
+check(cs[2].props.value ~= "none" and firstModel(cs[2]) == 1 and cs[2].props.value == cs[2].props.items[1].props.value,
+	"new list without a choice should preselect its top model: " .. tostring(cs[2].props.value))
 
 print("== Train depot: choose a wagon, choose a new model")
 cs[1].props.onValueChange("m2")
@@ -1669,8 +1671,10 @@ wl = engineLine(chooseRail("electric to electric", "m1", "m4"))
 check(wl.text == " " and wl.meta.tooltip == nil, "same engine type warns: " .. tostring(wl.text))
 wl = engineLine(chooseRail("wagon to wagon", "m2", "m3"))
 check(wl.text == " " and wl.meta.tooltip == nil, "wagons warn: " .. tostring(wl.text))
-wl = engineLine(chooseRail("no new model yet", "m5", nil))
-check(wl.text == " ", "warning without a new model: " .. tostring(wl.text))
+-- no new model chosen: the top one is preselected (user decision 19.10.2026), and the warning follows it like a chosen one
+-- (until then: no new model, no warning)
+wl = engineLine(chooseRail("no new model chosen", "m5", nil))
+check(wl.text == "Antrieb wechselt: Dampf " .. ARROW .. " Elektrisch", "warning for the preselected new model: " .. tostring(wl.text))
 wl = engineLine(chooseRail("multiple units", "u900", "u901"))
 check(wl.text == "Antrieb wechselt: Elektrisch " .. ARROW .. " Diesel/Elektrisch", "multiple units: " .. tostring(wl.text))
 -- an engine without a known type (like the older models here) gives no warning
