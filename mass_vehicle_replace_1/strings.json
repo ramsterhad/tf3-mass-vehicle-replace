@@ -87,8 +87,8 @@
 		"mvr_n_parts": "%d-teilig",
 		"mvr_n_parts_1": "1-teilig",
 		"mvr_replace_some": "%d von %d ersetzen",
-		"mvr_replace_some_tip": "Ersetzt die %d ältesten von %d Fahrzeugen. Mehr ist derzeit nicht bezahlbar.",
-		"mvr_replace_some_tip_1": "Ersetzt das älteste von %d Fahrzeugen. Mehr ist derzeit nicht bezahlbar.",
+		"mvr_replace_some_tip": "Nicht genug Geld: Es werden nur %d von %d ersetzt (älteste zuerst).",
+		"mvr_replace_some_tip_1": "Nicht genug Geld: Es wird nur 1 von %d ersetzt (das älteste).",
 		"mvr_replaced_partial": "Nur %d von %d ersetzt: nicht genug Geld."
 	}
 }
