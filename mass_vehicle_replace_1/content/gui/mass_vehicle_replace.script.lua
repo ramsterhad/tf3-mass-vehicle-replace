@@ -908,7 +908,7 @@ local function bigPicture(i)
 end
 
 -- Vehicle stats (#16) ---------------------------------------------------------------------------------
--- Collapsible "Details" card below the window, collapsed by default. Values come from the purchase window's own
+-- Collapsible "Details" card below the window, expanded by default. Values come from the purchase window's own
 -- data collection: vehicle_store_util.makeVehicleData(repId, isMultipleUnit) (vehicle_store_util.tl:785-797) sums
 -- or picks per part like the store (collectVehicleData, vehicle_store_util.tl:122-391), so a multiple unit counts
 -- as the whole unit, like in the store. Model metadata does not change during a game, so each model is read once;
@@ -975,9 +975,9 @@ local STATS = {
 }
 
 -- like the store's formatDelta (vehicle_store_window.tl:24-32, local there): "+" or "-" and the formatted
--- difference; nothing when equal
+-- difference; the value itself when equal as shown (user decision 19.10.2026, like the store)
 local function delta(new, old, fmt)
-	if new == old then return "" end
+	if fmt(new) == fmt(old) then return fmt(new) end
 	if new > old then return "+" .. fmt(new - old) end
 	return "-" .. fmt(old - new)
 end
@@ -1010,14 +1010,16 @@ local function statRow(s, oldData, newData, ranges)
 		local po, wo = ratingOf(o, ranges, s)
 		local pn, wn = ratingOf(n, ranges, s)
 		if not (wo or wn) then return nil end
+		-- colored only when the words differ: the same word on both sides reads as equal (game test 19.10.2026)
 		local better = nil
-		if po and pn and po ~= pn then better = pn > po end
+		if po and pn and wo ~= wn then better = pn > po end
 		return { label = _(s.label), old = wo or "-", new = wn or "-", change = "", better = better }
 	end
 	local better, change = nil, ""
+	-- equal as shown (the formatted values match): the value without color, not "+0 kN" in red
 	if o and n then
 		change = delta(n, o, s.fmt)
-		if n ~= o then better = (n > o) == s.higher end
+		if s.fmt(n) ~= s.fmt(o) then better = (n > o) == s.higher end
 	end
 	return { label = _(s.label), old = o and s.fmt(o) or "-", new = n and s.fmt(n) or "-", change = change, better = better }
 end
@@ -1040,21 +1042,24 @@ local function statCell(s, class)
 	return builtin.TextView{ meta = { class = class }, text = s }
 end
 
--- half of the table: header and rows in a TableLayout (columns label, old, new, change)
+-- half of the table: header and rows in a TableLayout (columns label, change, old, new; the change first as the
+-- most important column, user decision 19.10.2026)
 local function statTable(rows)
 	local ANN = "font-scale-annotation"
 	local list = { builtin.Row{ cells = {
-		statCell(" ", ANN), statCell(_("mvr_stat_old"), ANN), statCell(_("mvr_stat_new"), ANN), statCell(_("mvr_stat_change"), ANN),
+		statCell(" ", ANN), statCell(_("mvr_stat_change"), ANN), statCell(_("mvr_stat_old"), ANN), statCell(_("mvr_stat_new"), ANN),
 	} } }
 	for __, r in ipairs(rows) do
 		-- the game's global text colors for better and worse (default.css.lua "!positive", "!negative")
+		-- old and new each show whether they are the better or the worse one (user decision 19.10.2026); the change
+		-- takes the color of the new value
 		local mark = r.better == true and ", positive" or r.better == false and ", negative" or ""
+		local markOld = r.better == true and ", negative" or r.better == false and ", positive" or ""
 		list[#list + 1] = builtin.Row{ cells = {
 			statCell(r.label, "font-scale-body"),
-			statCell(r.old, "font-scale-body"),
-			-- ratings have no difference: their new word carries the color instead
-			statCell(r.new, "font-scale-body" .. (r.change == "" and mark or "")),
 			statCell(r.change, "font-scale-body" .. (r.change ~= "" and mark or "")),
+			statCell(r.old, "font-scale-body" .. markOld),
+			statCell(r.new, "font-scale-body" .. mark),
 		} }
 	end
 	return builtin.Component{
@@ -1179,8 +1184,9 @@ end
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- selection in the window; lives outside the recipe so every opening starts fresh
--- details: the stats card is expanded (#16); collapsed at first, then kept for the session like the sorting
-local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = false }
+-- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026), then kept for the
+-- session like the sorting
+local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = true }
 
 local function topBar(update)
 	local children = {}
