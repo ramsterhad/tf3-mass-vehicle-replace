@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - When the money does not cover the whole replacement, the button turns yellow and says "Replace 7 of 8" (#23). It replaces only the vehicles the balance covers now, oldest first; each vehicle (a whole train) is replaced completely or not at all. Count and cost next to it are those of the vehicles it replaces, the result line says how many of all were replaced. The red "Not enough money" stays for when not even one vehicle is covered.
+- For add-on authors (#24): the replace window has its own extension point, `mass_vehicle_replace_1::MvrReplaceWindowExtension`. An add-on adds a button next to "Replace" as a `react-plugin` and gets a plain copy of the current selection (old and new model, vehicle count, price, net cost, what the money covers). The rebuild of a consist is a module of its own, `mass_vehicle_replace_1::/gui/mass_vehicle_replace_rebuild.lua`, with a version number, so an add-on replaces vehicles exactly like the window. Interfaces are documented at the top of both files. Without add-ons nothing changes for players.
 
 - The result line after replacing shows once, when the game has answered for every vehicle, instead of counting up from "0 of 8". Vehicles the game refuses to replace are named apart from those skipped for money, e.g. "Replaced: 7 of 8 (1 planned vehicle was rejected by the game)"; before, a bare ", failed: 1" was added.
 

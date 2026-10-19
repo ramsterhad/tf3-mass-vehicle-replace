@@ -8,6 +8,7 @@ read_globals = {
 	"ug_require", -- the game's module loader
 	"debugPrint",
 	"_react", -- the game's react registry, read under pcall (currentReplacement)
+	"getOwningModId", -- mod id of the calling file (api/tealdef/main.d.tl), read under pcall
 }
 -- .script.lua resources export through a global data()
 globals = { "data" }

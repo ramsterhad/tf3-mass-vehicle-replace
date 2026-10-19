@@ -15,6 +15,23 @@ local function log(...)
 	debugPrint("[MassVehicleReplace]", ...)
 end
 
+-- Shared with add-on mods (#24): the consist rebuild and the extension point of the window, each in a module of
+-- its own, so an add-on loads them with ug_require without loading this script. Without the rebuild module the
+-- window cannot work, so the depot button is then left out (doReplace); without the extension point the window
+-- only lacks the add-ons.
+local okRebuild, rebuildLib = pcall(ug_require, "mass_vehicle_replace_1::/gui/mass_vehicle_replace_rebuild.lua")
+if not okRebuild or type(rebuildLib) ~= "table" then
+	log("rebuild module not loaded", tostring(rebuildLib))
+	rebuildLib = nil
+end
+local groupsOf = rebuildLib and rebuildLib.groupsOf
+local rebuild = rebuildLib and rebuildLib.rebuild
+local okExtension, extension = pcall(ug_require, "mass_vehicle_replace_1::/gui/mass_vehicle_replace_extension.lua")
+if not okExtension or type(extension) ~= "table" then
+	log("extension point not registered", tostring(extension))
+	extension = nil
+end
+
 -- Model data -------------------------------------------------------------------------------------
 -- Two kinds of entries, both with the key key:
 --   "m<id>": single model (locomotive, wagon, bus, ship ...), id from modelRep
@@ -249,25 +266,6 @@ end
 
 -- Vehicles in the game ------------------------------------------------------------------------------
 
--- Groups of a vehicle: { from, to, path } with path = file name of the multiple unit or "" for single parts.
--- Without group data each part counts on its own.
-local function groupsOf(cfg)
-	local groups, from = {}, 1
-	local sizes = cfg.vehicleGroups or {}
-	local total = #cfg.vehicles
-	for gi = 1, #sizes do
-		local n = sizes[gi]
-		-- group sizes beyond the part list (inconsistent data) are clamped, so no part index is ever nil
-		if from > total then break end
-		groups[#groups + 1] = { from = from, to = math.min(from + n - 1, total), path = (cfg.muFileNames or {})[gi] or "" }
-		from = from + n
-	end
-	if from <= #cfg.vehicles then
-		for j = from, #cfg.vehicles do groups[#groups + 1] = { from = j, to = j, path = "" } end
-	end
-	return groups
-end
-
 -- Fleet per entry: parts = pieces (single parts or multiple units), vehicles = vehicles (trains) it is
 -- in, plus the vehicle type from the vehicle component; that one can be compared with the depot like in the game.
 -- Parts of a multiple unit count only with the multiple unit, not on their own.
@@ -320,25 +318,6 @@ local function fleet()
 		end
 	end
 	return byKey, partsByVehicle
-end
-
--- new part: paint from the old part; reversed from the old part or, in a multiple unit, from its definition
-local function newPart(model, reversed, color, t)
-	local p = api.type.TransportVehiclePart.new()
-	p.part.modelId = model.id
-	p.part.reversed = reversed
-	p.part.color = color
-	local lcs, auto = {}, {}
-	for i = 1, model.compartments do
-		local lc = api.type.LoadConfig.new()
-		lc.loadConfigIndex = 0
-		lcs[i] = lc
-		auto[i] = true
-	end
-	p.part.compartment2loadConfig = lcs
-	p.autoLoadConfig = auto
-	p.purchaseTime = t
-	return p
 end
 
 -- Result of the last batch. Commands sent from the GUI run in the next simulation step and their callbacks
@@ -433,87 +412,6 @@ local function updateText()
 	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
 	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
 	result.text = s
-end
-
--- Builds the new consist of a vehicle; nil if alt does not occur in it.
--- Single model: every single part alt becomes neu, multiple units in the same train stay.
--- Multiple unit: every group alt is replaced by the parts of neu, group size and file name adapt.
--- The game reverses a multiple unit by reversing the order of its parts and flipping each part's
--- reversed flag (vehicle_store_window.tl, reverse). A group in a train is reversed when its parts
--- match the definition read backwards with flipped flags; a group that matches neither (unknown
--- state) counts as forward.
-local function groupReversed(cfg, g, muInfoOfGroup)
-	local parts = muInfoOfGroup.parts
-	local n = g.to - g.from + 1
-	if n ~= #parts then return false end
-	local forward, backward = true, true
-	for k = 1, n do
-		local p = cfg.vehicles[g.from + k - 1].part
-		local def, rdef = parts[k], parts[n + 1 - k]
-		if p.modelId ~= def.info.id or p.reversed ~= (not def.forward) then forward = false end
-		if p.modelId ~= rdef.info.id or p.reversed ~= rdef.forward then backward = false end
-	end
-	return backward and not forward
-end
-
-local function rebuild(cfg, altInfo, neuInfo, t)
-	local vehicles, sizes, paths, units = {}, {}, {}, 0
-	-- puts the new model where the old one was, facing the same way: a multiple unit as its own group
-	-- with its file name, a single model as a group of one. reversedUnit: the old unit faces backwards
-	-- (a single model by its reversed flag, a multiple unit by groupReversed)
-	local function putNew(old, reversedUnit)
-		if neuInfo.mu then
-			local parts = neuInfo.parts
-			for k = 1, #parts do
-				-- no "a and b or c" here: p.forward can be false
-				local p, reversed
-				if reversedUnit then
-					p = parts[#parts + 1 - k]
-					reversed = p.forward
-				else
-					p = parts[k]
-					reversed = not p.forward
-				end
-				vehicles[#vehicles + 1] = newPart(p.info, reversed, old.part.color, t)
-			end
-			sizes[#sizes + 1] = #parts
-			paths[#paths + 1] = neuInfo.path
-		else
-			vehicles[#vehicles + 1] = newPart(neuInfo, reversedUnit, old.part.color, t)
-			sizes[#sizes + 1] = 1
-			paths[#paths + 1] = ""
-		end
-		units = units + 1
-	end
-	for __, g in ipairs(groupsOf(cfg)) do
-		if g.path ~= "" then
-			if altInfo.mu and g.path == altInfo.path then
-				putNew(cfg.vehicles[g.from], groupReversed(cfg, g, altInfo))
-			else
-				for j = g.from, g.to do vehicles[#vehicles + 1] = cfg.vehicles[j] end
-				sizes[#sizes + 1] = g.to - g.from + 1
-				paths[#paths + 1] = g.path
-			end
-		else
-			-- single parts each sit in a group of their own, like in the purchase window
-			for j = g.from, g.to do
-				local p = cfg.vehicles[j]
-				if not altInfo.mu and p.part.modelId == altInfo.id then
-					putNew(p, p.part.reversed == true)
-				else
-					vehicles[#vehicles + 1] = p
-					sizes[#sizes + 1] = 1
-					paths[#paths + 1] = ""
-				end
-			end
-		end
-	end
-	if units == 0 then return nil end
-	local conf = api.type.TransportVehicleConfig.new(cfg)
-	conf.vehicles = vehicles
-	conf.vehicleGroups = sizes
-	conf.muFileNames = paths
-	return conf, units
 end
 
 -- The replace command does not check the balance (the game's purchase window does that itself,
@@ -968,6 +866,59 @@ local function topBar(update)
 	return row(children)
 end
 
+-- Add-ons (#24) ------------------------------------------------------------------------------------------
+-- Plugins of the window's extension point (mass_vehicle_replace_extension.lua) sit left of the Replace button.
+
+-- a plain copy of what rebuild() needs from a catalog entry; plugins never get the entry itself
+local function unitOf(i)
+	if not i then return nil end
+	if i.mu then
+		local parts = {}
+		for k, part in ipairs(i.parts) do
+			parts[k] = { info = { id = part.info.id, compartments = part.info.compartments }, forward = part.forward }
+		end
+		return { key = i.key, mu = true, path = i.path, parts = parts }
+	end
+	return { key = i.key, mu = false, id = i.id, compartments = i.compartments }
+end
+
+local pluginErrors = {} -- the window renders often: each failure is logged once
+local function pluginFailed(what, err)
+	local msg = what .. ": " .. tostring(err)
+	if not pluginErrors[msg] then
+		pluginErrors[msg] = true
+		log("add-on plugin failed", msg)
+	end
+end
+
+-- Like gui_react_util.usePlugins (gui_react_util.tl:513-565, react.getPlugins react.lua:92-117), but every plugin
+-- in pcall: the game calls condition and recipe unguarded, so one broken add-on would break the window. Each call
+-- gets a fresh params table from makeParams, so no plugin can change what the window or the next plugin sees.
+-- Gamepad refs and hardcoded entries of usePlugins are not needed here.
+local function addonNodes(makeParams)
+	if not extension then return {} end
+	local ok, plugins = pcall(react.getPlugins, extension.MvrReplaceWindowExtension)
+	if not ok then
+		pluginFailed("getPlugins", plugins)
+		return {}
+	end
+	local nodes = {}
+	for k, plugin in ipairs(type(plugins) == "table" and plugins or {}) do
+		if type(plugin) == "table" then
+			local okC, show = pcall(function() return plugin.condition == nil or plugin.condition(makeParams()) end)
+			if not okC then
+				pluginFailed("condition " .. k, show)
+			elseif show then
+				-- a missing recipe (react.lua:103-105 logs "Recipe not found") fails here as a call of nil
+				local okR, node = pcall(plugin.recipe, makeParams())
+				if not okR then pluginFailed("recipe " .. k, node)
+				elseif node ~= nil then nodes[#nodes + 1] = node end
+			end
+		end
+	end
+	return nodes
+end
+
 local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	react.useInputAction("IA_MENU_BACK", react.iaHandler(p.onClose))
 	-- counter only for redrawing; the selection itself is in sel
@@ -1151,6 +1102,32 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local summaryLines = {}
 	for k, line in ipairs(summary) do summaryLines[k] = text(line) end
 
+	-- the selection for add-ons (#24), documented in mass_vehicle_replace_extension.lua; built anew for each call
+	local function selection()
+		return {
+			version = extension.VERSION,
+			oldKey = altInfo and altInfo.key,
+			newKey = neuInfo and neuInfo.key,
+			vehicles = e and e.vehicles or 0,
+			units = e and e.parts or 0,
+			price = price,
+			cost = cost,
+			infiniteMoney = free,
+			affordable = affordable,
+			affordableCount = some,
+			affordableCost = someCost,
+			busy = busy,
+			oldUnit = unitOf(altInfo),
+			newUnit = unitOf(neuInfo),
+		}
+	end
+	-- without add-ons the row is the same as before: summary, spacer, button
+	local bottomRow = {
+		builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
+		gui_react_util.makeHorizontalSpacer(),
+	}
+	for __, node in ipairs(addonNodes(selection)) do bottomRow[#bottomRow + 1] = node end
+	bottomRow[#bottomRow + 1] = button
 
 	local children = {
 		topBar(update),
@@ -1159,11 +1136,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		row({ cell("cell", bigPicture(altInfo)), cell("mid", empty()), cell("cell", bigPicture(neuInfo)) }),
 		-- gap between images and text; the button stays centered on the text block
 		builtin.Component{ meta = { class = "mvr-gap" } },
-		row({
-			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
-			gui_react_util.makeHorizontalSpacer(),
-			button,
-		}),
+		row(bottomRow),
 	}
 
 	-- a recipe must return a layout, not a component
@@ -1311,6 +1284,7 @@ local installed = false
 local function doReplace(replacementApi)
 	if installed then return end
 	installed = true
+	if not rebuildLib then return end -- logged at load: the window could not replace anything
 	-- a failed hook only loses the depot button, never the game UI
 	local ok, err = pcall(function()
 		local okId, id = pcall(react.GetRecipeId, ActionButtonBar)
