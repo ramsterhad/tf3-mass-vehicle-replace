@@ -14,10 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A collapsible "Details" card at the bottom of the window compares the old and the new model value by value (#16), the better value in blue and the worse one in red.
 - The result line after replacing shows once, when the game has answered for every vehicle, instead of counting up from "0 of 8".
 - Vehicles the game refuses to replace are named apart from those skipped for money, e.g. "Replaced: 7 of 8 (1 planned vehicle was rejected by the game)".
-- The window keeps sorting, the "Same cargo" filter and whether the "Details" card is open in the savegame, so they survive a restart.
+- The window keeps the sorting of both lists, the "Same cargo" filter and whether the "Details" card is open in the savegame, so they survive a restart.
 
 ### Changed
 
+- The new list preselects its top model like the old list, so no empty line stands at the top of the open list; replacing still needs the click. Right after a replacement it waits for a choice, so the result line stays visible.
+- The old and the new list each have their own sort buttons (name or year). A second click on the active button reverses the order, shown with the game's sort icons. By year the old models start oldest first, the new ones newest first, as a player usually looks for the latest model.
 - When the residual value of the old vehicles is higher than the price of the new ones, the window says "Proceeds after residual value: $100" instead of a negative cost ("$-100"). The game credits that amount.
 - With infinite money (sandbox mode, "no costs") the window no longer shows the cost line, like the game hides the balance in the depot window (#20). The prices in the model list stay.
 - The cost line updates twice a second instead of every frame while the game runs. With many vehicles of the selected model (1450 trucks in a test) the window cost frames, because every update reads the residual value of each vehicle.
@@ -26,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The window now notices when vehicles are bought, sold, handed to another player or rebuilt in the game's own vehicle window while it is open, and updates the count (#10).
 - The window no longer reads the whole fleet again on every redraw, only when the fleet changes.
+- With a model selected, the open lists no longer show an extra first line ("No vehicles of this type" on the left, empty on the right).
 
 ## [1.0.3] - 2026-10-17
 

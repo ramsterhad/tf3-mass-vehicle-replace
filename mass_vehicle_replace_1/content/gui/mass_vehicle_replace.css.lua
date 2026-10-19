@@ -118,6 +118,8 @@ function data()
 	a("Window!mvr-window ImageView!mvr-filter-icon", {
 		padding = { 6, 6, 6, 6 },
 	})
+	-- the direction icon in the active sort button, like the purchase window's (fixed size, see ui_check)
+	a("ImageView!mvr-sort-icon", with(fixed(14, 14), { margin = { 0, 0, 0, 4 } }))
 	a("Window!mvr-window ToggleButton!mvr-sort", {
 		padding = { 4, 10, 4, 10 },
 	})

@@ -578,6 +578,8 @@ local function itemTexts(itemNode)
 	return t
 end
 local function itemCount(c) return #c.props.items end
+-- index of the first model: the placeholder is the first entry only while nothing is selected
+local function firstModel(c) return (c.props.items[1] and c.props.items[1].props.value == "none") and 2 or 1 end
 -- every list has the same number of lines and identically built entries (fixed height/width)
 local function shapeOf(itemNode)
 	local s = {}
@@ -657,7 +659,7 @@ local cs = combos(t)
 check(#cs == 2, "two lists expected, found " .. #cs)
 -- old models: rail only, powered first, then wagons; natural sort (BR 50 before BR 103)
 local names = {}
-for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
 check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "sort by name: railcar/multiple unit, then locomotives, BR 50 before BR 103")
 for _i, n in ipairs(names) do check(not n:find("Endwagen") and not n:find("Mittelwagen"), "multiple unit part listed on its own: " .. n) end
@@ -665,14 +667,16 @@ for _i, n in ipairs(names) do check(not n:find("Benz") and not n:find("Tram"), "
 for _i, n in ipairs(names) do check(not n:find("Fake"), "dummy locomotive listed on the left: " .. n) end
 -- second line of wagons
 local secondLines = {}
-for i = 2, itemCount(cs[1]) do secondLines[#secondLines + 1] = itemTexts(cs[1].props.items[i])[2] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do secondLines[#secondLines + 1] = itemTexts(cs[1].props.items[i])[2] end
 print("  second lines: " .. table.concat(secondLines, " | "))
 -- shortened name
 local long = find(t, function(n) return n.kind == "TextView" and n.props.text:find("…") end)
 check(#long > 0, "long name is not shortened")
 check(long[1] and long[1].props.meta.tooltip ~= nil, "shortened name without tooltip")
--- placeholder selected in the new list
-check(cs[2].props.value == "none", "new list without selection should show the placeholder")
+-- nothing chosen in the new list: its top model is preselected, no placeholder line (user decision 19.10.2026; until
+-- then the placeholder was selected)
+check(cs[2].props.value ~= "none" and firstModel(cs[2]) == 1 and cs[2].props.value == cs[2].props.items[1].props.value,
+	"new list without a choice should preselect its top model: " .. tostring(cs[2].props.value))
 
 print("== Train depot: choose a wagon, choose a new model")
 cs[1].props.onValueChange("m2")
@@ -680,14 +684,14 @@ t = content("wagon chosen")
 cs = combos(t)
 check(cs[1].props.value == "m2", "old selection does not stay")
 local neuNames = {}
-for i = 2, itemCount(cs[2]) do neuNames[#neuNames + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do neuNames[#neuNames + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new: " .. table.concat(neuNames, " | "))
 for _i, n in ipairs(neuNames) do check(not n:find("BR ") and n ~= "Ae 4/7", "wagon replacement shows a locomotive: " .. n) end
 -- cargo filter: passenger cars only for wagons that carry passengers
 local function neuList()
 	local c = combos(content("cargo filter"))
 	local l = {}
-	for i = 2, itemCount(c[2]) do l[#l + 1] = (itemTexts(c[2].props.items[i])[1]:gsub("\n.*", "")) end
+	for i = firstModel(c[2]), itemCount(c[2]) do l[#l + 1] = (itemTexts(c[2].props.items[i])[1]:gsub("\n.*", "")) end
 	return table.concat(l, " | "), c
 end
 local nl = neuList()
@@ -734,17 +738,57 @@ cs = combos(t)
 cs[2].props.onValueChange("none")
 t = content("placeholder clicked")
 check(combos(t)[2].props.value == "m3", "placeholder cleared the selection")
+-- with a selection the open lists have no placeholder line (game test 19.10.2026: an empty or "no vehicles" line on top)
+check(firstModel(combos(t)[1]) == 1 and firstModel(combos(t)[2]) == 1, "placeholder listed although a model is selected")
 
 print("== Sort by year")
 local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-check(#sorts == 2, "two sort buttons expected")
+-- each list has its own sort buttons (user decision 19.10.2026): old Name, old Year, new Name, new Year
+check(#sorts == 4, "two sort buttons per list expected: " .. #sorts)
 sorts[2].props.onValueChange(1)
+t = content("year old")
+find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[4].props.onValueChange(1)
 t = content("year")
 cs = combos(t)
 names = {}
-for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
 check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "year: 1924, 1969, then locomotives 1927, 1939, 1970")
+
+do -- own block: the main chunk is at the 200 local limit
+	-- a click on the active button turns the direction round (user decision 19.10.2026); it shows the game's icon
+	local function sortButtons(tt) return find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end) end
+	local function iconOf(b)
+		local ic = find(b, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-sort-icon" end)
+		return ic[1] and ic[1].props.path or nil
+	end
+	local function oldNames(tt)
+		local c, list = combos(tt)[1], {}
+		for i = firstModel(c), math.min(firstModel(c) + 4, itemCount(c)) do list[#list + 1] = itemTexts(c.props.items[i])[1] end -- the five powered ones
+		return table.concat(list, "|")
+	end
+	local sb = sortButtons(t)
+	check(iconOf(sb[2]) and iconOf(sb[2]):find("ascending", 1, true) and iconOf(sb[1]) == nil,
+		"sort: the active old Year button must show the ascending icon, the inactive one none")
+	check(iconOf(sb[4]) and iconOf(sb[4]):find("descending", 1, true), "sort: new list by year must start descending")
+	sb[2].props.onValueChange(0) -- the active button clicked again
+	t = content("year old flipped")
+	check(oldNames(t) == "ET 420|ACF M-300|BR 103|BR 50|Ae 4/7", "sort: second click must sort the old list newest first: " .. oldNames(t))
+	check(iconOf(sortButtons(t)[2]):find("descending", 1, true), "sort: flipped button must show the descending icon")
+	check(guiSaveData["mass_vehicle_replace_1"] and guiSaveData["mass_vehicle_replace_1"].sortOldAsc == false,
+		"sort: direction not kept in the savegame")
+	-- by name, Z to A on a second click
+	sortButtons(t)[1].props.onValueChange(1)
+	t = content("name old")
+	check(oldNames(t) == "ACF M-300|ET 420|Ae 4/7|BR 50|BR 103", "sort: name must start A to Z: " .. oldNames(t))
+	sortButtons(t)[1].props.onValueChange(0)
+	t = content("name old flipped")
+	check(oldNames(t) == "ET 420|ACF M-300|BR 103|BR 50|Ae 4/7", "sort: name second click must be Z to A: " .. oldNames(t))
+	-- back to the state the following tests expect: old list by year, oldest first
+	sortButtons(t)[2].props.onValueChange(1)
+	t = content("year old again")
+	check(oldNames(t) == "ACF M-300|ET 420|Ae 4/7|BR 50|BR 103", "sort: switching to year must start oldest first again: " .. oldNames(t))
+end
 
 print("== Replace")
 sent = {}
@@ -781,14 +825,15 @@ check(cs[1].props.value == "m60", "railcar is not at the top: " .. tostring(cs[1
 cs[1].props.onValueChange("u900")
 t = content("ET 420 chosen")
 cs = combos(t)
-check(itemTexts(cs[1].props.items[3])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[3])[2]))
+check(itemTexts(cs[1].props.items[firstModel(cs[1]) + 1])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[firstModel(cs[1]) + 1])[2]))
 local muNeu = {}
-for i = 2, itemCount(cs[2]) do muNeu[#muNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do muNeu[#muNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new for ET 420: " .. table.concat(muNeu, " | "))
 local secondEt423
-for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
+for i = firstModel(cs[2]), itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
 check(secondEt423 == "$2200000 · 1975 · 4-teilig", "second line ET 423: " .. tostring(secondEt423))
-check(table.concat(muNeu, "|") == "ACF M-300|Roter Pfeil|ET 423", "for ET 420 (by year, without locomotive pair): railcars and ET 423, no locomotives, no single parts: " .. table.concat(muNeu, "|"))
+-- by year the new models come newest first, the old ones oldest first (user decision 19.10.2026)
+check(table.concat(muNeu, "|") == "ET 423|Roter Pfeil|ACF M-300", "for ET 420 (by year, newest first, without locomotive pair): railcars and ET 423, no locomotives, no single parts: " .. table.concat(muNeu, "|"))
 bankBalance = 10000000
 cs[2].props.onValueChange("u901")
 t = content("ET 423 chosen")
@@ -947,9 +992,9 @@ t = content("train depot 4")
 cs = combos(t)
 check(cs[1].props.value == "m60", "M-300 not preselected")
 local rcNeu = {}
-for i = 2, itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new for M-300: " .. table.concat(rcNeu, " | "))
-check(table.concat(rcNeu, "|") == "Roter Pfeil|ET 420|ET 423", "for M-300 (by year): multiple units and railcars, no locomotives: " .. table.concat(rcNeu, "|"))
+check(table.concat(rcNeu, "|") == "ET 423|ET 420|Roter Pfeil", "for M-300 (by year, newest first): multiple units and railcars, no locomotives: " .. table.concat(rcNeu, "|"))
 bankBalance = 10000000
 cs[2].props.onValueChange("u901")
 t = content("M-300 for ET 423")
@@ -997,15 +1042,15 @@ cs[1].props.onValueChange("m1")
 t = content("Ae 4/7")
 cs = combos(t)
 local n1042 = 0
-for i = 2, itemCount(cs[2]) do
+for i = firstModel(cs[2]), itemCount(cs[2]) do
 	local it = cs[2].props.items[i]
 	if itemTexts(it)[1] == "Reihe 1042" then n1042 = n1042 + 1; check(it.props.value == "m41", "wrong 1042 offered: " .. it.props.value) end
 end
 check(n1042 == 1, "Reihe 1042 should appear exactly once, " .. n1042)
 local hasEmd = false
-for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "EMD F-Serie" then hasEmd = true end end
+for i = firstModel(cs[2]), itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "EMD F-Serie" then hasEmd = true end end
 check(hasEmd, "locomotive pair (multiple unit of locomotives only) missing among the locomotives")
-for i = 2, itemCount(cs[2]) do local n = itemTexts(cs[2].props.items[i])[1]; check(not n:find("ET 4"), "multiple unit part offered on its own: " .. n) end
+for i = firstModel(cs[2]), itemCount(cs[2]) do local n = itemTexts(cs[2].props.items[i])[1]; check(not n:find("ET 4"), "multiple unit part offered on its own: " .. n) end
 
 print("== Cargo icons")
 openAndRender("train depot 6", 500, true)
@@ -1022,7 +1067,7 @@ local function cargoOf(itemNode)
 	return icons, more, tip
 end
 local byName = {}
-for i = 2, itemCount(cs[1]) do byName[itemTexts(cs[1].props.items[i])[1]] = cs[1].props.items[i] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do byName[itemTexts(cs[1].props.items[i])[1]] = cs[1].props.items[i] end
 local ic, more, tip = cargoOf(byName["ACF M-300"])
 check(#ic == 1 and ic[1] == "cargo/1.tga" and more == nil and tip == "Fahrgäste", "M-300: one passenger icon expected: " .. table.concat(ic, ",") .. " " .. tostring(tip))
 ic, more, tip = cargoOf(byName["Ae 4/7"])
@@ -1042,7 +1087,7 @@ cs[1].props.onValueChange("m2")
 t = content("wagon 2 for cargo")
 cs = combos(t)
 local anyCargo = false
-for i = 2, itemCount(cs[2]) do local icx = cargoOf(cs[2].props.items[i]); if #icx > 0 then anyCargo = true end end
+for i = firstModel(cs[2]), itemCount(cs[2]) do local icx = cargoOf(cs[2].props.items[i]); if #icx > 0 then anyCargo = true end end
 check(anyCargo, "right list without cargo icons")
 
 print("== Cargo types are looked up only once")
@@ -1076,12 +1121,12 @@ on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class 
 check(#on == 1 and on[1].props.meta.tooltip == "Straße: Busse und Lkw", "road depot: road not preselected")
 cs = combos(t)
 names = {}
-for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
 check(#names == 1 and names[1] == "Benz Dreitonner Kipper", "road depot: only Kipper in the fleet")
 check(cs[1].props.value == "m10", "road depot: first entry preselected")
 local roadNew = {}
-for i = 2, itemCount(cs[2]) do roadNew[#roadNew + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do roadNew[#roadNew + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new: " .. table.concat(roadNew, " | "))
 local pos9, posLong
 for i, n in ipairs(roadNew) do
@@ -1252,7 +1297,7 @@ local function hasText(tt, s)
 end
 local function offered(tt, name)
 	local c = combos(tt)[2]
-	for i = 2, itemCount(c) do if itemTexts(c.props.items[i])[1] == name then return true end end
+	for i = firstModel(c), itemCount(c) do if itemTexts(c.props.items[i])[1] == name then return true end end
 	return false
 end
 
@@ -1626,8 +1671,10 @@ wl = engineLine(chooseRail("electric to electric", "m1", "m4"))
 check(wl.text == " " and wl.meta.tooltip == nil, "same engine type warns: " .. tostring(wl.text))
 wl = engineLine(chooseRail("wagon to wagon", "m2", "m3"))
 check(wl.text == " " and wl.meta.tooltip == nil, "wagons warn: " .. tostring(wl.text))
-wl = engineLine(chooseRail("no new model yet", "m5", nil))
-check(wl.text == " ", "warning without a new model: " .. tostring(wl.text))
+-- no new model chosen: the top one is preselected (user decision 19.10.2026), and the warning follows it like a chosen one
+-- (until then: no new model, no warning)
+wl = engineLine(chooseRail("no new model chosen", "m5", nil))
+check(wl.text == "Antrieb wechselt: Dampf " .. ARROW .. " Elektrisch", "warning for the preselected new model: " .. tostring(wl.text))
 wl = engineLine(chooseRail("multiple units", "u900", "u901"))
 check(wl.text == "Antrieb wechselt: Elektrisch " .. ARROW .. " Diesel/Elektrisch", "multiple units: " .. tostring(wl.text))
 -- an engine without a known type (like the older models here) gives no warning
@@ -1742,92 +1789,94 @@ local function lineOf(body, label)
 end
 local function classOf(cell) return tostring(cell and cell.props.meta and cell.props.meta.class) end
 
-t = chooseKasten("stats", 5000000)
-local card, nCards = detailsCardOf(t)
-check(nCards == 1, "stats: one details card expected, found " .. nCards)
-check(card and card.title == "Details", "stats: card title")
--- expanded by default (user decision 19.10.2026; was collapsed until then)
-check(card and card.collapsibleExpanded == true, "stats: card must be expanded by default")
--- collapse like the game's arrow button does: stays collapsed, and collapsed reads nothing
-card.setCollapsibleExpanded(false)
-card = detailsCardOf(content("stats collapsed"))
-check(card and card.collapsibleExpanded == false, "stats: card does not stay collapsed")
-check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
-local stepStatesCollapsed = #stepStates
--- and expand again
-card.setCollapsibleExpanded(true)
-t = content("stats expanded")
-card = detailsCardOf(t)
-check(card and card.collapsibleExpanded == true, "stats: card does not stay expanded")
-check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
-local body = detailsBody(card, "stats expanded")
-check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
--- the change right after the label, as the most important column (user decision 19.10.2026)
-local header = statLines(body)[1] or {}
-local headerText = {}
-for k, c in ipairs(header) do headerText[k] = c.props.text end
-check(table.concat(headerText, "|") == " |Änderung|Alt|Neu", "stats: column order " .. table.concat(headerText, "|"))
-local speedLine = lineOf(body, "Höchsttempo")
-check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
-check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
--- old and new each marked as the worse or the better one (user decision 19.10.2026)
-check(speedLine and classOf(speedLine[2]):find("negative", 1, true) and classOf(speedLine[3]):find("positive", 1, true),
-	"stats: slower old value must be marked worse, faster new one better")
-local weightLine = lineOf(body, "Gewicht")
-check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
-local costLine = lineOf(body, "Betriebskosten/Jahr")
-check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
-local tractiveLine = lineOf(body, "Zugkraft")
--- equal as shown: the change column lists the value itself, without color (user decision 19.10.2026, like the store)
-check(tractiveLine and tractiveLine[4].props.text == "20 kN" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative")
-	and not classOf(tractiveLine[2]):find("positive") and not classOf(tractiveLine[2]):find("negative"), "stats: equal values must list the value without color")
-local noiseLine = lineOf(body, "Lärm")
--- emissions are inverted: less noise is better, shown as the game's rating words
-check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
-check(noiseLine and classOf(noiseLine[2]):find("negative", 1, true), "stats: the louder old rating must be marked worse")
-local pollutionLine = lineOf(body, "Verschmutzung")
-check(pollutionLine and pollutionLine[2].props.text == "Mittel" and pollutionLine[3].props.text == "Mittel"
-	and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative")
-	and not classOf(pollutionLine[2]):find("positive") and not classOf(pollutionLine[2]):find("negative"),
-	"stats: the same rating word must not be colored")
-check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
-check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
-local readsExpanded = #storeCalls
-check(readsExpanded == 2, "stats: each model read once: " .. table.concat(storeCalls, ","))
-detailsBody(detailsCardOf(content("stats again")), "stats again")
-check(#storeCalls == readsExpanded, "stats: redraw read the vehicle data again")
-check(not wouldRedraw(), "stats: expanded card makes the window redraw on its own")
+do -- own block: the main chunk is at the 200 local limit
+	t = chooseKasten("stats", 5000000)
+	local card, nCards = detailsCardOf(t)
+	check(nCards == 1, "stats: one details card expected, found " .. nCards)
+	check(card and card.title == "Details", "stats: card title")
+	-- expanded by default (user decision 19.10.2026; was collapsed until then)
+	check(card and card.collapsibleExpanded == true, "stats: card must be expanded by default")
+	-- collapse like the game's arrow button does: stays collapsed, and collapsed reads nothing
+	card.setCollapsibleExpanded(false)
+	card = detailsCardOf(content("stats collapsed"))
+	check(card and card.collapsibleExpanded == false, "stats: card does not stay collapsed")
+	check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
+	local stepStatesCollapsed = #stepStates
+	-- and expand again
+	card.setCollapsibleExpanded(true)
+	t = content("stats expanded")
+	card = detailsCardOf(t)
+	check(card and card.collapsibleExpanded == true, "stats: card does not stay expanded")
+	check(#stepStates == stepStatesCollapsed, "stats: the card added step states (stats only change with the selection)")
+	local body = detailsBody(card, "stats expanded")
+	check(#find(body, function(n) return n.kind == "TableLayout" end) == 2, "stats: two halves expected")
+	-- the change right after the label, as the most important column (user decision 19.10.2026)
+	local header = statLines(body)[1] or {}
+	local headerText = {}
+	for k, c in ipairs(header) do headerText[k] = c.props.text end
+	check(table.concat(headerText, "|") == " |Änderung|Alt|Neu", "stats: column order " .. table.concat(headerText, "|"))
+	local speedLine = lineOf(body, "Höchsttempo")
+	check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
+	check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
+	-- old and new each marked as the worse or the better one (user decision 19.10.2026)
+	check(speedLine and classOf(speedLine[2]):find("negative", 1, true) and classOf(speedLine[3]):find("positive", 1, true),
+		"stats: slower old value must be marked worse, faster new one better")
+	local weightLine = lineOf(body, "Gewicht")
+	check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
+	local costLine = lineOf(body, "Betriebskosten/Jahr")
+	check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
+	local tractiveLine = lineOf(body, "Zugkraft")
+	-- equal as shown: the change column lists the value itself, without color (user decision 19.10.2026, like the store)
+	check(tractiveLine and tractiveLine[4].props.text == "20 kN" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative")
+		and not classOf(tractiveLine[2]):find("positive") and not classOf(tractiveLine[2]):find("negative"), "stats: equal values must list the value without color")
+	local noiseLine = lineOf(body, "Lärm")
+	-- emissions are inverted: less noise is better, shown as the game's rating words
+	check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
+	check(noiseLine and classOf(noiseLine[2]):find("negative", 1, true), "stats: the louder old rating must be marked worse")
+	local pollutionLine = lineOf(body, "Verschmutzung")
+	check(pollutionLine and pollutionLine[2].props.text == "Mittel" and pollutionLine[3].props.text == "Mittel"
+		and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative")
+		and not classOf(pollutionLine[2]):find("positive") and not classOf(pollutionLine[2]):find("negative"),
+		"stats: the same rating word must not be colored")
+	check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
+	check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")
+	local readsExpanded = #storeCalls
+	check(readsExpanded == 2, "stats: each model read once: " .. table.concat(storeCalls, ","))
+	detailsBody(detailsCardOf(content("stats again")), "stats again")
+	check(#storeCalls == readsExpanded, "stats: redraw read the vehicle data again")
+	check(not wouldRedraw(), "stats: expanded card makes the window redraw on its own")
 
--- new model without data (the game's code throws): old values stay, no crash, no difference
-combos(content("stats missing"))[2].props.onValueChange("m13")
-t = content("stats missing new")
-body = detailsBody(detailsCardOf(t), "stats missing new")
-speedLine = lineOf(body, "Höchsttempo")
-check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "-" and speedLine[4].props.text == "", "stats: missing new data must show a dash")
+	-- new model without data (the game's code throws): old values stay, no crash, no difference
+	combos(content("stats missing"))[2].props.onValueChange("m13")
+	t = content("stats missing new")
+	body = detailsBody(detailsCardOf(t), "stats missing new")
+	speedLine = lineOf(body, "Höchsttempo")
+	check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "-" and speedLine[4].props.text == "", "stats: missing new data must show a dash")
 
--- a vehicle type without any data and no new model: the card says so
-openAndRender("stats tram", 502, true)
-t = content("stats tram")
-card = detailsCardOf(t)
-check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
-body = detailsBody(card, "stats tram")
-check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+	-- a vehicle type without any data and no new model: the card says so
+	openAndRender("stats tram", 502, true)
+	t = content("stats tram")
+	card = detailsCardOf(t)
+	check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
+	body = detailsBody(card, "stats tram")
+	check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
 
--- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
-storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
-storeStats.u901 = { totalCapacity = 240, speed = 140 / 3.6, power = 2400, weight = 170, runningCosts = 110000 }
-bankBalance = 10000000
-openAndRender("stats mu", 500, true)
-combos(content("stats mu"))[1].props.onValueChange("u900")
-combos(content("stats mu old"))[2].props.onValueChange("u901")
-body = detailsBody(detailsCardOf(content("stats mu new")), "stats mu")
-local capLine = lineOf(body, "Kapazität")
-check(capLine and capLine[2].props.text == "100" and capLine[3].props.text == "240" and capLine[4].props.text == "+140", "stats: multiple unit capacity per unit")
--- collapsing again hides the body
-card = detailsCardOf(content("stats mu collapse"))
-card.setCollapsibleExpanded(false)
-check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
-if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+	-- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
+	storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
+	storeStats.u901 = { totalCapacity = 240, speed = 140 / 3.6, power = 2400, weight = 170, runningCosts = 110000 }
+	bankBalance = 10000000
+	openAndRender("stats mu", 500, true)
+	combos(content("stats mu"))[1].props.onValueChange("u900")
+	combos(content("stats mu old"))[2].props.onValueChange("u901")
+	body = detailsBody(detailsCardOf(content("stats mu new")), "stats mu")
+	local capLine = lineOf(body, "Kapazität")
+	check(capLine and capLine[2].props.text == "100" and capLine[3].props.text == "240" and capLine[4].props.text == "+140", "stats: multiple unit capacity per unit")
+	-- collapsing again hides the body
+	card = detailsCardOf(content("stats mu collapse"))
+	card.setCollapsibleExpanded(false)
+	check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false, "stats: card does not collapse")
+	if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
+end
 
 print("== Sorting, Same cargo and details kept in the savegame")
 do -- own block: the main chunk is at the 200 local limit
@@ -1838,21 +1887,21 @@ do -- own block: the main chunk is at the 200 local limit
 	cargoToggle().props.onValueChange(0)
 	detailsCardOf(content("kept details")).setCollapsibleExpanded(false)
 	local kept = guiSaveData[MOD] or {}
-	check(kept.sort == "year" and kept.sameCargo == false and kept.details == false,
-		"kept: changes not written: sort " .. tostring(kept.sort) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
+	check(kept.sortOld == "year" and kept.sameCargo == false and kept.details == false,
+		"kept: changes not written: sortOld " .. tostring(kept.sortOld) .. ", sameCargo " .. tostring(kept.sameCargo) .. ", details " .. tostring(kept.details))
 	-- another savegame with other values: the next opening takes them
-	guiSaveData[MOD] = { sort = "name", sameCargo = true, details = true }
+	guiSaveData[MOD] = { sortOld = "name", sortNew = "year", sameCargo = true, details = true }
 	openAndRender("kept other savegame", 500, true)
 	t = content("kept other savegame")
 	local sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-	check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+	check(sortOn[1].props.value == 1 and sortOn[4].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
 		"kept: saved values not read on opening")
 	-- odd values (another version, a broken savegame) keep what is there
-	guiSaveData[MOD] = { sort = "speed", sameCargo = "no", details = 1 }
+	guiSaveData[MOD] = { sortOld = "speed", sortNew = 2, sameCargo = "no", details = 1 }
 	openAndRender("kept odd values", 500, true)
 	t = content("kept odd values")
 	sortOn = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
-	check(sortOn[1].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
+	check(sortOn[1].props.value == 1 and sortOn[4].props.value == 1 and cargoToggle().props.value == 1 and detailsCardOf(t).collapsibleExpanded == true,
 		"kept: odd saved values must be ignored")
 	-- the game's save data unreachable: the window still opens and works
 	local savedGame = api.gui.game
