@@ -1733,10 +1733,15 @@ t = chooseKasten("stats", 5000000)
 local card, nCards = detailsCardOf(t)
 check(nCards == 1, "stats: one details card expected, found " .. nCards)
 check(card and card.title == "Details", "stats: card title")
-check(card and card.collapsibleExpanded == false, "stats: card must be collapsed by default")
+-- expanded by default (user decision 19.10.2026; was collapsed until then)
+check(card and card.collapsibleExpanded == true, "stats: card must be expanded by default")
+-- collapse like the game's arrow button does: stays collapsed, and collapsed reads nothing
+card.setCollapsibleExpanded(false)
+card = detailsCardOf(content("stats collapsed"))
+check(card and card.collapsibleExpanded == false, "stats: card does not stay collapsed")
 check(#storeCalls == 0, "stats: collapsed card read vehicle data: " .. table.concat(storeCalls, ","))
 local stepStatesCollapsed = #stepStates
--- expand like the game's arrow button does
+-- and expand again
 card.setCollapsibleExpanded(true)
 t = content("stats expanded")
 card = detailsCardOf(t)
@@ -1752,6 +1757,9 @@ check(table.concat(headerText, "|") == " |Änderung|Alt|Neu", "stats: column ord
 local speedLine = lineOf(body, "Höchsttempo")
 check(speedLine and speedLine[2].props.text == "60 km/h" and speedLine[3].props.text == "70 km/h", "stats: old and new top speed")
 check(speedLine and speedLine[4].props.text == "+10 km/h" and classOf(speedLine[4]):find("positive", 1, true), "stats: faster must read +10 km/h in the better color")
+-- old and new each marked as the worse or the better one (user decision 19.10.2026)
+check(speedLine and classOf(speedLine[2]):find("negative", 1, true) and classOf(speedLine[3]):find("positive", 1, true),
+	"stats: slower old value must be marked worse, faster new one better")
 local weightLine = lineOf(body, "Gewicht")
 check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine[4]):find("negative", 1, true), "stats: heavier must read +0.5 t in the worse color")
 local costLine = lineOf(body, "Betriebskosten/Jahr")
@@ -1761,9 +1769,11 @@ check(tractiveLine and tractiveLine[4].props.text == "" and not classOf(tractive
 local noiseLine = lineOf(body, "Lärm")
 -- emissions are inverted: less noise is better, shown as the game's rating words
 check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
+check(noiseLine and classOf(noiseLine[2]):find("negative", 1, true), "stats: the louder old rating must be marked worse")
 local pollutionLine = lineOf(body, "Verschmutzung")
 check(pollutionLine and pollutionLine[2].props.text == "Mittel" and pollutionLine[3].props.text == "Mittel"
-	and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative"),
+	and not classOf(pollutionLine[3]):find("positive") and not classOf(pollutionLine[3]):find("negative")
+	and not classOf(pollutionLine[2]):find("positive") and not classOf(pollutionLine[2]):find("negative"),
 	"stats: the same rating word must not be colored")
 check(lineOf(body, "Schub") == nil and lineOf(body, "Komfort") == nil, "stats: rows without a value on either side must be hidden")
 check(lineOf(body, "Kapazität") ~= nil and lineOf(body, "Leistung") ~= nil and lineOf(body, "Ladetempo") ~= nil, "stats: capacity, power, loading speed missing")

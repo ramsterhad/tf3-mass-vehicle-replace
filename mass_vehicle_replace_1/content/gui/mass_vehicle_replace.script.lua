@@ -908,7 +908,7 @@ local function bigPicture(i)
 end
 
 -- Vehicle stats (#16) ---------------------------------------------------------------------------------
--- Collapsible "Details" card below the window, collapsed by default. Values come from the purchase window's own
+-- Collapsible "Details" card below the window, expanded by default. Values come from the purchase window's own
 -- data collection: vehicle_store_util.makeVehicleData(repId, isMultipleUnit) (vehicle_store_util.tl:785-797) sums
 -- or picks per part like the store (collectVehicleData, vehicle_store_util.tl:122-391), so a multiple unit counts
 -- as the whole unit, like in the store. Model metadata does not change during a game, so each model is read once;
@@ -1051,13 +1051,15 @@ local function statTable(rows)
 	} } }
 	for __, r in ipairs(rows) do
 		-- the game's global text colors for better and worse (default.css.lua "!positive", "!negative")
+		-- old and new each show whether they are the better or the worse one (user decision 19.10.2026); the change
+		-- takes the color of the new value
 		local mark = r.better == true and ", positive" or r.better == false and ", negative" or ""
+		local markOld = r.better == true and ", negative" or r.better == false and ", positive" or ""
 		list[#list + 1] = builtin.Row{ cells = {
 			statCell(r.label, "font-scale-body"),
 			statCell(r.change, "font-scale-body" .. (r.change ~= "" and mark or "")),
-			statCell(r.old, "font-scale-body"),
-			-- ratings have no difference: their new word carries the color instead
-			statCell(r.new, "font-scale-body" .. (r.change == "" and mark or "")),
+			statCell(r.old, "font-scale-body" .. markOld),
+			statCell(r.new, "font-scale-body" .. mark),
 		} }
 	end
 	return builtin.Component{
@@ -1182,8 +1184,9 @@ end
 local SORTS = { { key = "name", label = "mvr_sort_name" }, { key = "year", label = "mvr_sort_year" } }
 
 -- selection in the window; lives outside the recipe so every opening starts fresh
--- details: the stats card is expanded (#16); collapsed at first, then kept for the session like the sorting
-local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = false }
+-- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026), then kept for the
+-- session like the sorting
+local sel = { carrier = nil, alt = nil, neu = nil, sort = "name", sameCargo = true, details = true }
 
 local function topBar(update)
 	local children = {}
