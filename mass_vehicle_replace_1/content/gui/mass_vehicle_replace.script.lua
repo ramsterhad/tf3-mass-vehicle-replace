@@ -1174,9 +1174,13 @@ local function naturalKey(s)
 	return key
 end
 
-local function compareModels(a, b, sort)
-	-- newest first: a player looks for the latest model (user decision 19.10.2026); without a year (0) at the end
-	if sort == "year" and a.yearFrom ~= b.yearFrom then return a.yearFrom > b.yearFrom end
+local function compareModels(a, b, sort, newestFirst)
+	-- by year each list in the order a player looks for (user decision 19.10.2026): the old models oldest first (those
+	-- are the ones to replace), the new models newest first; models without a year (0) at the end of the new list
+	if sort == "year" and a.yearFrom ~= b.yearFrom then
+		if newestFirst then return a.yearFrom > b.yearFrom end
+		return a.yearFrom < b.yearFrom
+	end
 	local ka, kb = naturalKey(a.name), naturalKey(b.name)
 	if ka ~= kb then return ka < kb end
 	return a.key < b.key
@@ -1279,7 +1283,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local function rank(i) return RANK[i.class] or 4 end
 	table.sort(alts, function(a, b)
 		if rank(a.i) ~= rank(b.i) then return rank(a.i) < rank(b.i) end
-		return compareModels(a.i, b.i, sel.sort)
+		return compareModels(a.i, b.i, sel.sort, false)
 	end)
 
 	local altInfo = sel.alt and byKey[sel.alt] and info(sel.alt) or nil
@@ -1306,7 +1310,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			if i and not i.noTags and not i.muPart and fits(i) and available(i, year) then neus[#neus + 1] = i end
 		end
 	end
-	table.sort(neus, function(a, b) return compareModels(a, b, sel.sort) end)
+	table.sort(neus, function(a, b) return compareModels(a, b, sel.sort, true) end)
 
 	local neuInfo = sel.neu and info(sel.neu) or nil
 	if neuInfo and not (fits(neuInfo) and available(neuInfo, year)) then neuInfo = nil end
