@@ -73,8 +73,10 @@ Check for answers at the start of a session.
   version must be in the texts). Claude prepares all of them, the user uploads:
   - `CHANGELOG.md`: the full entry (Keep a Changelog), the complete history lives here.
   - Top of the description in `_metadata/modinfo.json`, in both languages: the version line, then
-    "Neu (Details unten)" / "What's new (see below)" with the main points (no version there: the line above has it,
-    user decision 19.10.2026).
+    "Neu (mehr im Changelog unten)" / "What's new (more in the changelog below)" with the main points (no version
+    there: the line above has it; not "Details": that is also a section name, user decision 19.10.2026), then "Was die
+    Mod macht" / "What it does" over the introduction.
+
   - Bottom of the description, once, in English: "Changelog", newest version first, every bug fix and
     feature a player notices (no internal changes such as comments, tests, tooling), then a link to
     `CHANGELOG.md` on GitHub.
