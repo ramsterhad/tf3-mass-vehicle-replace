@@ -99,6 +99,33 @@ local function classOf(engine, load)
 	return load and "self" or "loco"
 end
 
+-- Engine types in the game's order (vehicle_store_window.tl:4718-4724 makeEngineKey); keys of VehicleEngineType
+-- (api/tealdef/api/type.d.tl:1892) with the text shown for them
+local ENGINE_TYPES = {
+	{ key = "HORSE", label = "mvr_engine_horse" },
+	{ key = "STEAM", label = "mvr_engine_steam" },
+	{ key = "DIESEL", label = "mvr_engine_diesel" },
+	{ key = "ELECTRIC", label = "mvr_engine_electric" },
+}
+for __, et in ipairs(ENGINE_TYPES) do
+	local ok, v = pcall(function() return api.type["enum"].VehicleEngineType[et.key] end)
+	if ok then et.value = v end
+end
+
+-- Engine types of a land vehicle as a set of ENGINE_TYPES keys, like the purchase window collects them
+-- (vehicle_store_util.tl:333-337: every engine of landVehicle.engines with its type)
+local function engineTypesOf(land)
+	local set = {}
+	pcall(function()
+		for __, e in ipairs(land.engines) do
+			for __, et in ipairs(ENGINE_TYPES) do
+				if et.value ~= nil and e.type == et.value then set[et.key] = true end
+			end
+		end
+	end)
+	return set
+end
+
 local function modelInfo(id)
 	local m = api.res.modelRep.get(id)
 	local md = m and m.metadata
@@ -128,6 +155,7 @@ local function modelInfo(id)
 		name = name,
 		carrier = tv.carrier,
 		engine = engine,
+		engineTypes = land and engineTypesOf(land) or {},
 		yearFrom = av and av.yearFrom or 0,
 		yearTo = av and av.yearTo or 0,
 		price = cost and cost.price or 0,
@@ -145,7 +173,7 @@ local function muInfo(id)
 	local mu = api.res.multipleUnitRep.get(id)
 	if not mu or #mu.vehicles == 0 then return nil end
 	local parts, price, yearFrom, yearTo, load = {}, 0, -1, 5000, false
-	local cargos, seenCargo = {}, {}
+	local cargos, seenCargo, engineTypes = {}, {}, {}
 	for k, v in ipairs(mu.vehicles) do
 		local mid = api.res.modelRep.find(v.name)
 		local mi = mid and mid >= 0 and modelInfo(mid) or nil
@@ -155,6 +183,8 @@ local function muInfo(id)
 		end
 		parts[k] = { info = mi, forward = v.forward }
 		load = load or mi.load
+		-- like the purchase window, which collects the engines of all parts (vehicle_store_util.tl:333-337)
+		for et in pairs(mi.engineTypes) do engineTypes[et] = true end
 		for __, c in ipairs(mi.cargos) do
 			if not seenCargo[c] then seenCargo[c] = true; cargos[#cargos + 1] = c end
 		end
@@ -173,6 +203,7 @@ local function muInfo(id)
 		name = (mu.name ~= nil and mu.name ~= "") and mu.name or first.name,
 		carrier = first.carrier,
 		engine = true,
+		engineTypes = engineTypes,
 		yearFrom = yearFrom,
 		yearTo = yearTo,
 		price = price,
@@ -240,6 +271,28 @@ end
 local function money(v)
 	local ok, s = pcall(api.util.formatMoney, math.floor(v + 0.5))
 	return ok and s or tostring(v)
+end
+
+-- engine types of a set as text in the game's order, e.g. "Diesel" or "Steam/Diesel"
+local function engineNames(set)
+	local names = {}
+	for __, et in ipairs(ENGINE_TYPES) do
+		if set[et.key] then names[#names + 1] = _(et.label) end
+	end
+	return table.concat(names, "/")
+end
+
+-- Warning text when the new model has other engine types than the old one (issue #50), else nil.
+-- Only when both have engines: wagons have none, ships and aircraft no landVehicle.
+local function engineChange(altInfo, neuInfo)
+	local a, n = altInfo and altInfo.engineTypes or {}, neuInfo and neuInfo.engineTypes or {}
+	if next(a) == nil or next(n) == nil then return nil end
+	local same = true
+	for __, et in ipairs(ENGINE_TYPES) do
+		if (a[et.key] or false) ~= (n[et.key] or false) then same = false end
+	end
+	if same then return nil end
+	return string.format(_("mvr_engine_change"), engineNames(a), engineNames(n))
 end
 
 -- Net amount after residual value. Below 0 the player gets money back (the game books exactly that, measured
@@ -1345,6 +1398,13 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	local summaryLines = {}
 	for k, line in ipairs(summary) do summaryLines[k] = text(line) end
+	-- third line, always there so the window keeps its height: warning when the engine type changes (issue #50),
+	-- in the game's warning colour (class warning, main/default.css.lua)
+	local engineWarning = e and engineChange(altInfo, neuInfo) or nil
+	summaryLines[#summaryLines + 1] = builtin.TextView{
+		meta = { class = "font-scale-body, warning", tooltip = engineWarning and _("mvr_engine_change_tip") or nil },
+		text = engineWarning or " ",
+	}
 
 
 	local children = {

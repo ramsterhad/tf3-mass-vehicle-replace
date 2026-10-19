@@ -60,7 +60,13 @@
 		"mvr_stat_running": "Running costs/year",
 		"mvr_stat_noise": "Noise",
 		"mvr_stat_pollution": "Pollution",
-		"mvr_stat_comfort": "Comfort"
+		"mvr_stat_comfort": "Comfort",
+		"mvr_engine_change": "Engine changes: %s → %s",
+		"mvr_engine_change_tip": "Check that every line is equipped for the new vehicles, such as with catenary for electric ones.",
+		"mvr_engine_horse": "Horse",
+		"mvr_engine_steam": "Steam",
+		"mvr_engine_diesel": "Diesel",
+		"mvr_engine_electric": "Electric"
 	},
 	"de": {
 		"mvr_title": "Mass Vehicle Replace",
@@ -123,6 +129,12 @@
 		"mvr_stat_running": "Betriebskosten/Jahr",
 		"mvr_stat_noise": "Lärm",
 		"mvr_stat_pollution": "Verschmutzung",
-		"mvr_stat_comfort": "Komfort"
+		"mvr_stat_comfort": "Komfort",
+		"mvr_engine_change": "Antrieb wechselt: %s → %s",
+		"mvr_engine_change_tip": "Prüfe, ob alle Linien für die neuen Fahrzeuge ausgerüstet sind, z. B. mit Oberleitung für elektrische.",
+		"mvr_engine_horse": "Pferd",
+		"mvr_engine_steam": "Dampf",
+		"mvr_engine_diesel": "Diesel",
+		"mvr_engine_electric": "Elektrisch"
 	}
 }
