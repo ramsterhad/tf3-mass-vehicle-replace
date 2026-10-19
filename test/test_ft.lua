@@ -1830,6 +1830,7 @@ check(detailsCardOf(content("stats mu collapsed")).collapsibleExpanded == false,
 if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
 
 print("== Sorting, Same cargo and details kept in the savegame")
+do -- own block: the main chunk is at the 200 local limit
 local MOD = "mass_vehicle_replace_1"
 openAndRender("kept settings", 500, true)
 t = content("kept settings")
@@ -1861,6 +1862,7 @@ find(content("kept unreachable"), function(n) return n.kind == "ToggleButton" an
 check(find(content("kept unreachable after"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.value == 1,
 	"kept: without save data the sorting must still switch")
 api.gui.game = savedGame
+end
 
 print("== Robust against mods that overwrite the module field")
 -- fresh copy of the mod without the other mod's replacement in front of it
