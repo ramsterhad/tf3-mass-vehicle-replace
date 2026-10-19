@@ -867,13 +867,16 @@ local function item(value, name, second, icon, cargos)
 	} }
 end
 
--- List with a placeholder as first entry: without a selection it shows that instead of becoming empty and narrower
+-- List with a placeholder as first entry while nothing is selected: the closed list shows it instead of becoming
+-- empty and narrower. With a selection it is left out, or it stands as an empty or misleading first line in the open
+-- list (game test 19.10.2026: "Keine Fahrzeuge dieser Art" above the vehicles).
 local NONE = "none" -- not empty: the game may treat an empty value as no selection
 -- content: short description of selection and entries. The game's list keeps its display when its
 -- entries change (after replacing, the old model was still shown on the left, the new image already below it).
 -- When content changes, the list gets a new localKey and is built afresh (like construction.tl).
 local function combo(value, items, placeholder, onChange, content)
-	local all = { item(NONE, placeholder, " ", nil) }
+	local all = {}
+	if value == nil then all[1] = item(NONE, placeholder, " ", nil) end
 	for __, it in ipairs(items) do all[#all + 1] = it end
 	return builtin.ComboBox{
 		meta = { class = "mvr-combo", localKey = "combo:" .. tostring(value or NONE) .. "|" .. tostring(content or "") },

@@ -578,6 +578,8 @@ local function itemTexts(itemNode)
 	return t
 end
 local function itemCount(c) return #c.props.items end
+-- index of the first model: the placeholder is the first entry only while nothing is selected
+local function firstModel(c) return (c.props.items[1] and c.props.items[1].props.value == "none") and 2 or 1 end
 -- every list has the same number of lines and identically built entries (fixed height/width)
 local function shapeOf(itemNode)
 	local s = {}
@@ -657,7 +659,7 @@ local cs = combos(t)
 check(#cs == 2, "two lists expected, found " .. #cs)
 -- old models: rail only, powered first, then wagons; natural sort (BR 50 before BR 103)
 local names = {}
-for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
 check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "sort by name: railcar/multiple unit, then locomotives, BR 50 before BR 103")
 for _i, n in ipairs(names) do check(not n:find("Endwagen") and not n:find("Mittelwagen"), "multiple unit part listed on its own: " .. n) end
@@ -665,7 +667,7 @@ for _i, n in ipairs(names) do check(not n:find("Benz") and not n:find("Tram"), "
 for _i, n in ipairs(names) do check(not n:find("Fake"), "dummy locomotive listed on the left: " .. n) end
 -- second line of wagons
 local secondLines = {}
-for i = 2, itemCount(cs[1]) do secondLines[#secondLines + 1] = itemTexts(cs[1].props.items[i])[2] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do secondLines[#secondLines + 1] = itemTexts(cs[1].props.items[i])[2] end
 print("  second lines: " .. table.concat(secondLines, " | "))
 -- shortened name
 local long = find(t, function(n) return n.kind == "TextView" and n.props.text:find("…") end)
@@ -680,14 +682,14 @@ t = content("wagon chosen")
 cs = combos(t)
 check(cs[1].props.value == "m2", "old selection does not stay")
 local neuNames = {}
-for i = 2, itemCount(cs[2]) do neuNames[#neuNames + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do neuNames[#neuNames + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new: " .. table.concat(neuNames, " | "))
 for _i, n in ipairs(neuNames) do check(not n:find("BR ") and n ~= "Ae 4/7", "wagon replacement shows a locomotive: " .. n) end
 -- cargo filter: passenger cars only for wagons that carry passengers
 local function neuList()
 	local c = combos(content("cargo filter"))
 	local l = {}
-	for i = 2, itemCount(c[2]) do l[#l + 1] = (itemTexts(c[2].props.items[i])[1]:gsub("\n.*", "")) end
+	for i = firstModel(c[2]), itemCount(c[2]) do l[#l + 1] = (itemTexts(c[2].props.items[i])[1]:gsub("\n.*", "")) end
 	return table.concat(l, " | "), c
 end
 local nl = neuList()
@@ -734,6 +736,8 @@ cs = combos(t)
 cs[2].props.onValueChange("none")
 t = content("placeholder clicked")
 check(combos(t)[2].props.value == "m3", "placeholder cleared the selection")
+-- with a selection the open lists have no placeholder line (game test 19.10.2026: an empty or "no vehicles" line on top)
+check(firstModel(combos(t)[1]) == 1 and firstModel(combos(t)[2]) == 1, "placeholder listed although a model is selected")
 
 print("== Sort by year")
 local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
@@ -745,7 +749,7 @@ find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "m
 t = content("year")
 cs = combos(t)
 names = {}
-for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
 check(names[1] == "ACF M-300" and names[2] == "ET 420" and names[3] == "Ae 4/7" and names[4] == "BR 50" and names[5] == "BR 103", "year: 1924, 1969, then locomotives 1927, 1939, 1970")
 
@@ -758,7 +762,7 @@ do -- own block: the main chunk is at the 200 local limit
 	end
 	local function oldNames(tt)
 		local c, list = combos(tt)[1], {}
-		for i = 2, math.min(6, itemCount(c)) do list[#list + 1] = itemTexts(c.props.items[i])[1] end -- the five powered ones
+		for i = firstModel(c), math.min(firstModel(c) + 4, itemCount(c)) do list[#list + 1] = itemTexts(c.props.items[i])[1] end -- the five powered ones
 		return table.concat(list, "|")
 	end
 	local sb = sortButtons(t)
@@ -819,12 +823,12 @@ check(cs[1].props.value == "m60", "railcar is not at the top: " .. tostring(cs[1
 cs[1].props.onValueChange("u900")
 t = content("ET 420 chosen")
 cs = combos(t)
-check(itemTexts(cs[1].props.items[3])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[3])[2]))
+check(itemTexts(cs[1].props.items[firstModel(cs[1]) + 1])[2] == "3 Triebzüge in 2 Zügen", "multiple unit second line: " .. tostring(itemTexts(cs[1].props.items[firstModel(cs[1]) + 1])[2]))
 local muNeu = {}
-for i = 2, itemCount(cs[2]) do muNeu[#muNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do muNeu[#muNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new for ET 420: " .. table.concat(muNeu, " | "))
 local secondEt423
-for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
+for i = firstModel(cs[2]), itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "ET 423" then secondEt423 = itemTexts(cs[2].props.items[i])[2] end end
 check(secondEt423 == "$2200000 · 1975 · 4-teilig", "second line ET 423: " .. tostring(secondEt423))
 -- by year the new models come newest first, the old ones oldest first (user decision 19.10.2026)
 check(table.concat(muNeu, "|") == "ET 423|Roter Pfeil|ACF M-300", "for ET 420 (by year, newest first, without locomotive pair): railcars and ET 423, no locomotives, no single parts: " .. table.concat(muNeu, "|"))
@@ -986,7 +990,7 @@ t = content("train depot 4")
 cs = combos(t)
 check(cs[1].props.value == "m60", "M-300 not preselected")
 local rcNeu = {}
-for i = 2, itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do rcNeu[#rcNeu + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new for M-300: " .. table.concat(rcNeu, " | "))
 check(table.concat(rcNeu, "|") == "ET 423|ET 420|Roter Pfeil", "for M-300 (by year, newest first): multiple units and railcars, no locomotives: " .. table.concat(rcNeu, "|"))
 bankBalance = 10000000
@@ -1036,15 +1040,15 @@ cs[1].props.onValueChange("m1")
 t = content("Ae 4/7")
 cs = combos(t)
 local n1042 = 0
-for i = 2, itemCount(cs[2]) do
+for i = firstModel(cs[2]), itemCount(cs[2]) do
 	local it = cs[2].props.items[i]
 	if itemTexts(it)[1] == "Reihe 1042" then n1042 = n1042 + 1; check(it.props.value == "m41", "wrong 1042 offered: " .. it.props.value) end
 end
 check(n1042 == 1, "Reihe 1042 should appear exactly once, " .. n1042)
 local hasEmd = false
-for i = 2, itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "EMD F-Serie" then hasEmd = true end end
+for i = firstModel(cs[2]), itemCount(cs[2]) do if itemTexts(cs[2].props.items[i])[1] == "EMD F-Serie" then hasEmd = true end end
 check(hasEmd, "locomotive pair (multiple unit of locomotives only) missing among the locomotives")
-for i = 2, itemCount(cs[2]) do local n = itemTexts(cs[2].props.items[i])[1]; check(not n:find("ET 4"), "multiple unit part offered on its own: " .. n) end
+for i = firstModel(cs[2]), itemCount(cs[2]) do local n = itemTexts(cs[2].props.items[i])[1]; check(not n:find("ET 4"), "multiple unit part offered on its own: " .. n) end
 
 print("== Cargo icons")
 openAndRender("train depot 6", 500, true)
@@ -1061,7 +1065,7 @@ local function cargoOf(itemNode)
 	return icons, more, tip
 end
 local byName = {}
-for i = 2, itemCount(cs[1]) do byName[itemTexts(cs[1].props.items[i])[1]] = cs[1].props.items[i] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do byName[itemTexts(cs[1].props.items[i])[1]] = cs[1].props.items[i] end
 local ic, more, tip = cargoOf(byName["ACF M-300"])
 check(#ic == 1 and ic[1] == "cargo/1.tga" and more == nil and tip == "Fahrgäste", "M-300: one passenger icon expected: " .. table.concat(ic, ",") .. " " .. tostring(tip))
 ic, more, tip = cargoOf(byName["Ae 4/7"])
@@ -1081,7 +1085,7 @@ cs[1].props.onValueChange("m2")
 t = content("wagon 2 for cargo")
 cs = combos(t)
 local anyCargo = false
-for i = 2, itemCount(cs[2]) do local icx = cargoOf(cs[2].props.items[i]); if #icx > 0 then anyCargo = true end end
+for i = firstModel(cs[2]), itemCount(cs[2]) do local icx = cargoOf(cs[2].props.items[i]); if #icx > 0 then anyCargo = true end end
 check(anyCargo, "right list without cargo icons")
 
 print("== Cargo types are looked up only once")
@@ -1115,12 +1119,12 @@ on = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class 
 check(#on == 1 and on[1].props.meta.tooltip == "Straße: Busse und Lkw", "road depot: road not preselected")
 cs = combos(t)
 names = {}
-for i = 2, itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
+for i = firstModel(cs[1]), itemCount(cs[1]) do names[#names + 1] = itemTexts(cs[1].props.items[i])[1] end
 print("  old: " .. table.concat(names, " | "))
 check(#names == 1 and names[1] == "Benz Dreitonner Kipper", "road depot: only Kipper in the fleet")
 check(cs[1].props.value == "m10", "road depot: first entry preselected")
 local roadNew = {}
-for i = 2, itemCount(cs[2]) do roadNew[#roadNew + 1] = itemTexts(cs[2].props.items[i])[1] end
+for i = firstModel(cs[2]), itemCount(cs[2]) do roadNew[#roadNew + 1] = itemTexts(cs[2].props.items[i])[1] end
 print("  new: " .. table.concat(roadNew, " | "))
 local pos9, posLong
 for i, n in ipairs(roadNew) do
@@ -1291,7 +1295,7 @@ local function hasText(tt, s)
 end
 local function offered(tt, name)
 	local c = combos(tt)[2]
-	for i = 2, itemCount(c) do if itemTexts(c.props.items[i])[1] == name then return true end end
+	for i = firstModel(c), itemCount(c) do if itemTexts(c.props.items[i])[1] == name then return true end end
 	return false
 end
 
