@@ -1281,7 +1281,7 @@ local function listHead(label, field, update)
 			onValueChange = function()
 				update(function()
 					if sel[field] == s.key then
-						sel[ascField] = not (sel[ascField] ~= false)
+						sel[ascField] = sel[ascField] == false
 					else
 						sel[field], sel[ascField] = s.key, defaultAscending(s.key, field)
 					end

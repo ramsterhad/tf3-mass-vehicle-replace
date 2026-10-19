@@ -758,7 +758,7 @@ do -- own block: the main chunk is at the 200 local limit
 	end
 	local function oldNames(tt)
 		local c, list = combos(tt)[1], {}
-		for i = 2, itemCount(c) do list[#list + 1] = itemTexts(c.props.items[i])[1] end
+		for i = 2, math.min(6, itemCount(c)) do list[#list + 1] = itemTexts(c.props.items[i])[1] end -- the five powered ones
 		return table.concat(list, "|")
 	end
 	local sb = sortButtons(t)
