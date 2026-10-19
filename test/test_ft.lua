@@ -314,6 +314,7 @@ local costPerCommand = 560000
 -- commands waiting for the next simulation step; holdSteps keeps them waiting (game paused, slow step)
 local queuedCommands = {}
 local commandSucceeds, holdSteps = true, false
+local refused = {}
 local throwAtCommand -- n: sendCommand throws on the n-th command of the current test
 local residuals, residualThrows = {}, false -- residual value per vehicle (#26)
 local residualReads, deadReads = 0, 0
@@ -404,13 +405,15 @@ api = {
 		makeVehicleReplaceCmd = function(e, conf) return { e = e, conf = conf } end,
 		-- like the game in the GUI state (api/tealdef/api/cmd.d.tl:2-10): the command runs in the next
 		-- simulation step and its callback comes a frame later; step() below plays that out.
-		-- Each executed command books a fixed amount.
+		-- Each executed command books a fixed amount, whatever the balance: measured 19.10.2026, the game carries out
+		-- a replace it cannot pay for and lets the balance go negative (tf3-sdk knowledge/vehicles.md).
+		-- refused[e]: the game answers this vehicle's command with success == false (cmd.d.tl callback).
 		sendCommand = function(c, cb)
 			if throwAtCommand and #sent + 1 == throwAtCommand then error("command rejected") end
 			sent[#sent + 1] = c
 			queuedCommands[#queuedCommands + 1] = function()
 				if bankBalance then bankBalance = bankBalance - costPerCommand end
-				if cb then cb(c, commandSucceeds, {}) end
+				if cb then cb(c, commandSucceeds and not refused[c.e], {}) end
 			end
 		end,
 	},
@@ -1136,7 +1139,7 @@ for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
 table.sort(partialIds)
 check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
 t = content("partial, after the click")
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Nur 3 von 8 ersetzt: nicht genug Geld." end) == 1, "partial: result line")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "3 von 8 ersetzt: nicht genug Geld." end) == 1, "partial: result line")
 check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
 -- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
@@ -1250,6 +1253,8 @@ check(#sent == 8, "second click on the same button sent again: " .. #sent)
 t = content("double click, redrawn")
 check(replaceButton(t).props.meta.enabled == false, "button enabled while the batch is running")
 check(buttonText(replaceButton(t)) == "Wird ersetzt …", "button text while running: " .. tostring(buttonText(replaceButton(t))))
+-- no half-counted result while the game has not answered yet: the line shows once, at the end
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("Ersetzt:", 1, true) end) == 0, "result line shown before the game answered")
 combos(t)[2].props.onValueChange("m11") -- the user picks the new model again
 t = content("double click, chosen again")
 replaceButton(t).props.onClick()
@@ -1267,9 +1272,25 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "failing commands: 8 sent expected, " .. #sent)
 holdSteps = false
 t = content("failing commands, step done")
-check(hasText(t, "Ersetzt: 0 von 8, Fehler: 8"), "failure count not shown")
+check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)"), "failure count not shown")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
 commandSucceeds = true
+
+print("== Refused commands are told apart from the vehicles skipped for money")
+step()
+refused[113] = true
+t = chooseKasten("one refused", nil)
+replaceButton(t).props.onClick()
+t = content("one refused, done")
+check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "one refused: result line")
+-- partial: 3 trucks planned (200000 covers 3 x 61000), one of them refused
+refused[113], refused[110] = nil, true
+t = chooseKasten("partial, one refused", 200000)
+replaceButton(t).props.onClick()
+t = content("partial, one refused, done")
+check(hasText(t, "2 von 8 ersetzt: nicht genug Geld. (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
+refused = {}
+bankBalance = nil
 
 print("== A command that throws does not leave the button stuck (issue #9)")
 -- review finding on #28: counted before sending, a throwing command never got its callback
