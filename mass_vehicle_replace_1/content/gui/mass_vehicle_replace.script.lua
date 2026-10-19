@@ -975,9 +975,9 @@ local STATS = {
 }
 
 -- like the store's formatDelta (vehicle_store_window.tl:24-32, local there): "+" or "-" and the formatted
--- difference; nothing when equal
+-- difference; the value itself when equal as shown (user decision 19.10.2026, like the store)
 local function delta(new, old, fmt)
-	if new == old then return "" end
+	if fmt(new) == fmt(old) then return fmt(new) end
 	if new > old then return "+" .. fmt(new - old) end
 	return "-" .. fmt(old - new)
 end
@@ -1016,10 +1016,10 @@ local function statRow(s, oldData, newData, ranges)
 		return { label = _(s.label), old = wo or "-", new = wn or "-", change = "", better = better }
 	end
 	local better, change = nil, ""
-	-- equal as shown (the formatted values match): no difference and no color, not "+0 kN" in red
-	if o and n and s.fmt(n) ~= s.fmt(o) then
+	-- equal as shown (the formatted values match): the value without color, not "+0 kN" in red
+	if o and n then
 		change = delta(n, o, s.fmt)
-		better = (n > o) == s.higher
+		if s.fmt(n) ~= s.fmt(o) then better = (n > o) == s.higher end
 	end
 	return { label = _(s.label), old = o and s.fmt(o) or "-", new = n and s.fmt(n) or "-", change = change, better = better }
 end

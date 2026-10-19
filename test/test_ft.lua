@@ -1765,7 +1765,9 @@ check(weightLine and weightLine[4].props.text == "+0.5 t" and classOf(weightLine
 local costLine = lineOf(body, "Betriebskosten/Jahr")
 check(costLine and costLine[2].props.text == "$5000" and costLine[4].props.text == "+$1000" and classOf(costLine[4]):find("negative", 1, true), "stats: running costs")
 local tractiveLine = lineOf(body, "Zugkraft")
-check(tractiveLine and tractiveLine[4].props.text == "" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative"), "stats: equal values without difference or color")
+-- equal as shown: the change column lists the value itself, without color (user decision 19.10.2026, like the store)
+check(tractiveLine and tractiveLine[4].props.text == "20 kN" and not classOf(tractiveLine[4]):find("positive") and not classOf(tractiveLine[4]):find("negative")
+	and not classOf(tractiveLine[2]):find("positive") and not classOf(tractiveLine[2]):find("negative"), "stats: equal values must list the value without color")
 local noiseLine = lineOf(body, "Lärm")
 -- emissions are inverted: less noise is better, shown as the game's rating words
 check(noiseLine and noiseLine[2].props.text == "Mittel" and noiseLine[3].props.text == "Gut" and classOf(noiseLine[3]):find("positive", 1, true), "stats: quieter must be rated better")
