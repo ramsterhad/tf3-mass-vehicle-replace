@@ -2168,7 +2168,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	-- orders: "order the rest" box under the replace button while the money does not cover all (user decision
 	-- 20.10.2026); the orders themselves are in the second tab of the window
 	-- without a box its place stays, so the button keeps its height and the window does not jump
-	local queueBox = builtin.Component{ meta = { class = "mvr-box-slot" } }
+	-- build only the node that is shown: a node built and not attached makes the game warn "Preserved props ... a
+	-- recipe was called but not attached to the tree" on every redraw (game log 20.10.2026)
+	local queueBox
 	if canQueue then
 		queueBox = builtin.CheckBox{
 			meta = { tooltip = _("mvr_queue_rest_tip") },
@@ -2176,6 +2178,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			value = sel.queueRest and 1 or 0,
 			onValueChange = function(v) update(function() sel.queueRest = v == 1; Queue.writeSaveData() end) end,
 		}
+	else
+		queueBox = builtin.Component{ meta = { class = "mvr-box-slot" } }
 	end
 
 
@@ -2216,13 +2220,14 @@ local windowOpen = false
 -- tab). They sit at the top of the content, below the title: as the window's header they took the title's place
 -- and cut it to "Mass Veh" (game test 20.10.2026).
 local function tabs(tabState, n, replaceContent, ordersContent)
-	-- only the selected tab builds its content, the other one stays empty
+	-- only the selected tab builds its content (content is a function), the other one stays empty: a node built and
+	-- not attached makes the game warn "Preserved props" on every redraw
 	local function tab(value, label, content)
 		return builtin.TabWidgetChild{
 			localKey = "mvr_tab_" .. value,
 			value = value,
 			indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = label },
-			item = tabState:old() == value and content or builtin.Component{},
+			item = tabState:old() == value and content() or builtin.Component{},
 		}
 	end
 	-- the game's own tab look, the tabs joined to a framed content (builtin.css.lua:969-984, like its statistics and
@@ -2243,7 +2248,6 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 	local tabState = react.useState(0)
 	-- the count in the tab: two Lua numbers from memory, redrawn only when it changes
 	local countState = engine_react_util.useStepStateTimer(Queue.queuedNow, 0.5)
-	local onOrders = tabState:old() == 1 and queueContent ~= nil
 	react.onUnmount(function()
 		windowOpen = false
 		-- the fleet holds a copy of every vehicle's parts; the next window reads it afresh anyway (#10)
@@ -2261,8 +2265,8 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 		closable = true,
 		movable = true,
 		autoFocusOnBecomingVisible = true,
-		content = queueContent and tabs(tabState, countState:old() or 0, MvrContent{ onClose = p.onClose },
-				onOrders and queueContent{ onClose = p.onClose } or builtin.Component{})
+		content = queueContent and tabs(tabState, countState:old() or 0, function() return MvrContent{ onClose = p.onClose } end,
+				function() return queueContent{ onClose = p.onClose } end)
 			or MvrContent{ onClose = p.onClose },
 	}
 end)
