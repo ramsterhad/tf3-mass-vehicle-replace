@@ -2146,19 +2146,29 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		end,
 	}
 
-	local summaryLines = {}
-	for k, line in ipairs(summary) do summaryLines[k] = text(line) end
-	-- third line, always there so the window keeps its height: warning when the engine type changes (issue #50),
-	-- in the game's warning colour (class warning, main/default.css.lua)
+	-- The summary lines fill the height of the button and the box beside them: the first line level with the top of
+	-- the button, the last visible line level with the bottom of the box, the rest spread between them (user decision
+	-- 20.10.2026: they ended at different heights). The warning when the engine type changes (issue #50) is a line of
+	-- its own in the game's warning colour (class warning, main/default.css.lua), only when there is one.
 	local engineWarning = e and engineChange(altInfo, neuInfo) or nil
-	summaryLines[#summaryLines + 1] = builtin.TextView{
-		meta = { class = "font-scale-body, warning", tooltip = engineWarning and _("mvr_engine_change_tip") or nil },
-		text = engineWarning or " ",
-	}
+	local shownLines = {}
+	for __, line in ipairs(summary) do
+		if line ~= " " then shownLines[#shownLines + 1] = text(line) end
+	end
+	if engineWarning then
+		shownLines[#shownLines + 1] = builtin.TextView{ meta = { class = "font-scale-body, warning", tooltip = _("mvr_engine_change_tip") },
+			text = engineWarning }
+	end
+	local summaryLines = {}
+	for k, line in ipairs(shownLines) do
+		if k > 1 then summaryLines[#summaryLines + 1] = gui_react_util.makeVerticalSpacer() end
+		summaryLines[#summaryLines + 1] = line
+	end
 
 	-- orders: "order the rest" box under the replace button while the money does not cover all (user decision
 	-- 20.10.2026); the orders themselves are in the second tab of the window
-	local queueBox = builtin.Component{}
+	-- without a box its place stays, so the button keeps its height and the window does not jump
+	local queueBox = builtin.Component{ meta = { class = "mvr-box-slot" } }
 	if canQueue then
 		queueBox = builtin.CheckBox{
 			meta = { tooltip = _("mvr_queue_rest_tip") },
@@ -2178,7 +2188,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		-- gap between images and text; the button stays centered on the text block
 		builtin.Component{ meta = { class = "mvr-gap" } },
 		row({
-			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
+			builtin.BoxLayout{ meta = { class = "mvr-summary" }, orientation = builtin.type.Orientation.Vertical, children = summaryLines },
 			gui_react_util.makeHorizontalSpacer(),
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { button, queueBox } },
 		}),
@@ -2205,24 +2215,26 @@ local windowOpen = false
 -- parts (make_entity_window.tl:220-250: TabWidget of class no-content, empty items, the content follows the selected
 -- tab). They sit at the top of the content, below the title: as the window's header they took the title's place
 -- and cut it to "Mass Veh" (game test 20.10.2026).
-local function tabs(tabState, n)
-	local function tab(value, label)
+local function tabs(tabState, n, replaceContent, ordersContent)
+	-- only the selected tab builds its content, the other one stays empty
+	local function tab(value, label, content)
 		return builtin.TabWidgetChild{
 			localKey = "mvr_tab_" .. value,
 			value = value,
 			indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = label },
-			item = builtin.Component{},
+			item = tabState:old() == value and content or builtin.Component{},
 		}
 	end
+	-- the game's own tab look, the tabs joined to a framed content (builtin.css.lua:969-984, like its statistics and
+	-- purchase windows); with "no-content" the tabs ended in nothing (game test 20.10.2026)
 	return builtin.TabWidget{
-		meta = { class = "no-content" },
 		orientation = builtin.type.TabOrientation.North,
 		deselectAllowed = false,
 		value = tabState:old(),
 		onValueChange = function(v) tabState:set(v) end,
 		tabs = {
-			tab(0, _("mvr_tab_replace")),
-			tab(1, n > 0 and tr("mvr_tab_orders_n", n) or _("mvr_tab_orders")),
+			tab(0, _("mvr_tab_replace"), replaceContent),
+			tab(1, n > 0 and tr("mvr_tab_orders_n", n) or _("mvr_tab_orders"), ordersContent),
 		},
 	}
 end
@@ -2249,10 +2261,9 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 		closable = true,
 		movable = true,
 		autoFocusOnBecomingVisible = true,
-		content = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = {
-			queueContent and tabs(tabState, countState:old() or 0) or builtin.BoxLayout{ children = {} },
-			onOrders and queueContent{ onClose = p.onClose } or MvrContent{ onClose = p.onClose },
-		} },
+		content = queueContent and tabs(tabState, countState:old() or 0, MvrContent{ onClose = p.onClose },
+				onOrders and queueContent{ onClose = p.onClose } or builtin.Component{})
+			or MvrContent{ onClose = p.onClose },
 	}
 end)
 

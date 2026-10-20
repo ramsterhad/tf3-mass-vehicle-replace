@@ -140,7 +140,8 @@ engine_react_util.useStepStateTimer = function(f, interval)
 	return st
 end
 local spacerOrig = function() return { kind = "Spacer", props = {} } end
-local gui_react_util = { makeHorizontalSpacer = spacerOrig }
+-- makeVerticalSpacer: gui_react_util.tl:370-372, a component of class vertical-spacer
+local gui_react_util = { makeHorizontalSpacer = spacerOrig, makeVerticalSpacer = function() return { kind = "Component", props = { meta = { class = "vertical-spacer" } } } end }
 local windows = {}
 local game_react_globals = { getDefaultWindowApi = function() return {
 	addWindow = function(recipe, key, params) windows[key] = { recipe = recipe, params = params } end,
@@ -1740,8 +1741,10 @@ print("== Warning when the engine type changes (issue #50)")
 local ARROW = "\226\134\146"
 local function engineLine(tt)
 	local w = find(tt, function(n) return n.kind == "TextView" and n.props.meta.class == "font-scale-body, warning" end)
-	check(#w == 1, "engine warning line missing or doubled: " .. #w)
-	return w[1] and w[1].props or { meta = {} }
+	-- the warning is a line of its own only while there is one (user decision 20.10.2026: the summary lines are
+	-- spread over the height of button and box, an empty line would leave a gap at the bottom)
+	check(#w <= 1, "engine warning line doubled: " .. #w)
+	return w[1] and w[1].props or { text = " ", meta = {} }
 end
 local function chooseRail(label, altKey, neuKey)
 	step()
@@ -2044,11 +2047,15 @@ do -- own block: the main chunk is at the 200 local limit
 	-- the replace window with its two tabs in the header (user decision 20.10.2026: no second window)
 	local function mainWindow()
 		local w = render("MvrWindow", { onClose = function() end })
-		-- the tabs sit at the top of the content (game test 20.10.2026: as header they cut the title), the tab's
-		-- content follows them; header and shown content are put where the checks look for them
-		local kids = w.props.content and w.props.content.props.children or {}
-		check(w.props.header == nil, "tabs must not sit in the window header")
-		w.props.header, w.props.content = kids[1], kids[2]
+		-- the tabs are the window content (game test 20.10.2026: as header they cut the title), with the game's
+		-- frame around the selected tab's content; tabs and shown content are put where the checks look for them
+		local tw = w.props.content
+		check(w.props.header == nil and tw and tw.kind == "TabWidget", "tabs must be the window content")
+		check(tw and tw.props.meta == nil, "tabs must keep the game's framed look, no class like no-content")
+		w.props.header = tw
+		for _i, t in ipairs(tw and tw.props.tabs or {}) do
+			if t.props.value == tw.props.value then w.props.content = t.props.item end
+		end
 		return w
 	end
 	-- MOCK: a field, not a local (the main chunk is at Lua's limit of 200 locals)
@@ -2065,7 +2072,7 @@ do -- own block: the main chunk is at the 200 local limit
 	local function queueWindow(label)
 		local win = mainWindow()
 		local h = win.props.header
-		check(h and h.kind == "TabWidget" and h.props.meta.class == "no-content" and h.props.value == 1, label .. ": orders tab not selected")
+		check(h and h.kind == "TabWidget" and h.props.value == 1, label .. ": orders tab not selected")
 		check(win.props.content and win.props.content.kind == "recipe:MvrQueueContent", label .. ": window does not show the orders")
 		if not (h and h.props.value == 1) then return { cards = {}, bodies = {}, titles = {}, settings = { kind = "none", props = {} } } end
 		if not holdSteps then step() end
@@ -2145,7 +2152,15 @@ do -- own block: the main chunk is at the 200 local limit
 		check(box ~= nil and box.props.label == "Übriges nachbestellen", "box, one short: " .. tostring(box and box.props.label))
 		check(box and box.props.value == 0, "box must be off at first")
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tabs: " .. MOCK.tabLabels(mainWindow()))
-		check(queueBox(chooseKasten("box, enough", 488000)) == nil, "box shown although the money covers all")
+		local enough = chooseKasten("box, enough", 488000)
+		check(queueBox(enough) == nil, "box shown although the money covers all")
+		-- without a box its place stays; the summary lines spread over the height of button and box (user decision
+		-- 20.10.2026): first line, spacer, last line
+		check(#find(enough, function(n) return n.props and n.props.meta and n.props.meta.class == "mvr-box-slot" end) == 1, "the box's place must stay")
+		local sumBox = find(enough, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-summary" end)[1]
+		local kinds = {}
+		for _i, c in ipairs(sumBox and sumBox.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "TextView|vertical-spacer|TextView", "summary lines: " .. table.concat(kinds, "|"))
 		check(queueBox(chooseKasten("box, infinite", nil)) == nil, "box shown with infinite money")
 		box = queueBox(chooseKasten("box, nothing", 60999))
 		check(box ~= nil and box.props.label == "Übrige 8 nachbestellen", "box, nothing affordable: " .. tostring(box and box.props.label))

@@ -119,6 +119,12 @@ function data()
 	})
 
 	a("!mvr-gap", fixed(10, 8))
+	-- the summary stretches to the height of the button and the box beside it; its spacers spread the lines
+	a("BoxLayout!mvr-summary", {
+		gravity = { 0, -1 },
+	})
+	-- the place of the order box while there is none (a CheckBox line of the game is about 24 high)
+	a("!mvr-box-slot", fixed(1, 24))
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
 	a("Window!mvr-window Button!mvr-replace-btn", {
 		gravity = { 1, 0.5 },
