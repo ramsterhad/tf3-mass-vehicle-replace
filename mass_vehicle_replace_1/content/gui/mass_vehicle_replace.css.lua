@@ -54,6 +54,12 @@ function data()
 	a("Window!mvr-window TabWidget > BoxLayout", {
 		innerSpacing = { 0, 0 },
 	})
+	-- the same inside the game's cards: the collapse bar of the details card and its table sit in such a layout
+	-- (content_card.tl:404-430: Button, its content Component, a vertical BoxLayout); the rule above put 8 more above
+	-- the table than below it (game test 20.10.2026). Matched by structure, the game's class names are not ours to use
+	a("Window!mvr-window R::ContentCard Button > Component > BoxLayout", {
+		innerSpacing = { 0, 0 },
+	})
 
 	-- cells of the rows: columns and narrow middle, centered in the row
 	a("!mvr-cell", with(fixed(CELL), { gravity = { 0, 0.5 } }))
@@ -87,9 +93,12 @@ function data()
 	-- orders tab: wider gaps in the counter row of an order (game test 20.10.2026: too cramped). With the window in
 	-- the selector, or the window's own BoxLayout rule above wins (game test 20.10.2026: the gap stayed small)
 	-- the order between number and cancel takes the rest of the card; its rows stretch so the tiles share its width
+	-- 4 below the tiles, so they keep the same room to the card's lower edge as the models to its upper edge (game
+	-- test 20.10.2026: too close at the bottom)
 	a("!mvr-order-body", {
 		gravity = { -1, 0.5 },
 		innerSpacing = { 8, 4 },
+		margin = { 0, 0, 4, 0 },
 	})
 	a("Window!mvr-window BoxLayout!mvr-order-head", {
 		gravity = { -1, 0.5 },
