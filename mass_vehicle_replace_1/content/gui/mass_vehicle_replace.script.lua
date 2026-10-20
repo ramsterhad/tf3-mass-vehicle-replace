@@ -271,9 +271,24 @@ local function available(i, year)
 end
 
 -- text with a number, singular via its own key (key_1), otherwise plural (key)
+-- a translated text whose numbers get the game's thousands separator, like its own counters in the game bar
+-- (game_bar_display_transported.script.tl:39 lang_util.formatInt = api.util.lang.formatInt, util.d.tl:11-27;
+-- "896.439" in the German game). Every placeholder is %s (user decision 20.10.2026: always a thousands separator).
+local function tr(key, ...)
+	local n, args = select("#", ...), { ... }
+	for i = 1, n do
+		local v = args[i]
+		if type(v) == "number" then
+			local ok, t = pcall(function() return api.util.lang.formatInt(math.floor(v + 0.5)) end)
+			args[i] = ok and type(t) == "string" and t or string.format("%.0f", v)
+		end
+	end
+	return string.format(_(key), table.unpack(args, 1, n))
+end
+
 local function count(key, n)
 	if n == 1 then return _(key .. "_1") end
-	return string.format(_(key), n)
+	return tr(key, n)
 end
 
 local function money(v)
@@ -300,15 +315,15 @@ local function engineChange(altInfo, neuInfo)
 		if (a[et.key] or false) ~= (n[et.key] or false) then same = false end
 	end
 	if same then return nil end
-	return string.format(_("mvr_engine_change"), engineNames(a), engineNames(n))
+	return tr("mvr_engine_change", engineNames(a), engineNames(n))
 end
 
 -- Net amount after residual value. Below 0 the player gets money back (the game books exactly that, measured
 -- 19.10.2026); the game's own button then shows a negative price (vehicle_store_window.tl:4277), we say
 -- "proceeds" with the positive amount instead (user decision 19.10.2026)
 local function netLine(cost)
-	if cost < 0 then return string.format(_("mvr_gain_net"), money(-cost)) end
-	return string.format(_("mvr_cost_net"), money(cost))
+	if cost < 0 then return tr("mvr_gain_net", money(-cost)) end
+	return tr("mvr_cost_net", money(cost))
 end
 
 -- Vehicles in the game ------------------------------------------------------------------------------
@@ -512,16 +527,16 @@ local function updateText()
 		result.text = ""
 		return
 	end
-	local s = string.format(_("mvr_replaced"), result.ok, result.sent)
+	local s = tr("mvr_replaced", result.ok, result.sent)
 	-- partial (#23): of all vehicles with the old model, not only of those sent; same wording as a full batch,
 	-- the money was already named on the button (user decision 19.10.2026)
-	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced"), result.ok, result.total) end
+	if result.total and result.total > result.sent then s = tr("mvr_replaced", result.ok, result.total) end
 	-- queued the rest: the same line names the queued ones
-	if queued > 0 then s = string.format(_("mvr_replaced_queued"), result.ok, result.total or result.sent, queued) end
+	if queued > 0 then s = tr("mvr_replaced_queued", result.ok, result.total or result.sent, queued) end
 	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
 	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
 	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
-	if result.note == "full" then s = s .. " " .. string.format(_("mvr_queue_full"), Queue.MAX_QUEUED) end
+	if result.note == "full" then s = s .. " " .. tr("mvr_queue_full", Queue.MAX_QUEUED) end
 	if result.note == "foreign" then s = s .. " " .. _("mvr_queue_foreign") end
 	result.text = s
 end
@@ -2064,7 +2079,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local busy = pending()
 	if e and neuInfo then
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
-		local priceLine = refund ~= 0 and netLine(cost) or string.format(_("mvr_price"), money(price))
+		local priceLine = refund ~= 0 and netLine(cost) or tr("mvr_price", money(price))
 		if free then priceLine = " " end
 		summary = { count("mvr_will_replace", e.vehicles), priceLine }
 		-- partial (#23): what the button does, so count, cost and label agree
@@ -2101,8 +2116,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			class = "primary, mvr-replace-btn" .. (affordable and "" or (partial or queueAll) and ", mvr-partial" or ", mvr-no-money"),
 			-- disabled while the previous batch is still being replaced (issue #9)
 			enabled = (affordable or partial or queueAll) and not busy,
-			tooltip = partial and (some == 1 and string.format(_("mvr_replace_some_tip_1"), e.vehicles)
-				or string.format(_("mvr_replace_some_tip"), some, e.vehicles)) or queueAll and _("mvr_queue_rest_tip")
+			tooltip = partial and (some == 1 and tr("mvr_replace_some_tip_1", e.vehicles)
+				or tr("mvr_replace_some_tip", some, e.vehicles)) or queueAll and _("mvr_queue_rest_tip")
 				or not affordable and _("mvr_not_enough_money") or nil,
 		},
 		content = builtin.Component{
@@ -2110,7 +2125,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 				orientation = builtin.type.Orientation.Horizontal,
 				children = {
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
-					text(busy and _("mvr_replacing") or partial and string.format(_("mvr_replace_some"), some, e.vehicles)
+					text(busy and _("mvr_replacing") or partial and tr("mvr_replace_some", some, e.vehicles)
 						or queueAll and count("mvr_queue_all", e.vehicles)
 						or not affordable and _("mvr_not_enough_money") or _("mvr_replace")),
 				},
@@ -2201,7 +2216,7 @@ local function tabs(tabState, n)
 		onValueChange = function(v) tabState:set(v) end,
 		tabs = {
 			tab(0, _("mvr_tab_replace")),
-			tab(1, n > 0 and string.format(_("mvr_tab_orders_n"), n) or _("mvr_tab_orders")),
+			tab(1, n > 0 and tr("mvr_tab_orders_n", n) or _("mvr_tab_orders")),
 		},
 	}
 end
@@ -2335,7 +2350,7 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	if queue.foreign then
 		status = _("mvr_queue_foreign")
 	elseif queue.paused and queue.lastError then
-		status = string.format(_("mvr_queue_error"), queue.lastError)
+		status = tr("mvr_queue_error", queue.lastError)
 	elseif queue.paused then
 		status = _("mvr_paused")
 	elseif open == 0 then
@@ -2379,16 +2394,16 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	elseif not p.head then
 		status = _("mvr_queue_waiting")
 	elseif j.short then
-		status, class = string.format(_("mvr_queue_next_short"), money(j.cost), money(j.short)), "font-scale-body, warning"
+		status, class = tr("mvr_queue_next_short", money(j.cost), money(j.short)), "font-scale-body, warning"
 	elseif j.cost then
-		status = string.format(_("mvr_queue_next"), money(j.cost))
+		status = tr("mvr_queue_next", money(j.cost))
 	else
 		status = _("mvr_queue_checking")
 	end
 	return vbox("mvr-rows", {
 		-- a vehicle whose id now belongs to something else is gone like a sold one
-		builtin.TextView{ meta = { class = "font-scale-body", tooltip = string.format(_("mvr_queue_skipped_tip"), s.sold + s.reused, s.replaced, s.rejected) },
-			text = string.format(_("mvr_queue_counts"), #j.open, j.done, skipped) },
+		builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
+			text = tr("mvr_queue_counts", #j.open, j.done, skipped) },
 		text(status, class),
 		hbox("mvr-tools", { spacer(), textButton("secondary", j.blocked and _("mvr_remove_job") or _("mvr_cancel_job"), function() removeJob(p.id) end) }),
 	})
@@ -2405,7 +2420,7 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	end
 	local cards = { card("settings", _("mvr_queue_settings"), MvrQueueSettings, { sig = queueSig() }) }
 	for __, j in ipairs(queue.jobs) do
-		cards[#cards + 1] = card("job" .. num(j.id), string.format(_("mvr_queue_job"), modelName(j.alt), modelName(j.neu)),
+		cards[#cards + 1] = card("job" .. num(j.id), tr("mvr_queue_job", modelName(j.alt), modelName(j.neu)),
 			MvrQueueJob, { id = j.id, head = j.id == headId, sig = jobSig(j) })
 	end
 	local panel

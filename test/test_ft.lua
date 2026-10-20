@@ -529,6 +529,12 @@ api = {
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
 	util = { formatMoney = function(v) return "$" .. tostring(v) end,
+		-- the game's counters with a thousands separator, as seen in the German game bar ("896.439")
+		lang = { formatInt = function(v)
+			local s = string.format("%d", v)
+			local out = s:reverse():gsub("(%d%d%d)", "%1."):reverse()
+			return (out:gsub("^%.", ""))
+		end },
 		getApplicationTime = function() return MOCK.appClock end,
 		-- units as documented in api/tealdef/api/util.d.tl:36-96 (m/s, kW, kN, t)
 		formatSpeed = function(v) return string.format("%.0f km/h", v * 3.6) end,
@@ -2597,6 +2603,9 @@ do -- own block: the main chunk is at the 200 local limit
 		end
 		local tt = queueTrucks("stale", 0)
 		check(openEntries() == 1008, "stale: 1008 queued, " .. openEntries())
+		-- numbers carry the game's thousands separator (user decision 20.10.2026)
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen (1.008)", "thousands separator in the tab: " .. MOCK.tabLabels(mainWindow()))
+		check(hasText(tt, "Ersetzt: 0 von 1.008, 1.008 nachbestellt"), "thousands separator in the result line")
 		for id = 2000, 2999 do vehicles[id] = nil end
 		bankBalance, sent = nil, {}
 		hostTick()
