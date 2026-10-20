@@ -2188,10 +2188,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	-- orders: the "order the rest" box right of the replace button, always there and greyed out while it has nothing
 	-- to do, all affordable or nothing selected (user decision 20.10.2026); the orders are in the second tab
-	-- while the box can be used it blinks once in the warning colour when it becomes usable, a reminder beside the
-	-- yellow button (user decision 20.10.2026; mass_vehicle_replace.css.lua mvr-box-hint)
 	local queueBox = builtin.CheckBox{
-		meta = { class = canQueue and "mvr-box-hint" or nil, tooltip = _("mvr_queue_rest_tip"), enabled = canQueue },
+		meta = { tooltip = _("mvr_queue_rest_tip"), enabled = canQueue },
 		label = canQueue and count("mvr_queue_rest", e.vehicles - some) or _("mvr_queue_rest_none"),
 		value = sel.queueRest and 1 or 0,
 		onValueChange = function(v) update(function() sel.queueRest = v == 1 end) end,
@@ -2215,7 +2213,11 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			button,
 			gui_react_util.makeHorizontalSpacer(),
 			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-foot-side" },
-				orientation = builtin.type.Orientation.Horizontal, children = { gui_react_util.makeHorizontalSpacer(), queueBox } } },
+				orientation = builtin.type.Orientation.Horizontal, children = { gui_react_util.makeHorizontalSpacer(),
+					-- a soft yellow glow around the box while it can be used and is not ticked, a quiet reminder beside the
+					-- yellow button (user decision 20.10.2026: no blinking); always the same node, only the class changes
+					builtin.Component{ meta = { class = (canQueue and not sel.queueRest) and "mvr-box-aura" or "mvr-box-calm" },
+						layout = builtin.BoxLayout{ children = { queueBox } } } } } },
 		}),
 		builtin.Component{ meta = { class = "mvr-gap" } },
 	}

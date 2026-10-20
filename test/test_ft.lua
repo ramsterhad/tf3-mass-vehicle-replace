@@ -2058,7 +2058,7 @@ do -- own block: the main chunk is at the 200 local limit
 		return table.concat(ids, ",")
 	end
 	local function queueBox(tt)
-		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):find("nachbestellen", 1, true) ~= nil end)[1]
+		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):lower():find("nachbestellen", 1, true) ~= nil end)[1]
 	end
 	-- the replace window with its two tabs in the header (user decision 20.10.2026: no second window)
 	local function mainWindow()
@@ -2205,13 +2205,16 @@ do -- own block: the main chunk is at the 200 local limit
 	section("the box shows only while the money does not cover all", function()
 		local tt = chooseKasten("box, one short", 487999)
 		local box = queueBox(tt)
-		check(box ~= nil and box.props.label == "Übriges nachbestellen", "box, one short: " .. tostring(box and box.props.label))
+		check(box ~= nil and box.props.label == "1 nachbestellen", "box, one short: " .. tostring(box and box.props.label))
 		check(box and box.props.value == 0, "box must be off at first")
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tabs: " .. MOCK.tabLabels(mainWindow()))
+		local function auras(t2) return #find(t2, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-box-aura" end) end
+		check(auras(tt) == 1, "usable box without its glow")
 		local enough = chooseKasten("box, enough", 488000)
+		check(auras(enough) == 0, "glow although the money covers all")
 		-- the box is always there, greyed out while it has nothing to do (user decision 20.10.2026)
 		local eb = queueBox(enough)
-		check(eb ~= nil and eb.props.meta.enabled == false and eb.props.label == "Übrige nachbestellen", "box with the money covering all: "
+		check(eb ~= nil and eb.props.meta.enabled == false and eb.props.label == "Nachbestellen", "box with the money covering all: "
 			.. tostring(eb and eb.props.label) .. ", enabled " .. tostring(eb and eb.props.meta.enabled))
 		-- left of the button only the cost line now
 		local sumBox = find(enough, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-summary" end)[1]
@@ -2222,7 +2225,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(ib ~= nil and ib.props.meta.enabled == false, "box usable with infinite money")
 		check(box.props.meta.enabled == true, "box greyed out although the money is short")
 		box = queueBox(chooseKasten("box, nothing", 60999))
-		check(box ~= nil and box.props.label == "Übrige 8 nachbestellen", "box, nothing affordable: " .. tostring(box and box.props.label))
+		check(box ~= nil and box.props.label == "8 nachbestellen", "box, nothing affordable: " .. tostring(box and box.props.label))
 	end)
 
 	section("nothing affordable: the box turns the button into Queue 8", function()
@@ -2230,7 +2233,9 @@ do -- own block: the main chunk is at the 200 local limit
 		queueBox(tt).props.onValueChange(1)
 		-- not kept: every opening starts with the box off (user decision 20.10.2026)
 		check(saved().queueRest == nil, "box state written to the savegame: " .. tostring(saved().queueRest))
-		check(queueBox(content("queue all, box ticked")).props.meta.class == "mvr-box-hint", "usable box without its reminder")
+		-- the glow: while the box is usable and not ticked (user decision 20.10.2026)
+		local function glow(t2) return #find(t2, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-box-aura" end) end
+		check(glow(content("queue all, box ticked")) == 0, "glow around a ticked box")
 		local again = queueBox(chooseKasten("queue all, reopened", 60999))
 		check(again and again.props.value == 0, "box still ticked in a new window")
 		queueBox(content("queue all, tick again")).props.onValueChange(1)
