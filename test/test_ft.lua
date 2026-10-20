@@ -2063,13 +2063,16 @@ do -- own block: the main chunk is at the 200 local limit
 		local h = win.props.header
 		check(h and h.kind == "TabWidget" and h.props.meta.class == "no-content" and h.props.value == 1, label .. ": orders tab not selected")
 		check(win.props.content and win.props.content.kind == "recipe:MvrQueueContent", label .. ": window does not show the orders")
-		if not (h and h.props.value == 1) then return { cards = {}, bodies = {}, titles = {} } end
+		if not (h and h.props.value == 1) then return { cards = {}, bodies = {}, titles = {}, settings = { kind = "none", props = {} } } end
 		if not holdSteps then step() end
 		stepStates = {}
 		local tt = render("MvrQueueContent", { onClose = function() end })
 		rules(tt, label)
 		local cards = find(tt, function(n) return n.kind == "recipe:ContentCard" end)
-		local out = { tree = tt, cards = cards, bodies = {}, titles = {} }
+		-- the settings: plain rows above the cards (user decision 20.10.2026), rendered like the content does
+		local settings = render("MvrQueueSettings", {})
+		rules(settings, label .. " settings")
+		local out = { tree = tt, cards = cards, bodies = {}, titles = {}, settings = settings }
 		for k, c in ipairs(cards) do
 			local rp = c.props.recipeAndParamPermanent
 			check(rp and rp.recipe and rp.param, label .. ": card " .. k .. " without a permanent body")
@@ -2093,7 +2096,7 @@ do -- own block: the main chunk is at the 200 local limit
 	-- "cancel all" through the window and the game's dialog, like the player
 	local function clearQueue(tt)
 		local q = openQueue(tt, "clear")
-		local b = buttonIn(q.bodies[1], "Alle abbrechen")
+		local b = buttonIn(q.settings, "Alle abbrechen")
 		check(b ~= nil, "clear: cancel all button missing")
 		if b and b.props.meta.enabled ~= false then
 			b.props.onClick()
@@ -2234,26 +2237,29 @@ do -- own block: the main chunk is at the 200 local limit
 	section("queue window: cards, counters, the next vehicle and what is short", function()
 		local tt = content("window")
 		local q = openQueue(tt, "window")
-		check(#q.cards == 2 and q.titles[1] == "Einstellungen" and q.titles[2] == "Benz Dreitonner Kipper → Benz Dreitonner Kasten", "cards: " .. table.concat(q.titles, "|"))
-		check(lineOf(q.bodies[2], "Offen: 4 · Ersetzt: 1 · Übersprungen: 0") ~= nil, "counts line")
-		check(lineOf(q.bodies[2], "Nächstes: ca. $61000, es fehlen $61000") ~= nil, "next line with the shortfall")
-		local _t, node = lineOf(q.bodies[2], "Nächstes")
-		check(node and node.props.meta.class:find("warning", 1, true) ~= nil, "shortfall in the warning colour")
-		check(lineOf(q.bodies[1], "4 Fahrzeuge warten auf Ersatz.") ~= nil, "settings status line")
-		check(buttonIn(q.bodies[2], "Abbrechen") ~= nil, "cancel button of the job")
+		-- one card per order, without a title: number, both models with their images, price, counters
+		check(#q.cards == 1 and q.titles[1] == nil, "order cards: " .. #q.cards .. ", title " .. tostring(q.titles[1]))
+		local b = q.bodies[1]
+		check(#find(b, function(n) return n.kind == "TextView" and n.props.text == "1" and n.props.meta.class == "font-scale-headline" end) == 1, "order number missing")
+		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
+		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
+		check(lineOf(b, "Stück $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
+		check(lineOf(b, "Offen 4") ~= nil and lineOf(b, "Ersetzt 1") ~= nil and lineOf(b, "Übersprungen 0") ~= nil, "counters in one row")
+		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
+		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")
 		-- a plain tree, no own classes without a rule (rules() checked that), and the game's spacing classes on the rows
-		check(#find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end) == 1, "settings rows without the spacing class")
+		check(#find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end) == 1, "settings rows without the spacing class")
 		closeQueue()
 	end)
 
 	section("reserve stays on the account", function()
 		local q = openQueue(content("reserve"), "reserve")
-		local spin = find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1]
+		local spin = find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1]
 		check(spin ~= nil and spin.props.min == 0 and spin.props.value == 0, "reserve spin box")
 		spin.props.onValueChange(100000)
 		check(saved().queueReserve == "100000", "reserve not kept: " .. tostring(saved().queueReserve))
 		q = queueWindow("reserve set")
-		check(find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1].props.value == 100000, "spin box does not show the reserve")
+		check(find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1].props.value == 100000, "spin box does not show the reserve")
 		closeQueue()
 		bankBalance, sent = PRICE + 99999, {}
 		hostTick()
@@ -2263,7 +2269,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 113, "reserve covered: " .. sentIds())
 		step()
 		openQueue(content("reserve back"), "reserve back")
-		find(queueWindow("reserve back").bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1].props.onValueChange(0)
+		find(queueWindow("reserve back").settings, function(n) return n.kind == "DoubleSpinBox" end)[1].props.onValueChange(0)
 		closeQueue()
 	end)
 
@@ -2275,8 +2281,8 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 116, "next vehicle not sent in the same tick: " .. sentIds())
 		step()
 		local q = openQueue(content("sold"), "sold")
-		check(lineOf(q.bodies[2], "Offen: 1 · Ersetzt: 3 · Übersprungen: 1") ~= nil, "counts after a sold vehicle")
-		local _t, node = lineOf(q.bodies[2], "Offen")
+		check(lineOf(q.bodies[1], "Offen 1") ~= nil and lineOf(q.bodies[1], "Ersetzt 3") ~= nil and lineOf(q.bodies[1], "Übersprungen 1") ~= nil, "counts after a sold vehicle")
+		local _t, node = lineOf(q.bodies[1], "Übersprungen")
 		check(node and node.props.meta.tooltip == "1 verkauft, 0 schon ersetzt, 0 vom Spiel abgelehnt", "skipped tooltip: " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		vehicles[114] = truck
@@ -2289,7 +2295,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 0, "reused id replaced: " .. sentIds())
 		local q = openQueue(content("reused"), "reused")
 		-- the last open vehicle went: the finished job leaves the window by itself (user decision 20.10.2026)
-		check(#q.cards == 1 and tostring(saved().queue) == "", "finished job not removed by itself: " .. tostring(saved().queue))
+		check(#q.cards == 0 and tostring(saved().queue) == "", "finished job not removed by itself: " .. tostring(saved().queue))
 		closeQueue()
 		MOCK.births[117] = nil
 	end)
@@ -2303,7 +2309,8 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 110, "by hand: 110 expected after dropping 115: " .. sentIds())
 		step()
 		local q = openQueue(content("by hand, window"), "by hand")
-		local _t, node = lineOf(q.bodies[2], "Offen: 6 · Ersetzt: 1 · Übersprungen: 1")
+		check(lineOf(q.bodies[1], "Offen 6") ~= nil and lineOf(q.bodies[1], "Ersetzt 1") ~= nil, "by hand: counts")
+		local _t, node = lineOf(q.bodies[1], "Übersprungen 1")
 		check(node and node.props.meta.tooltip == "0 verkauft, 1 schon ersetzt, 0 vom Spiel abgelehnt", "by hand: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		clearQueue(tt)
@@ -2359,9 +2366,9 @@ do -- own block: the main chunk is at the 200 local limit
 		hostTick(2)
 		check(#sent == 0, "expired model still replaced: " .. #sent)
 		local q = openQueue(content("expiring queue, window"), "expiring")
-		local _t, node = lineOf(q.bodies[2], "Modell nicht mehr erhältlich")
+		local _t, node = lineOf(q.bodies[1], "Modell nicht mehr erhältlich")
 		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
-		check(buttonIn(q.bodies[2], "Entfernen") ~= nil, "blocked job must offer Remove")
+		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "blocked job must offer Cancel")
 		closeQueue()
 		currentYear = 1980
 		hostTick()
@@ -2382,9 +2389,9 @@ do -- own block: the main chunk is at the 200 local limit
 		currentYear = 1981
 		hostTick()
 		local q = openQueue(content("blocked remove, window"), "blocked remove")
-		buttonIn(q.bodies[2], "Entfernen").props.onClick()
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
 		q = queueWindow("blocked removed")
-		check(#q.cards == 1 and tostring(saved().queue) == "", "blocked job not removed: " .. tostring(saved().queue))
+		check(#q.cards == 0 and tostring(saved().queue) == "", "blocked job not removed: " .. tostring(saved().queue))
 		closeQueue()
 		currentYear = 1980
 	end)
@@ -2393,11 +2400,11 @@ do -- own block: the main chunk is at the 200 local limit
 		local tt = queueTrucks("reserve rules", 0)
 		bankBalance = nil
 		local q = openQueue(content("reserve rules, infinite"), "reserve infinite")
-		check(find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1] == nil, "reserve shown with infinite money")
+		check(find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1] == nil, "reserve shown with infinite money")
 		closeQueue()
 		bankBalance = 0
 		q = openQueue(content("reserve rules, money"), "reserve money")
-		local spin = find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1]
+		local spin = find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1]
 		check(spin ~= nil and spin.props.max == 1e12, "reserve field without its upper bound")
 		if spin then spin.props.onValueChange(5e12) end
 		check(saved().queueReserve == "1000000000000", "reserve not capped: " .. tostring(saved().queueReserve))
@@ -2446,7 +2453,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(tostring(saved().queue):match("^%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
 			"newer order: vehicles moved, the emptied older job gone: " .. tostring(saved().queue))
 		local q = openQueue(content("newer order, window"), "newer order")
-		check(#q.cards == 2 and lineOf(q.bodies[2], "Offen: 8 · Ersetzt: 0 · Übersprungen: 0") ~= nil,
+		check(#q.cards == 1 and lineOf(q.bodies[1], "Offen 8") ~= nil,
 			"newer order: cards " .. table.concat(q.titles, "|"))
 		closeQueue()
 		clearQueue(content("newer order, clear"))
@@ -2487,7 +2494,7 @@ do -- own block: the main chunk is at the 200 local limit
 		replaceButton(tt).props.onClick()
 		check(openEntries() == 10, "fifo: 10 queued: " .. tostring(saved().queue))
 		local q = openQueue(tt, "fifo")
-		check(#q.cards == 3 and lineOf(q.bodies[3], "Wartet auf die Nachbestellungen darüber") ~= nil, "second job must say it waits")
+		check(#q.cards == 2 and #find(q.bodies[2], function(n) return n.kind == "TextView" and n.props.text == "2" end) == 1, "second order must carry number 2")
 		closeQueue()
 		bankBalance = nil
 		for _k = 1, 10 do hostTick(); step() end
@@ -2502,9 +2509,9 @@ do -- own block: the main chunk is at the 200 local limit
 		hostTick()
 		check(#sent == 1, "cancel: one in flight")
 		local q = openQueue(tt, "cancel")
-		buttonIn(q.bodies[2], "Abbrechen").props.onClick()
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
 		q = queueWindow("cancelled")
-		check(#q.cards == 1 and openEntries() == 0, "cancel: job not removed")
+		check(#q.cards == 0 and openEntries() == 0, "cancel: job not removed")
 		closeQueue()
 		holdSteps = false
 		step() -- the callback of the cancelled job arrives
@@ -2515,18 +2522,18 @@ do -- own block: the main chunk is at the 200 local limit
 	section("paused: nothing until the box is cleared", function()
 		local tt = queueTrucks("paused", 0)
 		local q = openQueue(tt, "paused")
-		local box = find(q.bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1]
+		local box = find(q.settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1]
 		check(box ~= nil and box.props.value == 0, "paused box")
 		box.props.onValueChange(1)
 		check(saved().queuePaused == true, "paused not kept")
 		q = queueWindow("paused on")
-		check(lineOf(q.bodies[1], "Pausiert") ~= nil, "status must say paused")
+		check(find(q.settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1].props.value == 1, "hold box must show it is on")
 		closeQueue()
 		bankBalance, sent = nil, {}
 		hostTick(3)
 		check(#sent == 0, "sent while paused")
 		openQueue(content("paused off"), "paused off")
-		find(queueWindow("paused off").bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1].props.onValueChange(0)
+		find(queueWindow("paused off").settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1].props.onValueChange(0)
 		closeQueue()
 		hostTick()
 		check(#sent == 8, "not resumed: " .. #sent)
@@ -2545,7 +2552,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(sentIds() == "115,115,115,110", "refused: next vehicle after three tries: " .. sentIds())
 		step()
 		local q = openQueue(content("refused, window"), "refused")
-		local _t, node = lineOf(q.bodies[2], "Offen")
+		local _t, node = lineOf(q.bodies[1], "Übersprungen")
 		check(node and node.props.meta.tooltip == "0 verkauft, 0 schon ersetzt, 1 vom Spiel abgelehnt", "refused: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		refused = {}
@@ -2572,7 +2579,7 @@ do -- own block: the main chunk is at the 200 local limit
 		queuedCommands = {}
 		holdSteps = false
 		local q = openQueue(content("no callback, window"), "no callback")
-		check(lineOf(q.bodies[2], "Offen: 7 · Ersetzt: 1 · Übersprungen: 0") ~= nil, "no callback: counts")
+		check(lineOf(q.bodies[1], "Offen 7") ~= nil and lineOf(q.bodies[1], "Ersetzt 1") ~= nil, "no callback: counts")
 		closeQueue()
 		vehicle(115, { 10 })
 		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
@@ -2654,8 +2661,8 @@ do -- own block: the main chunk is at the 200 local limit
 		check(okFrame, "error: the step hook threw")
 		check(#sent == 0 and saved().queuePaused == true, "error: queue not paused after five errors")
 		local q = openQueue(content("error, window"), "error")
-		check(lineOf(q.bodies[1], "Fehler, Nachbestellungen pausiert: ") ~= nil, "error: window does not show it")
-		find(q.bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1].props.onValueChange(0)
+		check(lineOf(q.settings, "Fehler, Nachbestellungen angehalten: ") ~= nil, "error: window does not show it")
+		find(q.settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1].props.onValueChange(0)
 		closeQueue()
 		MOCK.appClock = MOCK.appClock + 11
 		hostTick()
@@ -2694,7 +2701,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(hasText(tt, "Die Nachbestellungen in diesem Spielstand stammen von einer anderen Version von Mass Vehicle Replace und bleiben unangetastet."), "foreign format: click must say why nothing was queued")
 		check(saved().queue == "whatever", "foreign format overwritten by a click")
 		local q = openQueue(tt, "foreign")
-		check(lineOf(q.bodies[1], "Die Nachbestellungen in diesem Spielstand") ~= nil, "foreign format: window does not say so")
+		check(lineOf(q.settings, "Die Nachbestellungen in diesem Spielstand") ~= nil, "foreign format: window does not say so")
 		closeQueue()
 		-- damaged string of our own format: the same
 		guiSaveData[MOD] = { queueFormat = "1", queue = "1,m10,m11,0,0,0,0,0:115/x" }

@@ -2277,7 +2277,7 @@ end
 -- with the settings, one per job. Redrawn twice a second from a
 -- signature string of the queue, so an unchanged queue costs nothing (tf3-ui-design skill, tf3-sdk ui.md).
 do
-local ensureLoaded, openCount, num, jobById = Queue.ensureLoaded, Queue.openCount, Queue.num, Queue.jobById
+local ensureLoaded, num, jobById = Queue.ensureLoaded, Queue.num, Queue.jobById
 local removeJob, cancelAll, setReserve, setPaused = Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused
 local CONFIRM_KEY = "mass_vehicle_replace.confirm"
 
@@ -2345,18 +2345,14 @@ end
 -- settings card: reserve, paused, a status line, "cancel all"
 local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	ensureLoaded()
-	local open = openCount()
-	local status
+	-- a status line only when something needs saying; the number of open vehicles is in the tab
+	local status = nil
 	if queue.foreign then
 		status = _("mvr_queue_foreign")
 	elseif queue.paused and queue.lastError then
 		status = tr("mvr_queue_error", queue.lastError)
-	elseif queue.paused then
-		status = _("mvr_paused")
-	elseif open == 0 then
+	elseif #queue.jobs == 0 then
 		status = _("mvr_queue_empty")
-	else
-		status = count("mvr_queue_n_open", open)
 	end
 	-- infinite money (sandbox mode, "no costs"): a reserve means nothing, the row is left out, like the game hides
 	-- its balance card then (maintenance_station_eow.script.tl conditionMaintenanceStationBalance)
@@ -2371,42 +2367,79 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 				value = queue.reserve, onValueChange = function(v) setReserve(v) end },
 		})
 	end
+	-- plain rows above the order cards, no card of their own (user decision 20.10.2026: a settings card looked
+	-- like one more order)
 	return vbox("mvr-rows", {
 		reserveRow or builtin.BoxLayout{ children = {} },
-		builtin.CheckBox{ label = _("mvr_paused"), value = queue.paused and 1 or 0, onValueChange = function(v) setPaused(v == 1) end },
-		text(status, "font-scale-annotation"),
-		hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0) }),
+		hbox("mvr-row", {
+			builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = _("mvr_paused"), value = queue.paused and 1 or 0,
+				onValueChange = function(v) setPaused(v == 1) end },
+			spacer(),
+			textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0),
+		}),
+		status and text(status, "font-scale-body") or builtin.BoxLayout{ children = {} },
 	})
 end)
 
--- one job: counters, what the queue is doing with it, cancel
+-- the small image of a model, as in the lists, and its name
+local function modelCell(key)
+	local i = info(key)
+	local img = (i and i.icon and i.icon ~= "")
+		and builtin.ImageView{ meta = { class = "mvr-item-image", mouseTransparent = true }, path = i.icon, scaling = builtin.type.ImageViewScaling.AutoFit }
+		or builtin.Component{ meta = { class = "mvr-item-image" } }
+	return hbox("mvr-row", { img, text(modelName(key)) })
+end
+
+-- Cost of one open vehicle by the formula of the window and the tick (#26, #37): price of its new units minus its
+-- credit. Kept on the entry and read again in a new game year (the residual value falls slowly), so a redraw reads
+-- only the vehicles it has not valued yet. nil when the vehicle cannot be read (sold: the tick drops it).
+local function entryCost(entry, job, altInfo, neuInfo, year)
+	if entry.cost and entry.costYear == year then return entry.cost end
+	local ok, cost = pcall(function()
+		local cfg = api.engine.getComponent(entry.entity, CT.TRANSPORT_VEHICLE).transportVehicleConfig
+		local use = useOf(entry.entity, cfg)
+		return neuInfo.price * unitsIn(use, job.alt, altInfo) - creditOf(use, job.alt)
+	end)
+	entry.cost, entry.costYear = ok and type(cost) == "number" and cost or nil, year
+	return entry.cost
+end
+
+-- one order: its number, both models with their images, the price of the next vehicle and of all open ones, the
+-- counters and cancel; only "model no longer available" gets a line of its own, in red (user decision 20.10.2026)
 local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local j = jobById(p.id)
 	if not j then return builtin.BoxLayout{ children = {} } end
 	local s = j.skipped
-	local skipped = s.sold + s.replaced + s.reused + s.rejected
-	local status
-	local class = "font-scale-body"
-	if j.blocked == "model" then
-		status, class = _("mvr_queue_blocked_model"), "font-scale-body, error"
-	elseif j.blocked == "unknown" then
-		status, class = _("mvr_queue_blocked_unknown"), "font-scale-body, error"
-	elseif not p.head then
-		status = _("mvr_queue_waiting")
-	elseif j.short then
-		status, class = tr("mvr_queue_next_short", money(j.cost), money(j.short)), "font-scale-body, warning"
-	elseif j.cost then
-		status = tr("mvr_queue_next", money(j.cost))
-	else
-		status = _("mvr_queue_checking")
+	local altInfo, neuInfo = info(j.alt), info(j.neu)
+	local head = { modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
+	if not j.blocked and altInfo and neuInfo then
+		local year = api.engine.util.getYear()
+		local first, total = nil, 0
+		for __, e in ipairs(j.open) do
+			local c = entryCost(e, j, altInfo, neuInfo, year)
+			if c then
+				first = first or c
+				total = total + c
+			end
+		end
+		if first then head[#head + 1] = text(tr("mvr_queue_price", money(first), money(total))) end
 	end
-	return vbox("mvr-rows", {
-		-- a vehicle whose id now belongs to something else is gone like a sold one
-		builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
-			text = tr("mvr_queue_counts", #j.open, j.done, skipped) },
-		text(status, class),
-		hbox("mvr-tools", { spacer(), textButton("secondary", j.blocked and _("mvr_remove_job") or _("mvr_cancel_job"), function() removeJob(p.id) end) }),
-	})
+	local rows = {
+		hbox("mvr-row", head),
+		hbox("mvr-row", {
+			text(tr("mvr_queue_open_n", #j.open)),
+			text(tr("mvr_queue_done_n", j.done)),
+			-- a vehicle whose id now belongs to something else is gone like a sold one
+			builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
+				text = tr("mvr_queue_skipped_n", s.sold + s.replaced + s.reused + s.rejected) },
+			spacer(),
+			textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end),
+		}),
+	}
+	if j.blocked then
+		rows[#rows + 1] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error")
+	end
+	return hbox("mvr-row", { text(tostring(p.index), "font-scale-headline"), vbox("mvr-rows", rows) })
 end)
 
 local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
@@ -2414,14 +2447,10 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	ensureLoaded()
 	-- redraw when anything in the queue changes; the signature is a short string compared twice a second
 	engine_react_util.useStepStateTimer(queueSig, 0.5)
-	local headId = nil
-	for __, j in ipairs(queue.jobs) do
-		if #j.open > 0 and not j.blocked then headId = j.id; break end
-	end
-	local cards = { card("settings", _("mvr_queue_settings"), MvrQueueSettings, { sig = queueSig() }) }
-	for __, j in ipairs(queue.jobs) do
-		cards[#cards + 1] = card("job" .. num(j.id), tr("mvr_queue_job", modelName(j.alt), modelName(j.neu)),
-			MvrQueueJob, { id = j.id, head = j.id == headId, sig = jobSig(j) })
+	-- one card per order, numbered in the order they run; the card has no title, the body says it all
+	local cards = {}
+	for k, j in ipairs(queue.jobs) do
+		cards[#cards + 1] = card("job" .. num(j.id), nil, MvrQueueJob, { id = j.id, index = k, sig = jobSig(j) })
 	end
 	local panel
 	if entity_window_util and entity_window_util.ContentWidgetScrollContainer then
@@ -2432,7 +2461,8 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	end
 	-- as wide as the replace tab, so the window keeps its width when the tab changes
 	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-content" },
-		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { panel } } } } }
+		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical,
+			children = { MvrQueueSettings{ sig = queueSig() }, panel } } } } }
 end)
 queueContent = (okCard and type(content_card) == "table") and MvrQueueContent or nil
 if not queueContent then log("orders tab needs the game's content card, left out") end
