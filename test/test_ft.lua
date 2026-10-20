@@ -636,6 +636,13 @@ local function rules(tree, label)
 		end
 		invariant(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
 			path .. ": makeStyle only knows size; minSize/maxSize/gravity/padding have no effect")
+		-- a horizontal spacer only works in a horizontal layout; a BoxLayout without orientation stacks its children
+		-- (game test 20.10.2026: the orders footer stood one below the other)
+		if n.kind == "BoxLayout" and p.orientation ~= "H" then
+			for _i, c in ipairs(p.children or {}) do
+				invariant(c.kind ~= "Spacer", path .. ": horizontal spacer in a vertical BoxLayout")
+			end
+		end
 		if n.kind == "ComboBoxItem" then
 			invariant(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
 		elseif n.kind == "ComboBox" then
@@ -2314,7 +2321,9 @@ do -- own block: the main chunk is at the 200 local limit
 		local card = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
 		local kinds = {}
 		for _i, c in ipairs(card and card.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
-		check(table.concat(kinds, "|") == "TextView|mvr-divider|BoxLayout|mvr-divider|Button", "card parts: " .. table.concat(kinds, "|"))
+		check(table.concat(kinds, "|") == "mvr-order-end|mvr-divider|BoxLayout|mvr-divider|mvr-order-end", "card parts: " .. table.concat(kinds, "|"))
+		check(card and #find(card.props.children[1], function(n) return n.kind == "TextView" and n.props.text == "1" end) == 1
+			and #find(card.props.children[5], function(n) return n.kind == "Button" end) == 1, "number left, cancel right, each in an end")
 		local rowsBox = card and card.props.children[3]
 		local head, row2 = rowsBox.props.children[1], rowsBox.props.children[2]
 		-- the arrow between two equally wide halves, so it stands in the middle of every card (user decision 20.10.2026)
@@ -2674,6 +2683,9 @@ do -- own block: the main chunk is at the 200 local limit
 		local fk = {}
 		for _i, c in ipairs(foot and foot.props.children or {}) do fk[#fk + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
 		check(table.concat(fk, "|") == "mvr-action-side|Spacer|CheckBox|Spacer|mvr-action-side", "orders footer: " .. table.concat(fk, "|"))
+		-- both sides lay their parts side by side
+		local sides = find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-foot-side" end)
+		check(#sides == 2 and sides[1].props.orientation == "H" and sides[2].props.orientation == "H", "orders footer: sides must be horizontal")
 		check(box ~= nil and box.props.value == 0, "paused box")
 		box.props.onValueChange(1)
 		check(saved().queuePaused == true, "paused not kept")

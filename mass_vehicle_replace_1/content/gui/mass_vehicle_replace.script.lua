@@ -2205,8 +2205,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			gui_react_util.makeHorizontalSpacer(),
 			button,
 			gui_react_util.makeHorizontalSpacer(),
-			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{
-				children = { gui_react_util.makeHorizontalSpacer(), queueBox } } },
+			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-foot-side" },
+				orientation = builtin.type.Orientation.Horizontal, children = { gui_react_util.makeHorizontalSpacer(), queueBox } } },
 		}),
 		builtin.Component{ meta = { class = "mvr-gap" } },
 	}
@@ -2409,7 +2409,8 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	end
 	parts[#parts + 1] = spacer()
 	local function side(children)
-		return builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-foot-side" }, children = children } }
+		-- horizontal: a BoxLayout without orientation stacks (game test 20.10.2026: reserve, "$" and field one below the other)
+		return builtin.Component{ meta = { class = "mvr-action-side" }, layout = hbox("mvr-foot-side", children) }
 	end
 	local line = {
 		side(parts),
@@ -2519,11 +2520,15 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	-- three parts with a thin line between them (user decision 20.10.2026): the number, the order, cancel
 	local function divider() return builtin.Component{ meta = { class = "mvr-divider" } } end
 	return hbox("mvr-row", {
-		text(tostring(p.index), "font-scale-title-2, mvr-order-side"),
+		-- number and cancel in equally wide ends, so the middle of the order is the middle of the card and the arrow
+		-- sits in the middle of the window (user decision 20.10.2026)
+		builtin.Component{ meta = { class = "mvr-order-end" }, layout = hbox("mvr-order-end-row", { spacer(),
+			text(tostring(p.index), "font-scale-title-2, mvr-order-side"), spacer() }) },
 		divider(),
 		vbox("mvr-order-body", rows),
 		divider(),
-		textButton("secondary, mvr-order-side", _("mvr_cancel_job"), function() removeJob(p.id) end),
+		builtin.Component{ meta = { class = "mvr-order-end" }, layout = hbox("mvr-order-end-row", { spacer(),
+			textButton("secondary, mvr-order-side", _("mvr_cancel_job"), function() removeJob(p.id) end), spacer() }) },
 	})
 end)
 

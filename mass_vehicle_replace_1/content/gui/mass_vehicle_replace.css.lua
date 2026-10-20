@@ -14,8 +14,9 @@ local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits cen
 local STATS_HALF = CELL - 20
 local SETTING = 140 -- width of the reserve field in the orders tab
 local ACTION_SIDE = 330 -- width of each side of the replace button
-local ORDER_HALF = 320 -- width of each half of an order's head (image 96, gap 8, name)
-local ORDER_TILE = 160 -- width of each of an order's four tiles
+local ORDER_HALF = 290 -- width of each half of an order's head (image 96, gap 8, name)
+local ORDER_TILE = 145 -- width of each of an order's four tiles
+local ORDER_END = 110 -- width of an order card's two ends, the number and cancel ("Abbrechen" is about 100)
 
 local function fixed(w, h)
 	return {
@@ -126,6 +127,11 @@ function data()
 		innerSpacing = { 0, 0 },
 	})
 	-- number and cancel centered in the height of the card
+	-- the two ends of an order card, equally wide (number, cancel), each centering its content
+	a("!mvr-order-end", with(fixed(ORDER_END), { gravity = { 0, -1 } }))
+	a("Window!mvr-window BoxLayout!mvr-order-end-row", {
+		gravity = { -1, 0.5 },
+	})
 	a("!mvr-order-side", {
 		gravity = { 0, 0.5 },
 	})
