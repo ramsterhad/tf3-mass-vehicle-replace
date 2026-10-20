@@ -2412,7 +2412,8 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
 	local head = { modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
-	-- the price on a line of its own, left-aligned under the models (user decision 20.10.2026)
+	-- open, skipped and the price in one row under the models, left-aligned, cancel on the right (user decision
+	-- 20.10.2026; the widest case, prices in the billions and 10000 open, still fits the window)
 	local price = nil
 	if not j.blocked and altInfo and neuInfo then
 		local year = api.engine.util.getYear()
@@ -2428,12 +2429,12 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	end
 	local rows = {
 		hbox("mvr-row", head),
-		price or builtin.BoxLayout{ children = {} },
 		hbox("mvr-row", {
 			text(tr("mvr_queue_open_n", #j.open)),
 			-- a vehicle whose id now belongs to something else is gone like a sold one
 			builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
 				text = tr("mvr_queue_skipped_n", s.sold + s.replaced + s.reused + s.rejected) },
+			price or builtin.BoxLayout{ children = {} },
 			spacer(),
 			textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end),
 		}),
