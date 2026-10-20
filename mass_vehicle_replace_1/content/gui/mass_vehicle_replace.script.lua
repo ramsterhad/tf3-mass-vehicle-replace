@@ -2427,21 +2427,23 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		end
 		if first then price = text(tr("mvr_queue_price", money(first), money(total))) end
 	end
-	local rows = {
-		hbox("mvr-row", head),
-		hbox("mvr-row", {
-			text(tr("mvr_queue_open_n", #j.open)),
-			-- a vehicle whose id now belongs to something else is gone like a sold one
-			builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
-				text = tr("mvr_queue_skipped_n", s.sold + s.replaced + s.reused + s.rejected) },
-			price or builtin.BoxLayout{ children = {} },
-			spacer(),
-			textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end),
-		}),
+	local counters = {
+		text(tr("mvr_queue_open_n", #j.open)),
+		-- a vehicle whose id now belongs to something else is gone like a sold one
+		builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
+			text = tr("mvr_queue_skipped_n", s.sold + s.replaced + s.reused + s.rejected) },
+		price or builtin.BoxLayout{ children = {} },
 	}
+	-- cancel always sits in the last row, right (user decision 20.10.2026): next to the counters, or next to the red
+	-- "model no longer available" when that line is there
+	local last = counters
 	if j.blocked then
-		rows[#rows + 1] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error")
+		last = { text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error") }
 	end
+	last[#last + 1] = spacer()
+	last[#last + 1] = textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end)
+	local rows = { hbox("mvr-row", head), hbox("mvr-row", counters) }
+	if j.blocked then rows[3] = hbox("mvr-row", last) end
 	return hbox("mvr-row", { text(tostring(p.index), "font-scale-headline"), vbox("mvr-rows", rows) })
 end)
 

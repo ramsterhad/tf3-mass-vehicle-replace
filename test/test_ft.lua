@@ -2376,6 +2376,11 @@ do -- own block: the main chunk is at the 200 local limit
 		local _t, node = lineOf(q.bodies[1], "Modell nicht mehr erhältlich")
 		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "blocked job must offer Cancel")
+		-- cancel sits in the last row, next to the red line (user decision 20.10.2026)
+		local rowsBox = find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end)[1]
+		local lastRow = rowsBox and rowsBox.props.children[#rowsBox.props.children]
+		check(#rowsBox.props.children == 3 and #find(lastRow, function(n) return n.kind == "Button" end) == 1
+			and #find(rowsBox.props.children[2], function(n) return n.kind == "Button" end) == 0, "blocked: cancel must move down to the red line")
 		closeQueue()
 		currentYear = 1980
 		hostTick()
