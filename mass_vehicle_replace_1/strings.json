@@ -91,8 +91,7 @@
 		"mvr_queue_skipped_tip": "%s sold, %s already replaced, %s rejected by the game",
 		"mvr_cancel_job": "Cancel",
 		"mvr_paused_tip": "While ticked, the orders buy nothing; they stay in the list.",
-		"mvr_queue_open_n": "Open %s",
-		"mvr_queue_skipped_n": "Skipped %s",
+		"mvr_queue_open_n": "Open %s (skipped %s)",
 		"mvr_queue_price": "Each %s | Total %s"
 	},
 	"de": {
@@ -187,8 +186,7 @@
 		"mvr_queue_skipped_tip": "%s verkauft, %s schon ersetzt, %s vom Spiel abgelehnt",
 		"mvr_cancel_job": "Abbrechen",
 		"mvr_paused_tip": "Solange angehakt, kauft die Liste nichts; die Bestellungen bleiben stehen.",
-		"mvr_queue_open_n": "Offen %s",
-		"mvr_queue_skipped_n": "Übersprungen %s",
+		"mvr_queue_open_n": "Offen %s (übersprungen %s)",
 		"mvr_queue_price": "Stück %s | Gesamt %s"
 	}
 }

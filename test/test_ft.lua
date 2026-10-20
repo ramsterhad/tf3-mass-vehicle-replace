@@ -2244,7 +2244,8 @@ do -- own block: the main chunk is at the 200 local limit
 		-- one card per order, without a title: number, both models with their images, price, counters
 		check(#q.cards == 1 and q.titles[1] == nil, "order cards: " .. #q.cards .. ", title " .. tostring(q.titles[1]))
 		local b = q.bodies[1]
-		check(#find(b, function(n) return n.kind == "TextView" and n.props.text == "1" and n.props.meta.class == "font-scale-headline" end) == 1, "order number missing")
+		check(#find(b, function(n) return n.kind == "TextView" and n.props.text == "1" and n.props.meta.class == "font-scale-title-2" end) == 1, "order number missing")
+		check(#find(b, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-divider" end) == 1, "line between number and order missing")
 		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
 		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
 		check(lineOf(b, "Stück $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
@@ -2253,9 +2254,9 @@ do -- own block: the main chunk is at the 200 local limit
 		local row2 = rowsBox and rowsBox.props.children[2]
 		local texts = {}
 		for _i, c in ipairs(row2 and row2.props.children or {}) do texts[#texts + 1] = c.kind == "TextView" and c.props.text or c.kind end
-		check(#rowsBox.props.children == 2 and table.concat(texts, "|", 1, 3) == "Offen 4|Übersprungen 0|Stück $61000 | Gesamt $244000",
+		check(#rowsBox.props.children == 2 and table.concat(texts, "|", 1, 2) == "Offen 4 (übersprungen 0)|Stück $61000 | Gesamt $244000",
 			"second row: " .. table.concat(texts, "|"))
-		check(lineOf(b, "Offen 4") ~= nil and lineOf(b, "Übersprungen 0") ~= nil and lineOf(b, "Ersetzt") == nil, "counters in one row, no replaced count (user decision 20.10.2026)")
+		check(lineOf(b, "Offen 4 (übersprungen 0)") ~= nil and lineOf(b, "Ersetzt") == nil, "counters in one row, no replaced count (user decision 20.10.2026)")
 		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")
 		-- a plain tree, no own classes without a rule (rules() checked that), and the game's spacing classes on the rows
@@ -2293,8 +2294,8 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 116, "next vehicle not sent in the same tick: " .. sentIds())
 		step()
 		local q = openQueue(content("sold"), "sold")
-		check(lineOf(q.bodies[1], "Offen 1") ~= nil and lineOf(q.bodies[1], "Übersprungen 1") ~= nil, "counts after a sold vehicle")
-		local _t, node = lineOf(q.bodies[1], "Übersprungen")
+		check(lineOf(q.bodies[1], "Offen 1 (übersprungen 1)") ~= nil, "counts after a sold vehicle")
+		local _t, node = lineOf(q.bodies[1], "Offen")
 		check(node and node.props.meta.tooltip == "1 verkauft, 0 schon ersetzt, 0 vom Spiel abgelehnt", "skipped tooltip: " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		vehicles[114] = truck
@@ -2322,7 +2323,7 @@ do -- own block: the main chunk is at the 200 local limit
 		step()
 		local q = openQueue(content("by hand, window"), "by hand")
 		check(lineOf(q.bodies[1], "Offen 6") ~= nil, "by hand: counts")
-		local _t, node = lineOf(q.bodies[1], "Übersprungen 1")
+		local _t, node = lineOf(q.bodies[1], "Offen 6 (übersprungen 1)")
 		check(node and node.props.meta.tooltip == "0 verkauft, 1 schon ersetzt, 0 vom Spiel abgelehnt", "by hand: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		clearQueue(tt)
@@ -2575,7 +2576,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(sentIds() == "115,115,115,110", "refused: next vehicle after three tries: " .. sentIds())
 		step()
 		local q = openQueue(content("refused, window"), "refused")
-		local _t, node = lineOf(q.bodies[1], "Übersprungen")
+		local _t, node = lineOf(q.bodies[1], "Offen")
 		check(node and node.props.meta.tooltip == "0 verkauft, 0 schon ersetzt, 1 vom Spiel abgelehnt", "refused: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		refused = {}

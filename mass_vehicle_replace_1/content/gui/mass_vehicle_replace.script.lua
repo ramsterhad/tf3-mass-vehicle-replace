@@ -2427,10 +2427,10 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		if first then price = text(tr("mvr_queue_price", money(first), money(total))) end
 	end
 	local counters = {
-		text(tr("mvr_queue_open_n", #j.open)),
-		-- a vehicle whose id now belongs to something else is gone like a sold one
+		-- open and skipped in one text, "Offen 7 (uebersprungen 0)" (user decision 20.10.2026); a vehicle whose id now belongs to something
+		-- else is gone like a sold one
 		builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
-			text = tr("mvr_queue_skipped_n", s.sold + s.replaced + s.reused + s.rejected) },
+			text = tr("mvr_queue_open_n", #j.open, s.sold + s.replaced + s.reused + s.rejected) },
 		price or builtin.BoxLayout{ children = {} },
 	}
 	-- cancel always sits in the last row, right (user decision 20.10.2026): next to the counters, or next to the red
@@ -2441,9 +2441,12 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	end
 	last[#last + 1] = spacer()
 	last[#last + 1] = textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end)
-	local rows = { hbox("mvr-row", head), hbox("mvr-row", counters) }
-	if j.blocked then rows[3] = hbox("mvr-row", last) end
-	return hbox("mvr-row", { text(tostring(p.index), "font-scale-headline"), vbox("mvr-rows", rows) })
+	-- wider gaps between the parts of the counter row (game test 20.10.2026: too cramped)
+	local rows = { hbox("mvr-row", head), hbox("mvr-order-line", counters) }
+	if j.blocked then rows[3] = hbox("mvr-order-line", last) end
+	-- the number larger, a thin line between it and the order (user decision 20.10.2026, as in the mockup)
+	return hbox("mvr-row", { text(tostring(p.index), "font-scale-title-2"), builtin.Component{ meta = { class = "mvr-divider" } },
+		vbox("mvr-rows", rows) })
 end)
 
 local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)

@@ -74,6 +74,18 @@ function data()
 	-- orders tab: as wide as the replace tab (two cells, the middle and the row spacing), so the window keeps its width
 	-- when the tab changes (game test 20.10.2026: it was narrower)
 	a("!mvr-orders", with(fixed(2 * CELL + MID + 8), { gravity = { 0, 0 } }))
+	-- orders tab: wider gaps in the counter row of an order (game test 20.10.2026: too cramped)
+	a("BoxLayout!mvr-order-line", {
+		innerSpacing = { 24, 0 },
+	})
+	-- custom: a thin vertical line between the number and the order, asked for by the user (20.10.2026); the game has
+	-- such a line only in its bottom bar, so this reuses that bar's divider image (game_bar.css.lua:884-889)
+	a("!mvr-divider", {
+		gravity = { 0.5, -1 },
+		backgroundImage1 = { fileName = "::/gui/game_bar/design/tool_button/divider.tga" },
+		size = { 2, -1 },
+		margin = { 0, 8, 0, 8 },
+	})
 	-- orders tab: the reserve field
 	-- with a fixed height like the game's own number fields (camera_tool.css.lua:44-47: 24): without it the field
 	-- grew huge in the game (game test 20.10.2026)
