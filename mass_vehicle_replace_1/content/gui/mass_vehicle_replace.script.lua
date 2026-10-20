@@ -274,14 +274,15 @@ end
 -- a translated text whose numbers get the game's thousands separator, like its own counters in the game bar
 -- (game_bar_display_transported.script.tl:39 lang_util.formatInt = api.util.lang.formatInt, util.d.tl:11-27;
 -- "896.439" in the German game). Every placeholder is %s (user decision 20.10.2026: always a thousands separator).
+local function int(v)
+	local ok, t = pcall(function() return api.util.lang.formatInt(math.floor(v + 0.5)) end)
+	return ok and type(t) == "string" and t or string.format("%.0f", v)
+end
+
 local function tr(key, ...)
 	local n, args = select("#", ...), { ... }
 	for i = 1, n do
-		local v = args[i]
-		if type(v) == "number" then
-			local ok, t = pcall(function() return api.util.lang.formatInt(math.floor(v + 0.5)) end)
-			args[i] = ok and type(t) == "string" and t or string.format("%.0f", v)
-		end
+		if type(args[i]) == "number" then args[i] = int(args[i]) end
 	end
 	return string.format(_(key), table.unpack(args, 1, n))
 end
@@ -2457,34 +2458,35 @@ local function orderPrices()
 	return table.concat(parts, "|")
 end
 
--- one order: its number, both models with their images, the price of the next vehicle and of all open ones, the
--- counters and cancel; only "model no longer available" gets a line of its own, in red (user decision 20.10.2026)
+-- one figure of an order: a small label over its value, on a tile of its own (user decision 20.10.2026, variant E of
+-- the card mock-ups)
+local function tile(label, value, tooltip)
+	return builtin.Component{ meta = { class = "mvr-tile", tooltip = tooltip },
+		layout = vbox("mvr-tile-rows", { text(label, "font-scale-annotation"), text(value, "font-scale-title-4") }) }
+end
+
+-- one order: its number, both models with their images, four tiles (open, skipped, the price of the next vehicle and
+-- of all open ones) and cancel; a model no longer available shows a red line instead of the tiles (user decision
+-- 20.10.2026)
 local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local j = jobById(p.id)
 	if not j then return builtin.BoxLayout{ children = {} } end
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
-	-- the models centered over the card (user decision 20.10.2026)
-	local head = { spacer(), modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
-	-- prices of the next and of all open vehicles (orderPrices); the widest case, prices in the billions and 10000
-	-- open, still fits the window
-	local price = nil
-	local pr = not j.blocked and altInfo and neuInfo and prices.byJob[j.id] or nil
-	if pr then price = text(tr("mvr_queue_price", money(pr[1]), money(pr[2]))) end
-	-- open on the left, the prices on the right (user decision 20.10.2026)
-	local rows = {
-		hbox("mvr-order-head", head),
-		hbox("mvr-order-line", {
-			-- open and skipped in one text, "Offen 7 (uebersprungen 0)" (user decision 20.10.2026); a vehicle whose id
-			-- now belongs to something else is gone like a sold one
-			builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
-				text = tr("mvr_queue_open_n", #j.open, s.sold + s.replaced + s.reused + s.rejected) },
-			spacer(),
-			price or builtin.BoxLayout{ children = {} },
-		}),
-	}
+	local rows = { hbox("mvr-order-head", { modelCell(j.alt), text("→"), modelCell(j.neu) }) }
 	if j.blocked then
-		rows[3] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error")
+		rows[2] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error")
+	else
+		-- prices of the next and of all open vehicles (orderPrices), a dash while they cannot be read
+		local pr = altInfo and neuInfo and prices.byJob[j.id] or nil
+		rows[2] = hbox("mvr-tiles", {
+			tile(_("mvr_tile_open"), int(#j.open)),
+			-- a vehicle whose id now belongs to something else is gone like a sold one
+			tile(_("mvr_tile_skipped"), int(s.sold + s.replaced + s.reused + s.rejected),
+				tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected)),
+			tile(_("mvr_tile_next"), pr and money(pr[1]) or "-"),
+			tile(_("mvr_tile_total"), pr and money(pr[2]) or "-"),
+		})
 	end
 	-- three parts with a thin line between them (user decision 20.10.2026): the number, the order, cancel
 	local function divider() return builtin.Component{ meta = { class = "mvr-divider" } } end

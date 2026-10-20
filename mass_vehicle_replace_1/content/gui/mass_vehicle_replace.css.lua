@@ -81,11 +81,7 @@ function data()
 	a("!mvr-orders", with(fixed(2 * CELL + MID + 8), { gravity = { 0, 0 } }))
 	-- orders tab: wider gaps in the counter row of an order (game test 20.10.2026: too cramped). With the window in
 	-- the selector, or the window's own BoxLayout rule above wins (game test 20.10.2026: the gap stayed small)
-	a("Window!mvr-window BoxLayout!mvr-order-line", {
-		innerSpacing = { 24, 0 },
-	})
-	-- the order between number and cancel takes the rest of the card; its rows stretch so the models can be centered
-	-- and open and prices pushed to the two sides
+	-- the order between number and cancel takes the rest of the card; its rows stretch so the tiles share its width
 	a("!mvr-order-body", {
 		gravity = { -1, 0.5 },
 		innerSpacing = { 8, 4 },
@@ -94,8 +90,26 @@ function data()
 		gravity = { -1, 0.5 },
 		innerSpacing = { 8, 0 },
 	})
-	a("Window!mvr-window BoxLayout!mvr-order-line", {
+	-- the four tiles of an order share its width
+	a("Window!mvr-window BoxLayout!mvr-tiles", {
 		gravity = { -1, 0.5 },
+		innerSpacing = { 6, 0 },
+	})
+	-- custom: tiles with a label over a figure, the card variant the user chose (20.10.2026). The look is the game's
+	-- own info box of the line manager (line_vehicle_mgmt.css.lua:884-893: button surface, AccentDark at half
+	-- transparency), whose rule only reaches that recipe
+	-- transparency (color further down)
+	a("!mvr-tile", {
+		gravity = { -1, -1 },
+		padding = { 4, 8, 4, 8 },
+		backgroundImage1 = {
+			fileName = "::/gui/builtin/button/default_surface.tga",
+			horizontal = { 0, 9, 21, 30 },
+			vertical = { 0, 9, 21, 30 },
+		},
+	})
+	a("Window!mvr-window BoxLayout!mvr-tile-rows", {
+		innerSpacing = { 0, 0 },
 	})
 	-- number and cancel centered in the height of the card
 	a("!mvr-order-side", {
@@ -140,6 +154,13 @@ function data()
 	local okColors, colors = pcall(function()
 		return api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
 	end)
+	-- the tiles of an order: AccentDark at half transparency like the game's info box (color_util.tl:53-55
+	-- withTransparencyRaw keeps red, green and blue and sets the fourth value)
+	if okColors and colors and type(colors.AccentDark) == "table" then
+		a("!mvr-tile", {
+			backgroundColor1 = { colors.AccentDark[1], colors.AccentDark[2], colors.AccentDark[3], 0.5 },
+		})
+	end
 	if okColors and colors and colors.Error then
 		a([[Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money,
 			Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money:hover]], {

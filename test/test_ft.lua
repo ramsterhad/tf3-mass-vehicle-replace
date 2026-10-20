@@ -2131,6 +2131,15 @@ do -- own block: the main chunk is at the 200 local limit
 		local hit = find(body, function(n) return n.kind == "TextView" and tostring(n.props.text):find(prefix, 1, true) == 1 end)[1]
 		return hit and hit.props.text or nil, hit
 	end
+	-- the value on an order's tile with this label, and the tile (card variant E, user decision 20.10.2026)
+	-- a field, not a local: the main chunk is at Lua's limit of 200 locals
+	function MOCK.tileOf(body, label)
+		for _i, t in ipairs(find(body, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-tile" end)) do
+			local tv = find(t, function(n) return n.kind == "TextView" end)
+			if tv[1] and tv[1].props.text == label then return tv[2] and tv[2].props.text, t end
+		end
+		return nil
+	end
 	local function newSession()
 		-- a new game session: the script loads again (fresh memory), the savegame data stays
 		_react.recipeReplace.ActionButtonBar = nil
@@ -2276,21 +2285,23 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#find(b, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-divider" end) == 2, "lines around the order missing")
 		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
 		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
-		check(lineOf(b, "Nächstes $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
-		-- number | order | cancel (user decision 20.10.2026): the models centered, open left and prices right below
+		check(MOCK.tileOf(b, "Nächstes") == "$61000" and MOCK.tileOf(b, "Gesamt") == "$244000", "price of one and of all open vehicles")
+		-- number | order | cancel (user decision 20.10.2026): the models, below them four tiles (variant E)
 		local card = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
 		local kinds = {}
 		for _i, c in ipairs(card and card.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
 		check(table.concat(kinds, "|") == "TextView|mvr-divider|BoxLayout|mvr-divider|Button", "card parts: " .. table.concat(kinds, "|"))
 		local rowsBox = card and card.props.children[3]
 		local head, row2 = rowsBox.props.children[1], rowsBox.props.children[2]
-		check(head.props.children[1].kind == "Spacer" and head.props.children[#head.props.children].kind == "Spacer", "models must be centered")
-		check(row2.props.children[2].kind == "Spacer", "open left, prices right")
+		check(head.props.children[1].kind ~= "Spacer", "models start on the left")
 		local texts = {}
-		for _i, c in ipairs(row2 and row2.props.children or {}) do texts[#texts + 1] = c.kind == "TextView" and c.props.text or c.kind end
-		check(#rowsBox.props.children == 2 and texts[1] == "Offen 4 (übersprungen 0)" and texts[3] == "Nächstes $61000 | Gesamt $244000"
-			and #texts == 3, "second row: " .. table.concat(texts, "|"))
-		check(lineOf(b, "Offen 4 (übersprungen 0)") ~= nil and lineOf(b, "Ersetzt") == nil, "counters in one row, no replaced count (user decision 20.10.2026)")
+		for _i, c in ipairs(row2 and row2.props.children or {}) do
+			local tv = c.kind == "Component" and c.props.meta.class == "mvr-tile" and find(c, function(n) return n.kind == "TextView" end) or {}
+			texts[#texts + 1] = (tv[1] and tv[2]) and (tv[1].props.text .. "=" .. tv[2].props.text) or c.kind
+		end
+		check(#rowsBox.props.children == 2 and table.concat(texts, "|") == "Offen=4|Übersprungen=0|Nächstes=$61000|Gesamt=$244000",
+			"tiles: " .. table.concat(texts, "|"))
+		check(lineOf(b, "Ersetzt") == nil and MOCK.tileOf(b, "Ersetzt") == nil, "no replaced count (user decision 20.10.2026)")
 		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")
 		-- a plain tree, no own classes without a rule (rules() checked that), and the game's spacing classes on the rows
@@ -2328,8 +2339,8 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 116, "next vehicle not sent in the same tick: " .. sentIds())
 		step()
 		local q = openQueue(content("sold"), "sold")
-		check(lineOf(q.bodies[1], "Offen 1 (übersprungen 1)") ~= nil, "counts after a sold vehicle")
-		local _t, node = lineOf(q.bodies[1], "Offen")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == "1" and MOCK.tileOf(q.bodies[1], "Übersprungen") == "1", "counts after a sold vehicle")
+		local _t, node = MOCK.tileOf(q.bodies[1], "Übersprungen")
 		check(node and node.props.meta.tooltip == "1 verkauft, 0 schon ersetzt, 0 vom Spiel abgelehnt", "skipped tooltip: " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		vehicles[114] = truck
@@ -2356,8 +2367,8 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 110, "by hand: 110 expected after dropping 115: " .. sentIds())
 		step()
 		local q = openQueue(content("by hand, window"), "by hand")
-		check(lineOf(q.bodies[1], "Offen 6") ~= nil, "by hand: counts")
-		local _t, node = lineOf(q.bodies[1], "Offen 6 (übersprungen 1)")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == "6", "by hand: counts")
+		local _t, node = MOCK.tileOf(q.bodies[1], "Übersprungen")
 		check(node and node.props.meta.tooltip == "0 verkauft, 1 schon ersetzt, 0 vom Spiel abgelehnt", "by hand: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		clearQueue(tt)
@@ -2416,9 +2427,11 @@ do -- own block: the main chunk is at the 200 local limit
 		local _t, node = lineOf(q.bodies[1], "Modell nicht mehr erhältlich")
 		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "blocked job must offer Cancel")
-		-- the red line is the third row of the order; cancel stays in its own part on the right (user decision 20.10.2026)
+		-- the red line takes the place of the tiles (card variant E); cancel stays in its own part on the right (user decision 20.10.2026)
 		local rowsBox = find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-order-body" end)[1]
-		check(rowsBox and #rowsBox.props.children == 3 and #find(rowsBox, function(n) return n.kind == "Button" end) == 0, "blocked: red line as third row, cancel outside")
+		check(rowsBox and #rowsBox.props.children == 2 and rowsBox.props.children[2] == node and #find(rowsBox, function(n) return n.kind == "Button" end) == 0,
+			"blocked: red line as second row, cancel outside")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == nil, "blocked: no tiles")
 		closeQueue()
 		currentYear = 1980
 		hostTick()
@@ -2468,13 +2481,13 @@ do -- own block: the main chunk is at the 200 local limit
 		bankBalance = 0
 		hostTick()
 		local q = openQueue(content("revalue"), "revalue")
-		check(lineOf(q.bodies[1], "Nächstes $61000 | Gesamt $488000") ~= nil, "revalue: first prices")
+		check((MOCK.tileOf(q.bodies[1], "Nächstes") == "$61000" and MOCK.tileOf(q.bodies[1], "Gesamt") == "$488000"), "revalue: first prices")
 		residuals[115] = 1000 -- the oldest truck is worth something after all
 		q = queueWindow("revalue, paused")
-		check(lineOf(q.bodies[1], "Nächstes $61000 | Gesamt $488000") ~= nil, "revalue: read again although the game stood still")
+		check((MOCK.tileOf(q.bodies[1], "Nächstes") == "$61000" and MOCK.tileOf(q.bodies[1], "Gesamt") == "$488000"), "revalue: read again although the game stood still")
 		gameTimeNow = gameTimeNow + 1 -- the game runs: the prices follow at once (user decision 20.10.2026: live)
 		q = queueWindow("revalue, game runs")
-		check(lineOf(q.bodies[1], "Nächstes $60000 | Gesamt $487000") ~= nil, "revalue: prices do not follow the residual value")
+		check((MOCK.tileOf(q.bodies[1], "Nächstes") == "$60000" and MOCK.tileOf(q.bodies[1], "Gesamt") == "$487000"), "revalue: prices do not follow the residual value")
 		residuals[115] = nil
 		closeQueue()
 		clearQueue(tt)
@@ -2520,7 +2533,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(tostring(saved().queue):match("^%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
 			"newer order: vehicles moved, the emptied older job gone: " .. tostring(saved().queue))
 		local q = openQueue(content("newer order, window"), "newer order")
-		check(#q.cards == 1 and lineOf(q.bodies[1], "Offen 8") ~= nil,
+		check(#q.cards == 1 and MOCK.tileOf(q.bodies[1], "Offen") == "8",
 			"newer order: cards " .. table.concat(q.titles, "|"))
 		closeQueue()
 		clearQueue(content("newer order, clear"))
@@ -2561,7 +2574,7 @@ do -- own block: the main chunk is at the 200 local limit
 		replaceButton(tt).props.onClick()
 		check(openEntries() == 10, "fifo: 10 queued: " .. tostring(saved().queue))
 		local q = openQueue(tt, "fifo")
-		check(#q.cards == 2 and #find(q.bodies[2], function(n) return n.kind == "TextView" and n.props.text == "2" end) == 1, "second order must carry number 2")
+		check(#q.cards == 2 and #find(q.bodies[2], function(n) return n.kind == "TextView" and n.props.text == "2" and n.props.meta.class:find("font-scale-title-2", 1, true) ~= nil end) == 1, "second order must carry number 2")
 		closeQueue()
 		bankBalance = nil
 		for _k = 1, 10 do hostTick(); step() end
@@ -2625,7 +2638,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(sentIds() == "115,115,115,110", "refused: next vehicle after three tries: " .. sentIds())
 		step()
 		local q = openQueue(content("refused, window"), "refused")
-		local _t, node = lineOf(q.bodies[1], "Offen")
+		local _t, node = MOCK.tileOf(q.bodies[1], "Übersprungen")
 		check(node and node.props.meta.tooltip == "0 verkauft, 0 schon ersetzt, 1 vom Spiel abgelehnt", "refused: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
 		refused = {}
@@ -2652,7 +2665,7 @@ do -- own block: the main chunk is at the 200 local limit
 		queuedCommands = {}
 		holdSteps = false
 		local q = openQueue(content("no callback, window"), "no callback")
-		check(lineOf(q.bodies[1], "Offen 7") ~= nil, "no callback: counts")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == "7", "no callback: counts")
 		closeQueue()
 		vehicle(115, { 10 })
 		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
