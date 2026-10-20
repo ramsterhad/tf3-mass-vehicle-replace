@@ -2377,6 +2377,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local hk = {}
 		for _i, c in ipairs(head.props.children) do hk[#hk + 1] = c.kind == "Component" and c.props.meta.class or c.kind .. (c.props.text and ("=" .. c.props.text) or "") end
 		check(table.concat(hk, "|") == "mvr-order-half-left|TextView=→|mvr-order-half", "order head: " .. table.concat(hk, "|"))
+		check(head.props.children[2].props.meta.class == "font-scale-title-2", "arrow in the size of the number")
 		-- both models start at the arrow: the old one mirrored, name then image (user decision 20.10.2026)
 		local function cellKinds(h)
 			local cell = h.props.layout.props.children

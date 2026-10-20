@@ -2550,7 +2550,9 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local function half(class, children)
 		return builtin.Component{ meta = { class = class }, layout = hbox("mvr-row", children) }
 	end
-	local rows = { hbox("mvr-order-head", { half("mvr-order-half-left", { spacer(), modelCell(j.alt, true) }), text("→"),
+	-- the arrow in the size of the order number (user decision 20.10.2026: larger; the game has no bold arrow icon and
+	-- no font weight to set)
+	local rows = { hbox("mvr-order-head", { half("mvr-order-half-left", { spacer(), modelCell(j.alt, true) }), text("→", "font-scale-title-2"),
 		half("mvr-order-half", { modelCell(j.neu), spacer() }) }) }
 	if j.blocked then
 		-- the game's red box for problems (default.css.lua:35-39, used like savegame_react_util.tl:653)
