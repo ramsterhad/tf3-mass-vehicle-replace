@@ -123,6 +123,13 @@ function data()
 		size = { 2, -1 },
 		margin = { 0, 8, 0, 8 },
 	})
+	-- orders tab: the footer row as far in as the cards. The list's scroll area has 8 padding on the left and keeps
+	-- room for its scroll bar on the right (entity_window_util.css.lua:469-471, entity_window_util.tl:2480), the cards a
+	-- small margin of their own; measured on a screenshot of the game (20.10.2026): about 9 left and 12 right
+	a("!mvr-orders-foot", {
+		gravity = { -1, 0 },
+		margin = { 0, 12, 0, 9 },
+	})
 	-- orders tab: the reserve field
 	-- with a fixed height like the game's own number fields (camera_tool.css.lua:44-47: 24): without it the field
 	-- grew huge in the game (game test 20.10.2026)

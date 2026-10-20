@@ -2399,7 +2399,9 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 		onValueChange = function(v) setPaused(v == 1) end }
 	parts[#parts + 1] = spacer()
 	parts[#parts + 1] = textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0)
-	return vbox("mvr-rows", { hbox("mvr-row", parts) })
+	-- indented like the cards above it (game test 20.10.2026: the row stuck out on both sides)
+	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-orders-foot" },
+		layout = vbox("mvr-rows", { hbox("mvr-row", parts) }) } } }
 end)
 
 -- the small image of a model, as in the lists, and its name
