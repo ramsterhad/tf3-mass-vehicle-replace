@@ -2244,18 +2244,24 @@ do -- own block: the main chunk is at the 200 local limit
 		-- one card per order, without a title: number, both models with their images, price, counters
 		check(#q.cards == 1 and q.titles[1] == nil, "order cards: " .. #q.cards .. ", title " .. tostring(q.titles[1]))
 		local b = q.bodies[1]
-		check(#find(b, function(n) return n.kind == "TextView" and n.props.text == "1" and n.props.meta.class == "font-scale-title-2" end) == 1, "order number missing")
-		check(#find(b, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-divider" end) == 1, "line between number and order missing")
+		check(#find(b, function(n) return n.kind == "TextView" and n.props.text == "1" and n.props.meta.class:find("font-scale-title-2", 1, true) ~= nil end) == 1, "order number missing")
+		check(#find(b, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-divider" end) == 2, "lines around the order missing")
 		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
 		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
 		check(lineOf(b, "Stück $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
-		-- one row under the models: open, skipped, price, then cancel on the right (user decision 20.10.2026)
-		local rowsBox = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end)[1]
-		local row2 = rowsBox and rowsBox.props.children[2]
+		-- number | order | cancel (user decision 20.10.2026): the models centered, open left and prices right below
+		local card = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
+		local kinds = {}
+		for _i, c in ipairs(card and card.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "TextView|mvr-divider|BoxLayout|mvr-divider|Button", "card parts: " .. table.concat(kinds, "|"))
+		local rowsBox = card and card.props.children[3]
+		local head, row2 = rowsBox.props.children[1], rowsBox.props.children[2]
+		check(head.props.children[1].kind == "Spacer" and head.props.children[#head.props.children].kind == "Spacer", "models must be centered")
+		check(row2.props.children[2].kind == "Spacer", "open left, prices right")
 		local texts = {}
 		for _i, c in ipairs(row2 and row2.props.children or {}) do texts[#texts + 1] = c.kind == "TextView" and c.props.text or c.kind end
-		check(#rowsBox.props.children == 2 and table.concat(texts, "|", 1, 2) == "Offen 4 (übersprungen 0)|Stück $61000 | Gesamt $244000",
-			"second row: " .. table.concat(texts, "|"))
+		check(#rowsBox.props.children == 2 and texts[1] == "Offen 4 (übersprungen 0)" and texts[3] == "Stück $61000 | Gesamt $244000"
+			and #texts == 3, "second row: " .. table.concat(texts, "|"))
 		check(lineOf(b, "Offen 4 (übersprungen 0)") ~= nil and lineOf(b, "Ersetzt") == nil, "counters in one row, no replaced count (user decision 20.10.2026)")
 		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")
@@ -2382,11 +2388,9 @@ do -- own block: the main chunk is at the 200 local limit
 		local _t, node = lineOf(q.bodies[1], "Modell nicht mehr erhältlich")
 		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "blocked job must offer Cancel")
-		-- cancel sits in the last row, next to the red line (user decision 20.10.2026)
-		local rowsBox = find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end)[1]
-		local lastRow = rowsBox and rowsBox.props.children[#rowsBox.props.children]
-		check(#rowsBox.props.children == 3 and #find(lastRow, function(n) return n.kind == "Button" end) == 1
-			and #find(rowsBox.props.children[2], function(n) return n.kind == "Button" end) == 0, "blocked: cancel must move down to the red line")
+		-- the red line is the third row of the order; cancel stays in its own part on the right (user decision 20.10.2026)
+		local rowsBox = find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-order-body" end)[1]
+		check(rowsBox and #rowsBox.props.children == 3 and #find(rowsBox, function(n) return n.kind == "Button" end) == 0, "blocked: red line as third row, cancel outside")
 		closeQueue()
 		currentYear = 1980
 		hostTick()

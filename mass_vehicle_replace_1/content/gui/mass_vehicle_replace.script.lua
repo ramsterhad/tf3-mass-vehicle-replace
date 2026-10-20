@@ -2410,9 +2410,10 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	if not j then return builtin.BoxLayout{ children = {} } end
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
-	local head = { modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
-	-- open, skipped and the price in one row under the models, left-aligned, cancel on the right (user decision
-	-- 20.10.2026; the widest case, prices in the billions and 10000 open, still fits the window)
+	-- the models centered over the card (user decision 20.10.2026)
+	local head = { spacer(), modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
+	-- prices of the next and of all open vehicles; the widest case, prices in the billions and 10000 open, still
+	-- fits the window
 	local price = nil
 	if not j.blocked and altInfo and neuInfo then
 		local year = api.engine.util.getYear()
@@ -2426,27 +2427,30 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		end
 		if first then price = text(tr("mvr_queue_price", money(first), money(total))) end
 	end
-	local counters = {
-		-- open and skipped in one text, "Offen 7 (uebersprungen 0)" (user decision 20.10.2026); a vehicle whose id now belongs to something
-		-- else is gone like a sold one
-		builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
-			text = tr("mvr_queue_open_n", #j.open, s.sold + s.replaced + s.reused + s.rejected) },
-		price or builtin.BoxLayout{ children = {} },
+	-- open on the left, the prices on the right (user decision 20.10.2026)
+	local rows = {
+		hbox("mvr-order-head", head),
+		hbox("mvr-order-line", {
+			-- open and skipped in one text, "Offen 7 (uebersprungen 0)" (user decision 20.10.2026); a vehicle whose id
+			-- now belongs to something else is gone like a sold one
+			builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
+				text = tr("mvr_queue_open_n", #j.open, s.sold + s.replaced + s.reused + s.rejected) },
+			spacer(),
+			price or builtin.BoxLayout{ children = {} },
+		}),
 	}
-	-- cancel always sits in the last row, right (user decision 20.10.2026): next to the counters, or next to the red
-	-- "model no longer available" when that line is there
-	local last = counters
 	if j.blocked then
-		last = { text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error") }
+		rows[3] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error")
 	end
-	last[#last + 1] = spacer()
-	last[#last + 1] = textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end)
-	-- wider gaps between the parts of the counter row (game test 20.10.2026: too cramped)
-	local rows = { hbox("mvr-row", head), hbox("mvr-order-line", counters) }
-	if j.blocked then rows[3] = hbox("mvr-order-line", last) end
-	-- the number larger, a thin line between it and the order (user decision 20.10.2026, as in the mockup)
-	return hbox("mvr-row", { text(tostring(p.index), "font-scale-title-2"), builtin.Component{ meta = { class = "mvr-divider" } },
-		vbox("mvr-rows", rows) })
+	-- three parts with a thin line between them (user decision 20.10.2026): the number, the order, cancel
+	local function divider() return builtin.Component{ meta = { class = "mvr-divider" } } end
+	return hbox("mvr-row", {
+		text(tostring(p.index), "font-scale-title-2, mvr-order-side"),
+		divider(),
+		vbox("mvr-order-body", rows),
+		divider(),
+		textButton("secondary, mvr-order-side", _("mvr_cancel_job"), function() removeJob(p.id) end),
+	})
 end)
 
 local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)

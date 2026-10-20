@@ -79,7 +79,24 @@ function data()
 	a("Window!mvr-window BoxLayout!mvr-order-line", {
 		innerSpacing = { 24, 0 },
 	})
-	-- custom: a thin vertical line between the number and the order, asked for by the user (20.10.2026); the game has
+	-- the order between number and cancel takes the rest of the card; its rows stretch so the models can be centered
+	-- and open and prices pushed to the two sides
+	a("!mvr-order-body", {
+		gravity = { -1, 0.5 },
+		innerSpacing = { 8, 4 },
+	})
+	a("Window!mvr-window BoxLayout!mvr-order-head", {
+		gravity = { -1, 0.5 },
+		innerSpacing = { 8, 0 },
+	})
+	a("Window!mvr-window BoxLayout!mvr-order-line", {
+		gravity = { -1, 0.5 },
+	})
+	-- number and cancel centered in the height of the card
+	a("!mvr-order-side", {
+		gravity = { 0, 0.5 },
+	})
+	-- custom: thin vertical lines around the order (number | order | cancel), asked for by the user (20.10.2026); the game has
 	-- such a line only in its bottom bar, so this reuses that bar's divider image (game_bar.css.lua:884-889)
 	a("!mvr-divider", {
 		gravity = { 0.5, -1 },
