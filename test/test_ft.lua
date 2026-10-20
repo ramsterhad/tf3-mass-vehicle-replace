@@ -2317,7 +2317,10 @@ do -- own block: the main chunk is at the 200 local limit
 		check(table.concat(kinds, "|") == "TextView|mvr-divider|BoxLayout|mvr-divider|Button", "card parts: " .. table.concat(kinds, "|"))
 		local rowsBox = card and card.props.children[3]
 		local head, row2 = rowsBox.props.children[1], rowsBox.props.children[2]
-		check(head.props.children[1].kind == "Spacer" and head.props.children[#head.props.children].kind == "Spacer", "models must be centered")
+		-- the arrow between two equally wide halves, so it stands in the middle of every card (user decision 20.10.2026)
+		local hk = {}
+		for _i, c in ipairs(head.props.children) do hk[#hk + 1] = c.kind == "Component" and c.props.meta.class or c.kind .. (c.props.text and ("=" .. c.props.text) or "") end
+		check(table.concat(hk, "|") == "mvr-order-half|TextView=→|mvr-order-half", "order head: " .. table.concat(hk, "|"))
 		local texts = {}
 		for _i, c in ipairs(row2 and row2.props.children or {}) do
 			local tv = c.kind == "Component" and c.props.meta.class == "mvr-tile" and find(c, function(n) return n.kind == "TextView" end) or {}

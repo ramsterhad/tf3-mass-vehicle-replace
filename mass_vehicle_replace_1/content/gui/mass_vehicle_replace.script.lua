@@ -2485,8 +2485,12 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	if not j then return builtin.BoxLayout{ children = {} } end
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
-	-- the models centered over the tiles (game test 20.10.2026)
-	local rows = { hbox("mvr-order-head", { spacer(), modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }) }
+	-- the arrow always in the same place, the middle of the card: two equally wide halves around it, the old model
+	-- pushed to the arrow from the left, the new one from the right (user decision 20.10.2026)
+	local function half(children)
+		return builtin.Component{ meta = { class = "mvr-order-half" }, layout = hbox("mvr-row", children) }
+	end
+	local rows = { hbox("mvr-order-head", { half({ spacer(), modelCell(j.alt) }), text("→"), half({ modelCell(j.neu), spacer() }) }) }
 	if j.blocked then
 		-- the game's red box for problems (default.css.lua:35-39, used like savegame_react_util.tl:653)
 		rows[2] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error-tape")

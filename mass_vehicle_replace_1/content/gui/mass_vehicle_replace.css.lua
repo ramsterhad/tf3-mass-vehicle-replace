@@ -14,6 +14,8 @@ local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits cen
 local STATS_HALF = CELL - 20
 local SETTING = 140 -- width of the reserve field in the orders tab
 local ACTION_SIDE = 330 -- width of each side of the replace button
+local ORDER_HALF = 320 -- width of each half of an order's head (image 96, gap 8, name)
+local ORDER_TILE = 160 -- width of each of an order's four tiles
 
 local function fixed(w, h)
 	return {
@@ -91,6 +93,15 @@ function data()
 		gravity = { -1, 0.5 },
 		innerSpacing = { 8, 0 },
 	})
+	-- the two halves of an order's head, equally wide so the arrow between them sits in the same place on every card:
+	-- the same minimum, larger than their content, so both also grow by the same amount
+	a("!mvr-order-half", {
+		minSize = { ORDER_HALF, 0 },
+		gravity = { -1, 0.5 },
+	})
+	a("Window!mvr-window Component!mvr-order-half > BoxLayout", {
+		gravity = { -1, 0.5 },
+	})
 	-- the four tiles of an order share its width
 	a("Window!mvr-window BoxLayout!mvr-tiles", {
 		gravity = { -1, 0.5 },
@@ -100,7 +111,9 @@ function data()
 	-- own info box of the line manager (line_vehicle_mgmt.css.lua:884-893: button surface, AccentDark at half
 	-- transparency), whose rule only reaches that recipe
 	-- transparency (color further down)
+	-- equally wide on every card, so they stand in columns (same minimum, larger than "$200.235.100")
 	a("!mvr-tile", {
+		minSize = { ORDER_TILE, 0 },
 		gravity = { -1, -1 },
 		padding = { 4, 8, 4, 8 },
 		backgroundImage1 = {
