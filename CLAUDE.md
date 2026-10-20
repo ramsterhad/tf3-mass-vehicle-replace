@@ -18,7 +18,7 @@ Current hooks into the game, keep this list up to date:
 | Depot entity | condition of a `MaintenanceStationEowExtensionPoint` plugin, always `false` | (already the smallest) |
 | Button in the depot button bar | chained `ReplaceRecipe(ActionButtonBar)`, order 1000, recipe captured at load | the button bar has no extension point |
 | Replacement queue ticker | `ModEntryPointExtension` plugin `MvrQueueHost` (invisible, `react.onStep` with a 1 s real-time throttle), order 20 | (already the smallest) |
-| "Queued n" in the game bar | `GameBarInfoDisplayExtension` plugin `MvrQueueBar`, order 20, built like the game's earnings display | (already the smallest) |
+| "On order n" in the game bar | `GameBarInfoDisplayExtension` plugin `MvrQueueBar`, order 20, built like the game's earnings display | (already the smallest) |
 
 The queue lives in the savegame's GUI save data (`getGuiSaveData(MOD_ID)`): strings and booleans only, field
 `queueFormat` = `"1"`. Another format is left alone (not processed, never overwritten); a parser per old format

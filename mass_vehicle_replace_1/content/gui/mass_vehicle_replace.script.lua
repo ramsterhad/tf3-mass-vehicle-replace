@@ -421,8 +421,8 @@ end
 -- come a frame later (api/tealdef/api/cmd.d.tl:2-10); until then the vehicles still look unchanged, so a
 -- second batch would replace the same vehicles again. Like the game (engine_react_util.tl:36-55, 66-98) we
 -- count pending callbacks for as long as the window is open; batch tells callbacks of an earlier window apart.
--- queued, dup, note: what the click queued, how many were already queued, "full" or "foreign" (replacement queue)
-local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "", total = nil, queued = 0, dup = 0, note = nil }
+-- queued, note: what the click queued, "full" or "foreign" (replacement queue)
+local result = { batch = 0, sent = 0, ok = 0, failed = 0, text = "", total = nil, queued = 0, note = nil }
 -- the replacement queue: Queue holds its functions (filled below, in one block to stay within Lua's limit of 200
 -- locals per chunk), queue its state, replaced as a whole when a savegame is loaded
 local Queue = {}
@@ -496,8 +496,8 @@ local function windowFleet(sig)
 end
 
 local function updateText()
-	local queued, dup = result.queued or 0, result.dup or 0
-	if result.sent == 0 and queued == 0 and dup == 0 and result.note == nil then
+	local queued = result.queued or 0
+	if result.sent == 0 and queued == 0 and result.note == nil then
 		result.text = _("mvr_none_found")
 		return
 	end
@@ -517,11 +517,10 @@ local function updateText()
 	-- the money was already named on the button (user decision 19.10.2026)
 	if result.total and result.total > result.sent then s = string.format(_("mvr_replaced"), result.ok, result.total) end
 	-- queued the rest: the same line names the queued ones
-	if queued > 0 or dup > 0 then s = string.format(_("mvr_replaced_queued"), result.ok, result.total or result.sent, queued) end
+	if queued > 0 then s = string.format(_("mvr_replaced_queued"), result.ok, result.total or result.sent, queued) end
 	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
 	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
 	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
-	if dup > 0 then s = s .. " " .. count("mvr_already_queued", dup) end
 	if result.note == "full" then s = s .. " " .. string.format(_("mvr_queue_full"), Queue.MAX_QUEUED) end
 	if result.note == "foreign" then s = s .. " " .. _("mvr_queue_foreign") end
 	result.text = s
@@ -799,6 +798,9 @@ local QUEUE_FORMAT = "1"
 local TICK_S = 1.0 -- longest interval the game itself uses (construction.tl:4308-4311); money comes in slower
 local INFLIGHT_TIMEOUT_S = 10 -- a callback is not documented as guaranteed (tf3-sdk knowledge/commands.md)
 local DROPS_PER_TICK = 20 -- stale entries dropped per tick, bounds the work of one frame
+-- commands sent per tick at most: as many as the balance covers, like the window's own batch (user decision
+-- 20.10.2026: one per second took minutes for a large order); bounds the work of one frame
+local SENDS_PER_TICK = 100
 Queue.MAX_QUEUED = 10000 -- vehicles the queue holds at most; bounds the save data (about 12 bytes each)
 local ERRORS_TO_PAUSE = 5 -- Lua errors in a row before the queue pauses itself
 local FAILURES_TO_DROP = 3 -- commands the game answered with false before the vehicle is dropped
@@ -810,7 +812,8 @@ local function newQueue()
 		reserve = 0, -- money that stays on the account
 		paused = false,
 		nextId = 1,
-		inflight = nil, -- { entity, job, sentAt, parts }: the one command waiting for its callback
+		inflight = {}, -- entity -> { job, sentAt, parts }: the commands of the last tick waiting for their callback
+		inflightN = 0,
 		nextTick = 0, -- application time of the next tick
 		cache = nil, -- { entity, cost }: last net cost of the head; a lower bound, the residual value only falls
 		loaded = false, -- read from the savegame
@@ -966,41 +969,96 @@ local function birthOf(v)
 	return ok and countValue(b) or 0
 end
 
--- queues the vehicles of list (as sorted by affordablePart) as one job; returns how many were queued, how many
--- were already queued, and a note: "full" (limit reached) or "foreign" (queue of another version, nothing queued)
+local function indexOf(job, e)
+	for i, x in ipairs(job.open) do
+		if x.entity == e then return i end
+	end
+	return nil
+end
+
+-- a command answered, cancelled or given up
+local function settle(e)
+	if queue.inflight[e] then
+		queue.inflight[e] = nil
+		queue.inflightN = queue.inflightN - 1
+	end
+end
+
+-- Takes the entities out of the jobs they are queued in: the newest order wins (user decision 20.10.2026: a newer
+-- model came out, the player orders that one instead). A vehicle whose command is under way stays. A job left
+-- without vehicles that never replaced or skipped one goes; one with counters stays as finished. Returns how many.
+local function release(entities)
+	ensureLoaded()
+	local n, touched = 0, {}
+	for __, e in ipairs(entities) do
+		local id = queue.byEntity[e]
+		local job = id and not queue.inflight[e] and jobById(id)
+		local i = job and indexOf(job, e)
+		if i then
+			table.remove(job.open, i)
+			queue.byEntity[e] = nil
+			touched[job] = true
+			n = n + 1
+		end
+	end
+	if n == 0 then return 0 end
+	for k = #queue.jobs, 1, -1 do
+		local j = queue.jobs[k]
+		local sk = j.skipped
+		if touched[j] and #j.open == 0 and j.done == 0 and sk.sold + sk.replaced + sk.reused + sk.rejected == 0 then table.remove(queue.jobs, k) end
+	end
+	queue.cache = nil
+	return n
+end
+
+-- releases the vehicles the window has just replaced itself, and saves when that changed the queue
+local function releaseReplaced(entities)
+	if release(entities) > 0 then writeSaveData() end
+end
+
+-- queues the vehicles of list (as sorted by affordablePart) as one job; returns how many were queued and a note:
+-- "full" (limit reached) or "foreign" (queue of another version, nothing queued). Vehicles in older jobs move to
+-- this one (release).
 local function enqueue(altKey, neuKey, list)
 	ensureLoaded()
-	if queue.foreign then return 0, 0, "foreign" end
+	if queue.foreign then return 0, "foreign" end
+	local entities = {}
+	for k, x in ipairs(list) do entities[k] = x.vehicle end
+	local moved = release(entities)
 	local job = { id = queue.nextId, alt = altKey, neu = neuKey, open = {}, done = 0, skipped = emptySkipped() }
-	local dup, note = 0, nil
+	local note = nil
 	local total = openCount()
-	for __, x in ipairs(list) do
-		local v = x.vehicle
-		if queue.byEntity[v] then
-			dup = dup + 1
-		elseif total >= Queue.MAX_QUEUED then
-			note = "full"
-		else
+	for __, v in ipairs(entities) do
+		-- a vehicle still in an older job has a command under way there: that command decides
+		local free = not (queue.byEntity[v] or queue.inflight[v])
+		if free and total >= Queue.MAX_QUEUED then note, free = "full", false end
+		if free then
 			job.open[#job.open + 1] = { entity = v, birth = birthOf(v), failures = 0 }
 			queue.byEntity[v] = job.id
 			total = total + 1
 		end
 	end
-	if #job.open == 0 then return 0, dup, note end
+	if #job.open == 0 then
+		if moved > 0 then writeSaveData() end
+		return 0, note
+	end
 	queue.nextId = queue.nextId + 1
 	queue.jobs[#queue.jobs + 1] = job
 	queue.cache = nil
 	writeSaveData()
-	return #job.open, dup, note
+	return #job.open, note
 end
 
--- a cancelled job's command may still be running: its answer no longer matters, the vehicle tells (checkHead)
+-- a cancelled job's commands may still be running: their answers no longer matter, the vehicle tells (checkHead)
 local function removeJob(id)
 	local job, k = jobById(id)
 	if not job then return end
-	for __, e in ipairs(job.open) do queue.byEntity[e.entity] = nil end
+	for __, e in ipairs(job.open) do
+		queue.byEntity[e.entity] = nil
+		local f = queue.inflight[e.entity]
+		if f and f.job == id then settle(e.entity) end
+	end
 	table.remove(queue.jobs, k)
-	if queue.inflight and queue.inflight.job == id then queue.inflight = nil end
 	queue.cache = nil
 	writeSaveData()
 end
@@ -1010,7 +1068,7 @@ local function cancelAll()
 		for __, e in ipairs(job.open) do queue.byEntity[e.entity] = nil end
 	end
 	queue.jobs = {}
-	queue.inflight, queue.cache = nil, nil
+	queue.inflight, queue.inflightN, queue.cache = {}, 0, nil
 	writeSaveData()
 end
 
@@ -1027,11 +1085,15 @@ local function setPaused(p)
 	writeSaveData()
 end
 
--- the first job with open vehicles that can run: a job whose new model is unknown (mod removed) or no longer
--- for sale is marked blocked and skipped, the jobs behind it go on; it runs again once the model is back
-local function headJob(year)
+-- the first job with open vehicles that can run, after the job after if given: a job whose new model is unknown
+-- (mod removed) or no longer for sale is marked blocked and skipped, the jobs behind it go on; it runs again once
+-- the model is back
+local function headJob(year, after)
+	local skipping = after ~= nil
 	for __, j in ipairs(queue.jobs) do
-		if #j.open > 0 then
+		if skipping then
+			skipping = j ~= after
+		elseif #j.open > 0 then
 			local neuInfo = info(j.neu)
 			if not (neuInfo and info(j.alt)) then
 				j.blocked = "unknown"
@@ -1046,25 +1108,26 @@ local function headJob(year)
 	return nil
 end
 
-local function finishHead(job)
-	local e = table.remove(job.open, 1)
+local function finishEntry(job, i)
+	local e = table.remove(job.open, i)
 	queue.byEntity[e.entity] = nil
 	job.done = job.done + 1
 	job.cost, job.short = nil, nil
 	queue.cache = nil
 end
 
-local function dropHead(job, reason)
-	local e = table.remove(job.open, 1)
+local function dropEntry(job, i, reason)
+	local e = table.remove(job.open, i)
 	queue.byEntity[e.entity] = nil
 	job.skipped[reason] = job.skipped[reason] + 1
 	job.cost, job.short = nil, nil
 	queue.cache = nil
 end
 
-local function failHead(job, entry)
+local function failEntry(job, i)
+	local entry = job.open[i]
 	entry.failures = entry.failures + 1
-	if entry.failures >= FAILURES_TO_DROP then dropHead(job, "rejected") end
+	if entry.failures >= FAILURES_TO_DROP then dropEntry(job, i, "rejected") end
 end
 
 -- the balance for the queue: a finite number, or nil with infinite = true for infinite money (sandbox mode, "no
@@ -1107,51 +1170,61 @@ local function checkHead(job, entry, t)
 	return { conf = conf, cost = cost, parts = partsOf(cfg) }
 end
 
--- Sends the one command; sent counts only once sendCommand returned, a throwing command gets no callback (#9).
+-- Sends one command; it counts as in flight until its callback, a throwing command gets no callback (#9).
 -- The callback comes a frame after the command ran (api/tealdef/api/cmd.d.tl:2-10); a callback of a cancelled or
--- reloaded queue finds no matching inflight entry and does nothing.
-local function sendHead(job, entry, checked, now)
+-- reloaded queue finds no matching inflight entry and does nothing. The queue is saved once the last answer of a
+-- tick is in, not per answer. Returns false when the command could not be sent.
+local function sendEntry(job, entry, checked, now)
 	local e = entry.entity
-	queue.inflight = { entity = e, job = job.id, sentAt = now, parts = checked.parts }
+	queue.inflight[e] = { job = job.id, sentAt = now, parts = checked.parts }
+	queue.inflightN = queue.inflightN + 1
 	local ok, err = pcall(api.cmd.sendCommand, api.cmd.makeVehicleReplaceCmd(e, checked.conf), function(__, success)
-		local f = queue.inflight
-		if not f or f.entity ~= e then return end
-		queue.inflight = nil
+		local f = queue.inflight[e]
+		if not f then return end
+		settle(e)
 		local j = jobById(f.job)
-		local head = j and j.open[1]
-		if not head or head.entity ~= e then return end
-		if success then
-			finishHead(j)
-		else
-			-- the game gives no reason (tf3-sdk knowledge/commands.md); it is not the money, that goes through
-			log("queue: replace refused by the game", e)
-			failHead(j, head)
+		local i = j and indexOf(j, e)
+		if i then
+			if success then
+				finishEntry(j, i)
+			else
+				-- the game gives no reason (tf3-sdk knowledge/commands.md); it is not the money, that goes through
+				log("queue: replace refused by the game", e)
+				failEntry(j, i)
+			end
 		end
-		writeSaveData()
+		if queue.inflightN == 0 then writeSaveData() end
 	end)
 	if not ok then
-		queue.inflight = nil
+		settle(e)
 		log("queue: command not sent", e, tostring(err))
-		failHead(job, entry)
-		writeSaveData()
+		failEntry(job, indexOf(job, e))
+		return false
 	end
+	return true
 end
 
 -- No callback within INFLIGHT_TIMEOUT_S: the vehicle tells what happened. Other parts than when the command was
--- sent: it was replaced, the entry is done. Unchanged: the entry stays at the head and is sent again next tick.
-local function resolveInflight()
-	local f = queue.inflight
-	queue.inflight = nil
-	local j = jobById(f.job)
-	local head = j and j.open[1]
-	if not head or head.entity ~= f.entity then return end
-	local ok, partsNow = pcall(function() return partsOf(api.engine.getComponent(f.entity, CT.TRANSPORT_VEHICLE).transportVehicleConfig) end)
-	local replaced = ok and partsNow ~= f.parts
-	log("queue: no answer for vehicle", f.entity, "after", INFLIGHT_TIMEOUT_S, "s, replaced:", tostring(replaced))
-	if replaced then
-		finishHead(j)
-		writeSaveData()
+-- sent: it was replaced, the entry is done. Unchanged: the entry stays and is sent again by a later tick.
+local function resolveInflight(now)
+	local dirty = false
+	for e, f in pairs(queue.inflight) do
+		if now - f.sentAt > INFLIGHT_TIMEOUT_S then
+			settle(e) -- assigning nil to a present field during pairs is allowed (Lua 5.2 manual, next)
+			local j = jobById(f.job)
+			local i = j and indexOf(j, e)
+			if i then
+				local ok, partsNow = pcall(function() return partsOf(api.engine.getComponent(e, CT.TRANSPORT_VEHICLE).transportVehicleConfig) end)
+				local replaced = ok and partsNow ~= f.parts
+				log("queue: no answer for vehicle", e, "after", INFLIGHT_TIMEOUT_S, "s, replaced:", tostring(replaced))
+				if replaced then
+					finishEntry(j, i)
+					dirty = true
+				end
+			end
+		end
 	end
+	if dirty then writeSaveData() end
 end
 
 local function appTime()
@@ -1161,19 +1234,22 @@ end
 -- One tick. Per frame with nothing queued: a few Lua comparisons. Per frame with a queue: one getApplicationTime.
 -- Per tick: one balance read; the head is validated (about ten native calls) only when the balance minus the
 -- reserve reaches its last known net cost, which only rises as the residual value falls (user decision 20.10.2026).
+-- Then, oldest first, every vehicle the money covers is checked and sent in this tick, up to SENDS_PER_TICK, and the
+-- next tick waits until the game has answered all of them: only then does the balance show what they cost.
 local function queueTick()
 	ensureLoaded()
 	if queue.paused or queue.foreign or queue.editor then return end
-	local hasOpen = false
+	local hasOpen = queue.inflightN > 0
 	for __, j in ipairs(queue.jobs) do
-		if #j.open > 0 then hasOpen = true; break end
+		if hasOpen then break end
+		hasOpen = #j.open > 0
 	end
-	if not hasOpen and not queue.inflight then return end
+	if not hasOpen then return end
 	local now = appTime()
 	if now < queue.nextTick then return end
 	queue.nextTick = now + TICK_S
-	if queue.inflight then
-		if now - queue.inflight.sentAt > INFLIGHT_TIMEOUT_S then resolveInflight() end
+	if queue.inflightN > 0 then
+		resolveInflight(now)
 		return
 	end
 	-- the window's own batch is still being answered: its vehicles still look unchanged (#9), so wait
@@ -1190,26 +1266,33 @@ local function queueTick()
 		return
 	end
 	local t = api.engine.getComponent(api.engine.util.getWorld(), CT.GAME_TIME).gameTime
-	local dirty = false
-	for __ = 1, DROPS_PER_TICK do
-		head = job.open[1]
-		local checked, reason = checkHead(job, head, t)
-		if checked then
-			job.cost = checked.cost
-			if spendable and spendable < checked.cost then
-				job.short = checked.cost - spendable
-				queue.cache = { entity = head.entity, cost = checked.cost }
+	local dirty, drops, sends, i = false, 0, 0, 1
+	while job and sends < SENDS_PER_TICK and drops < DROPS_PER_TICK do
+		local entry = job.open[i]
+		if not entry then
+			job, i = headJob(year, job), 1
+		else
+			local checked, reason = checkHead(job, entry, t)
+			if not checked then
+				dropEntry(job, i, reason)
+				drops, dirty = drops + 1, true
+			elseif spendable and spendable < checked.cost then
+				-- strictly oldest first: the money waits for this one, the jobs behind it wait too
+				job.cost, job.short = checked.cost, checked.cost - spendable
+				queue.cache = { entity = entry.entity, cost = checked.cost }
+				break
 			else
-				job.short = nil
-				sendHead(job, head, checked, now)
+				job.cost, job.short = checked.cost, nil
+				if spendable then spendable = spendable - checked.cost end
+				sends = sends + 1
+				-- a command that could not be sent stays in place, or was dropped after its third failure
+				if sendEntry(job, entry, checked, now) then
+					i = i + 1
+				else
+					dirty = true
+					if job.open[i] == entry then i = i + 1 end
+				end
 			end
-			break
-		end
-		dropHead(job, reason)
-		dirty = true
-		if #job.open == 0 then
-			job = headJob(year)
-			if not job then break end
 		end
 	end
 	if dirty then writeSaveData() end
@@ -1250,6 +1333,7 @@ if not MvrQueueHost then log("mod entry point not available, queue host disabled
 
 Queue.loadKept, Queue.ensureLoaded, Queue.writeSaveData, Queue.openCount, Queue.jobById = loadKept, ensureLoaded, writeSaveData, openCount, jobById
 Queue.enqueue, Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused = enqueue, removeJob, cancelAll, setReserve, setPaused
+Queue.release = releaseReplaced
 Queue.num, Queue.host, Queue.queuedNow = num, MvrQueueHost, queuedNow
 end
 
@@ -1285,7 +1369,7 @@ local function replaceAll(altKey, neuKey, partial, queueRest)
 			-- the rest, oldest first; the vehicle the queue is replacing right now is already in the queue
 			rest = {}
 			for __, x in ipairs(sorted) do
-				if not only[x.vehicle] and not (queue.inflight and queue.inflight.entity == x.vehicle) then rest[#rest + 1] = x end
+				if not only[x.vehicle] and not queue.inflight[x.vehicle] then rest[#rest + 1] = x end
 			end
 		end
 	end
@@ -1296,7 +1380,7 @@ local function replaceAll(altKey, neuKey, partial, queueRest)
 		local cfg = tv and tv.transportVehicleConfig
 		local conf, n = nil, 0
 		-- a vehicle the queue has just sent a command for would be replaced twice
-		local inflight = queue.inflight and queue.inflight.entity == v
+		local inflight = queue.inflight[v]
 		if cfg and (only == nil or only[v]) and not inflight then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
 			jobs[#jobs + 1] = { entity = v, conf = conf }
@@ -1312,8 +1396,12 @@ local function replaceAll(altKey, neuKey, partial, queueRest)
 	-- counters are reset only here, right before sending: a refused click leaves the previous batch alone
 	local batch = result.batch
 	result.sent, result.ok, result.failed, result.total = 0, 0, 0, total
-	result.queued, result.dup, result.note = 0, 0, nil
-	if rest then result.queued, result.dup, result.note = Queue.enqueue(altKey, neuKey, rest) end
+	result.queued, result.note = 0, nil
+	if rest then result.queued, result.note = Queue.enqueue(altKey, neuKey, rest) end
+	-- the newest order wins: the vehicles replaced now leave the jobs they were queued in
+	local direct = {}
+	for k, job in ipairs(jobs) do direct[k] = job.entity end
+	Queue.release(direct)
 	for __, job in ipairs(jobs) do
 		local entity = job.entity
 		api.cmd.sendCommand(api.cmd.makeVehicleReplaceCmd(entity, job.conf), function(__, success)
@@ -2119,7 +2207,7 @@ local function openWindow(carrier)
 	-- a new window starts without pending commands, like the game's counter that lives with its component
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed, result.total = 0, 0, 0, nil
-	result.queued, result.dup, result.note = 0, 0, nil
+	result.queued, result.note = 0, nil
 	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
 	Queue.loadKept()
 	Queue.ensureLoaded()
@@ -2151,7 +2239,7 @@ end
 -- memory only (runs in a timed step state, see queuedNow); the content recipe loads the queue before it renders
 local function queueSig()
 	local parts = { queue.paused and "p" or "r", num(queue.reserve), queue.foreign and "f" or "", queue.lastError or "",
-		queue.inflight and num(queue.inflight.entity) or "" }
+		num(queue.inflightN) }
 	for __, j in ipairs(queue.jobs) do parts[#parts + 1] = jobSig(j) end
 	return table.concat(parts, "|")
 end

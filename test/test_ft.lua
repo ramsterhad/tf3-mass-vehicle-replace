@@ -2033,10 +2033,10 @@ do -- own block: the main chunk is at the 200 local limit
 		return table.concat(ids, ",")
 	end
 	local function queueBox(tt)
-		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):find("vormerken", 1, true) ~= nil end)[1]
+		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):find("nachbestellen", 1, true) ~= nil end)[1]
 	end
 	local function queueButton(tt)
-		return find(tt, function(n) return n.kind == "Button" and buttonText(n) == "Warteschlange …" end)[1]
+		return find(tt, function(n) return n.kind == "Button" and buttonText(n) == "Nachbestellungen …" end)[1]
 	end
 	local function buttonIn(tree, label)
 		return find(tree, function(n) return n.kind == "Button" and buttonText(n) == label end)[1]
@@ -2119,13 +2119,13 @@ do -- own block: the main chunk is at the 200 local limit
 	section("the box shows only while the money does not cover all", function()
 		local tt = chooseKasten("box, one short", 487999)
 		local box = queueBox(tt)
-		check(box ~= nil and box.props.label == "Übriges vormerken, ersetzen sobald das Geld reicht", "box, one short: " .. tostring(box and box.props.label))
+		check(box ~= nil and box.props.label == "Übriges nachbestellen", "box, one short: " .. tostring(box and box.props.label))
 		check(box and box.props.value == 0, "box must be off at first")
 		check(queueButton(tt) ~= nil, "queue window button missing")
 		check(queueBox(chooseKasten("box, enough", 488000)) == nil, "box shown although the money covers all")
 		check(queueBox(chooseKasten("box, infinite", nil)) == nil, "box shown with infinite money")
 		box = queueBox(chooseKasten("box, nothing", 60999))
-		check(box ~= nil and box.props.label == "Übrige 8 vormerken, ersetzen sobald das Geld reicht", "box, nothing affordable: " .. tostring(box and box.props.label))
+		check(box ~= nil and box.props.label == "Übrige 8 nachbestellen", "box, nothing affordable: " .. tostring(box and box.props.label))
 	end)
 
 	section("nothing affordable: the box turns the button into Queue 8", function()
@@ -2134,7 +2134,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(saved().queueRest == true, "box state not kept in the savegame")
 		tt = content("queue all, box on")
 		local b = replaceButton(tt)
-		check(buttonText(b) == "8 vormerken", "button text: " .. tostring(buttonText(b)))
+		check(buttonText(b) == "8 nachbestellen", "button text: " .. tostring(buttonText(b)))
 		check(b.props.meta.enabled == true and b.props.meta.class:find("mvr-partial", 1, true) ~= nil, "button must be enabled and yellow")
 		sent = {}
 		b.props.onClick()
@@ -2143,13 +2143,13 @@ do -- own block: the main chunk is at the 200 local limit
 		check(saved().queue == "1,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "queue, oldest first: " .. tostring(saved().queue))
 		check(saved().queueNextId == "2" and saved().queueReserve == "0" and saved().queuePaused == false, "queue fields")
 		tt = content("queue all, after")
-		check(hasText(tt, "Ersetzt: 0 von 8, 8 vorgemerkt"), "result line after queueing")
-		-- a second click: every vehicle is already queued
+		check(hasText(tt, "Ersetzt: 0 von 8, 8 nachbestellt"), "result line after queueing")
+		-- a second click: the new order takes the vehicles over, the old job that did nothing yet goes
 		tt = chooseKasten("queue all again", 60999)
 		replaceButton(tt).props.onClick()
 		tt = content("queue all again, after")
-		check(hasText(tt, "Ersetzt: 0 von 8, 0 vorgemerkt (8 waren schon vorgemerkt)"), "second click must report the duplicates")
-		check(openEntries() == 8, "duplicates queued again: " .. openEntries())
+		check(hasText(tt, "Ersetzt: 0 von 8, 8 nachbestellt"), "second click must order all 8 again")
+		check(saved().queue == "2,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "second click: one job, the new one: " .. tostring(saved().queue))
 		clearQueue(tt)
 	end)
 
@@ -2171,10 +2171,10 @@ do -- own block: the main chunk is at the 200 local limit
 		table.sort(ids)
 		check(#sent == 3 and table.concat(ids, ",") == "110,111,115", "partial queue: oldest three sent: " .. sentIds())
 		check(tostring(saved().queue):match("^%d+,m10,m11,0,0,0,0,0:112/1,113/1,114/1,116/1,117/1$") ~= nil, "partial queue: " .. tostring(saved().queue))
-		check(hasText(tt, "Ersetzt: 3 von 8, 5 vorgemerkt"), "partial queue: result line")
+		check(hasText(tt, "Ersetzt: 3 von 8, 5 nachbestellt"), "partial queue: result line")
 	end)
 
-	section("host: one command per tick when the balance covers the head", function()
+	section("host: a tick sends what the balance covers, the next tick waits for the answers", function()
 		mountHost()
 		bankBalance, sent = 0, {}
 		hostTick(3)
@@ -2182,16 +2182,17 @@ do -- own block: the main chunk is at the 200 local limit
 		bankBalance = PRICE - 1
 		hostTick()
 		check(#sent == 0, "sent one short")
-		bankBalance = PRICE
-		hostTick()
-		check(#sent == 1 and sent[1].e == 112, "exactly one command for the head expected: " .. sentIds())
+		bankBalance = 2 * PRICE - 1
 		holdSteps = true
+		hostTick()
+		check(#sent == 1 and sent[1].e == 112, "money for one: one command for the head expected: " .. sentIds())
 		hostTick(2)
-		check(#sent == 1, "second command while the first is in flight")
+		check(#sent == 1, "commands while the last tick's are in flight")
 		holdSteps = false
 		step()
-		check(bankBalance == 0, "balance after the command: " .. tostring(bankBalance))
+		check(bankBalance == PRICE - 1, "balance after the command: " .. tostring(bankBalance))
 		check(tostring(saved().queue):match("^%d+,m10,m11,1,0,0,0,0:113/1,114/1,116/1,117/1$") ~= nil, "after the callback: " .. tostring(saved().queue))
+		bankBalance = 0
 		-- the head is checked only when the money could cover it (its net cost only rises): one balance read per tick
 		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
 		hostTick(10)
@@ -2296,7 +2297,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local box = queueBox(tt)
 		check(box ~= nil, "train queue: box missing")
 		if box and box.props.value == 0 then box.props.onValueChange(1); tt = content("train queue, box on") end
-		check(buttonText(replaceButton(tt)) == "2 vormerken", "train queue: button " .. tostring(buttonText(replaceButton(tt))))
+		check(buttonText(replaceButton(tt)) == "2 nachbestellen", "train queue: button " .. tostring(buttonText(replaceButton(tt))))
 		sent = {}
 		replaceButton(tt).props.onClick()
 		check(openEntries() == 2, "train queue: 2 trains expected: " .. tostring(saved().queue))
@@ -2336,22 +2337,67 @@ do -- own block: the main chunk is at the 200 local limit
 		closeQueue()
 		currentYear = 1980
 		hostTick()
-		check(#sent == 1, "model back: not resumed")
+		check(#sent == 8, "model back: not resumed: " .. #sent)
 		step()
 		clearQueue(content("expiring queue, clear"))
 	end)
 
-	section("infinite money: one vehicle per tick until the queue is empty", function()
+	section("infinite money: the whole queue in one tick", function()
 		local tt = queueTrucks("infinite queue", 0)
 		bankBalance, sent = nil, {}
-		for k = 1, 8 do
-			hostTick()
-			check(#sent == k, "tick " .. k .. ": " .. #sent .. " commands")
-			step()
-		end
+		hostTick()
+		check(sentIds() == "115,110,111,112,113,114,116,117", "one tick, oldest first: " .. sentIds())
+		step()
 		hostTick(2)
-		check(#sent == 8 and openEntries() == 0, "queue not empty after 8: " .. tostring(saved().queue))
+		check(#sent == 8 and openEntries() == 0, "queue not empty after one tick: " .. tostring(saved().queue))
 		clearQueue(tt)
+	end)
+
+	section("money for three of eight: three in one tick, the rest waits", function()
+		local tt = queueTrucks("three", 0)
+		bankBalance, sent = 3 * PRICE + 500, {}
+		hostTick()
+		check(sentIds() == "115,110,111", "three oldest in one tick: " .. sentIds())
+		step()
+		check(bankBalance == 500 and openEntries() == 5, "after three: balance " .. tostring(bankBalance) .. ", " .. tostring(saved().queue))
+		hostTick(3)
+		check(#sent == 3, "sent without money: " .. sentIds())
+		clearQueue(tt)
+		bankBalance = 0
+	end)
+
+	section("a newer order takes queued vehicles over; the older job keeps what it did", function()
+		local tt = queueTrucks("older order", 0)
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		step()
+		check(sentIds() == "115", "older order: one replaced")
+		-- a newer model came out: the player orders the remaining trucks again, now with another new model
+		bankBalance = 0
+		tt = chooseKasten("newer order", 0)
+		combos(tt)[2].props.onValueChange("m15")
+		tt = content("newer order, model")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("newer order, box on") end
+		replaceButton(tt).props.onClick()
+		check(tostring(saved().queue):match("^%d+,m10,m11,1,0,0,0,0:;%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
+			"newer order: vehicles moved, older job kept as finished: " .. tostring(saved().queue))
+		local q = openQueue(content("newer order, window"), "newer order")
+		check(#q.cards == 3 and lineOf(q.bodies[2], "Erledigt") ~= nil and lineOf(q.bodies[3], "Offen: 8 · Ersetzt: 0 · Übersprungen: 0") ~= nil,
+			"newer order: cards " .. table.concat(q.titles, "|"))
+		closeQueue()
+		clearQueue(content("newer order, clear"))
+	end)
+
+	section("replacing at once takes the vehicles out of the queue", function()
+		local tt = queueTrucks("direct", 0)
+		check(openEntries() == 8, "direct: 8 queued")
+		bankBalance = nil
+		tt = chooseKasten("direct, money", nil)
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(#sent == 8 and openEntries() == 0 and tostring(saved().queue) == "", "direct: queue must be empty: " .. tostring(saved().queue))
+		step()
+		bankBalance = 0
 	end)
 
 	section("negative balance: nothing", function()
@@ -2377,7 +2423,7 @@ do -- own block: the main chunk is at the 200 local limit
 		replaceButton(tt).props.onClick()
 		check(openEntries() == 10, "fifo: 10 queued: " .. tostring(saved().queue))
 		local q = openQueue(tt, "fifo")
-		check(#q.cards == 3 and lineOf(q.bodies[3], "Wartet auf die Aufträge darüber") ~= nil, "second job must say it waits")
+		check(#q.cards == 3 and lineOf(q.bodies[3], "Wartet auf die Nachbestellungen darüber") ~= nil, "second job must say it waits")
 		closeQueue()
 		bankBalance = nil
 		for _k = 1, 10 do hostTick(); step() end
@@ -2388,7 +2434,7 @@ do -- own block: the main chunk is at the 200 local limit
 
 	section("cancelling a job while its command is in flight", function()
 		local tt = queueTrucks("cancel", 0)
-		holdSteps, bankBalance, sent = true, nil, {}
+		holdSteps, bankBalance, sent = true, PRICE, {}
 		hostTick()
 		check(#sent == 1, "cancel: one in flight")
 		local q = openQueue(tt, "cancel")
@@ -2419,7 +2465,7 @@ do -- own block: the main chunk is at the 200 local limit
 		find(queueWindow("paused off").bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1].props.onValueChange(0)
 		closeQueue()
 		hostTick()
-		check(#sent == 1, "not resumed")
+		check(#sent == 8, "not resumed: " .. #sent)
 		step()
 		clearQueue(content("paused, clear"))
 	end)
@@ -2427,9 +2473,10 @@ do -- own block: the main chunk is at the 200 local limit
 	section("refused three times: dropped as rejected", function()
 		local tt = queueTrucks("refused", 0)
 		refused[115] = true
-		bankBalance, sent = nil, {}
-		for _k = 1, 3 do hostTick(); step() end
+		sent = {}
+		for _k = 1, 3 do bankBalance = PRICE; hostTick(); step() end
 		check(sentIds() == "115,115,115", "refused: three tries expected: " .. sentIds())
+		bankBalance = PRICE
 		hostTick()
 		check(sentIds() == "115,115,115,110", "refused: next vehicle after three tries: " .. sentIds())
 		step()
@@ -2443,7 +2490,7 @@ do -- own block: the main chunk is at the 200 local limit
 
 	section("no callback: the vehicle tells whether it was replaced", function()
 		local tt = queueTrucks("no callback", 0)
-		holdSteps, bankBalance, sent = true, nil, {}
+		holdSteps, bankBalance, sent = true, PRICE, {}
 		hostTick()
 		check(#sent == 1 and sent[1].e == 115, "no callback: first command")
 		hostTick(5)
@@ -2503,9 +2550,10 @@ do -- own block: the main chunk is at the 200 local limit
 
 	section("the window's own batch and the queue never hit the same vehicle", function()
 		local tt = queueTrucks("race", 0)
-		holdSteps, bankBalance, sent = true, nil, {}
+		holdSteps, bankBalance, sent = true, PRICE, {}
 		hostTick()
 		check(#sent == 1 and sent[1].e == 115, "race: queue sent the oldest")
+		bankBalance = nil
 		-- the player picks the new model again in the open window (no step passes: the queue's command is still
 		-- waiting) and replaces everything with infinite money
 		combos(tt)[2].props.onValueChange("m11")
@@ -2529,9 +2577,9 @@ do -- own block: the main chunk is at the 200 local limit
 		rules(bar, "game bar")
 		local texts = {}
 		for _i, n in ipairs(find(bar, function(n) return n.kind == "TextView" end)) do texts[#texts + 1] = n.props.text .. ":" .. n.props.meta.class end
-		check(table.concat(texts, "|") == "Vorgemerkt:font-scale-headline|8:font-scale-headline", "bar texts: " .. table.concat(texts, "|"))
+		check(table.concat(texts, "|") == "Nachbestellt:font-scale-headline|8:font-scale-headline", "bar texts: " .. table.concat(texts, "|"))
 		local tip = find(bar, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.tooltip end)[1]
-		check(tip and tip.props.meta.tooltip == "8 Fahrzeuge warten auf Ersatz. Die Warteschlange steht im Fenster „Fahrzeuge ersetzen“ eines Depots.", "bar tooltip: " .. tostring(tip and tip.props.meta.tooltip))
+		check(tip and tip.props.meta.tooltip == "8 Fahrzeuge warten auf Ersatz. Die Nachbestellungen stehen im Fenster „Fahrzeuge ersetzen“ eines Depots.", "bar tooltip: " .. tostring(tip and tip.props.meta.tooltip))
 		-- isMapEditor once per mount, like the game's earnings display; nothing from the engine
 		check(MOCK.apiCalls == (MOCK.apiCallsByName.isMapEditor or 0) and (MOCK.apiCallsByName.getComponent or 0) == 0, "bar reads the engine: " .. MOCK.apiCalls)
 		MOCK.mapEditor = true
@@ -2554,12 +2602,12 @@ do -- own block: the main chunk is at the 200 local limit
 		check(okFrame, "error: the step hook threw")
 		check(#sent == 0 and saved().queuePaused == true, "error: queue not paused after five errors")
 		local q = openQueue(content("error, window"), "error")
-		check(lineOf(q.bodies[1], "Fehler, Warteschlange pausiert: ") ~= nil, "error: window does not show it")
+		check(lineOf(q.bodies[1], "Fehler, Nachbestellungen pausiert: ") ~= nil, "error: window does not show it")
 		find(q.bodies[1], function(n) return n.kind == "CheckBox" and n.props.label == "Pausiert" end)[1].props.onValueChange(0)
 		closeQueue()
 		MOCK.appClock = MOCK.appClock + 11
 		hostTick()
-		check(#sent == 1, "error: not resumed after unpausing")
+		check(#sent == 8, "error: not resumed after unpausing: " .. #sent)
 		step()
 		clearQueue(tt)
 	end)
@@ -2569,7 +2617,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local before = saved().queue
 		newSession()
 		mountHost()
-		bankBalance, sent = nil, {}
+		bankBalance, sent = PRICE, {}
 		hostTick()
 		check(#sent == 1 and sent[1].e == 115, "session: queue not continued after loading: " .. sentIds())
 		step()
@@ -2591,10 +2639,10 @@ do -- own block: the main chunk is at the 200 local limit
 		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("foreign, box on") end
 		replaceButton(tt).props.onClick()
 		tt = content("foreign, clicked")
-		check(hasText(tt, "Die Warteschlange in diesem Spielstand stammt von einer anderen Version von Mass Vehicle Replace und bleibt unangetastet."), "foreign format: click must say why nothing was queued")
+		check(hasText(tt, "Die Nachbestellungen in diesem Spielstand stammen von einer anderen Version von Mass Vehicle Replace und bleiben unangetastet."), "foreign format: click must say why nothing was queued")
 		check(saved().queue == "whatever", "foreign format overwritten by a click")
 		local q = openQueue(tt, "foreign")
-		check(lineOf(q.bodies[1], "Die Warteschlange in diesem Spielstand") ~= nil, "foreign format: window does not say so")
+		check(lineOf(q.bodies[1], "Die Nachbestellungen in diesem Spielstand") ~= nil, "foreign format: window does not say so")
 		closeQueue()
 		-- damaged string of our own format: the same
 		guiSaveData[MOD] = { queueFormat = "1", queue = "1,m10,m11,0,0,0,0,0:115/x" }
