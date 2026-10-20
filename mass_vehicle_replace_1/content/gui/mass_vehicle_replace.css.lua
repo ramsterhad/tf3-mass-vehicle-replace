@@ -74,8 +74,9 @@ function data()
 	-- orders tab: as wide as the replace tab (two cells, the middle and the row spacing), so the window keeps its width
 	-- when the tab changes (game test 20.10.2026: it was narrower)
 	a("!mvr-orders", with(fixed(2 * CELL + MID + 8), { gravity = { 0, 0 } }))
-	-- orders tab: wider gaps in the counter row of an order (game test 20.10.2026: too cramped)
-	a("BoxLayout!mvr-order-line", {
+	-- orders tab: wider gaps in the counter row of an order (game test 20.10.2026: too cramped). With the window in
+	-- the selector, or the window's own BoxLayout rule above wins (game test 20.10.2026: the gap stayed small)
+	a("Window!mvr-window BoxLayout!mvr-order-line", {
 		innerSpacing = { 24, 0 },
 	})
 	-- custom: a thin vertical line between the number and the order, asked for by the user (20.10.2026); the game has
