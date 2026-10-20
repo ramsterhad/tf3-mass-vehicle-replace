@@ -212,24 +212,22 @@ function data()
 			backgroundColor1 = { colors.AccentDark[1], colors.AccentDark[2], colors.AccentDark[3], 0.5 },
 		})
 	end
-	-- custom: a soft yellow glow around the order box while it can be used, asked for by the user (20.10.2026: a
-	-- glow at the edge, even all round). Drawn the way the game draws shadows (shadowNinePatch, tinted by shadowColor,
-	-- reaching shadowWidth beyond the element: builtin.css.lua:1963-1968 window, game_bar.css.lua:474-476 buttons), with
-	-- an image of our own (content/gui/mvr_box_glow.tga, 32 px, a 12 px band fading outwards, clear inside): every
-	-- shadow image of the game is offset to the lower right (popup/shadow, window/shadow_simple, measured 20.10.2026),
-	-- the popup one drew a skewed dark edge in the game. Tried as well: a frame, a light spot behind the box
+	-- custom: a yellow frame around the order box while it can be used, asked for by the user (20.10.2026). The game's
+	-- card contour (line_vehicle_mgmt.css.lua:858-869 InfoBox: card_contour.tga as borderImage, tinted with
+	-- borderColor) in the yellow of the button. The game has no even glow: every shadow image is offset to the lower
+	-- right (popup/shadow, window/shadow_simple, measured 20.10.2026); an image of our own in content/gui was not found
+	-- by the game ("Could not find texture '::/gui/mvr_box_glow.tga'", game log 20.10.2026)
 	a("!mvr-box-calm", { padding = { 3, 8, 3, 8 } })
 	a("!mvr-box-aura", { padding = { 3, 8, 3, 8 } })
 	if okColors and colors and type(colors.Warning) == "table" then
 		local w = colors.Warning
 		a("!mvr-box-aura", {
-			shadowNinePatch = {
-				fileName = "::/gui/mvr_box_glow.tga",
-				horizontal = { 0, 12, 20, 32 },
-				vertical = { 0, 12, 20, 32 },
+			borderImage = {
+				fileName = "::/gui/entity_window/design/card_contour.tga",
+				horizontal = { 0, 6, 26, 32 },
+				vertical = { 0, 6, 26, 32 },
 			},
-			shadowColor = { w[1], w[2], w[3], 0.8 },
-			shadowWidth = { 12, 12, 12, 12 },
+			borderColor = { w[1], w[2], w[3], 0.7 },
 		})
 	end
 	if okColors and colors and colors.Error then
