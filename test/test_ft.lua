@@ -2096,9 +2096,7 @@ do -- own block: the main chunk is at the 200 local limit
 	-- "cancel all" through the window and the game's dialog, like the player
 	local function clearQueue(tt)
 		local q = openQueue(tt, "clear")
-		-- below the list, not among the settings (variant A, user decision 20.10.2026)
-		check(buttonIn(q.settings, "Alle abbrechen") == nil, "clear: cancel all must not sit among the settings")
-		local b = buttonIn(q.tree, "Alle abbrechen")
+		local b = buttonIn(q.settings, "Alle abbrechen")
 		check(b ~= nil, "clear: cancel all button missing")
 		if b and b.props.meta.enabled ~= false then
 			b.props.onClick()
@@ -2538,8 +2536,11 @@ do -- own block: the main chunk is at the 200 local limit
 		local q = openQueue(tt, "paused")
 		local box = find(q.settings, function(n) return n.kind == "CheckBox" end)[1]
 		-- name on the left, the box in the right column of the settings, like the reserve field
-		check(lineOf(q.settings, "Nachbestellungen anhalten") ~= nil and box and box.props.label == "", "hold: name left, box without its own label")
-		check(#find(q.settings, function(n) return n.props and n.props.meta and n.props.meta.class == "mvr-setting" end) == 2, "hold: reserve and box must share the setting column")
+		check(box and box.props.label == "Nachbestellungen anhalten", "hold box label: " .. tostring(box and box.props.label))
+		-- the settings are the footer below the orders (variant D, user decision 20.10.2026)
+		local kids = find(q.tree, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-content" end)[1].props.layout.props.children
+		check(kids[#kids].kind == "recipe:MvrQueueSettings", "settings must be the last part of the tab")
+		check(#find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end) == 1, "settings must be one row")
 		check(box ~= nil and box.props.value == 0, "paused box")
 		box.props.onValueChange(1)
 		check(saved().queuePaused == true, "paused not kept")
@@ -2678,7 +2679,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(okFrame, "error: the step hook threw")
 		check(#sent == 0 and saved().queuePaused == true, "error: queue not paused after five errors")
 		local q = openQueue(content("error, window"), "error")
-		check(lineOf(q.settings, "Fehler, Nachbestellungen angehalten: ") ~= nil, "error: window does not show it")
+		check(lineOf(q.tree, "Fehler, Nachbestellungen angehalten: ") ~= nil, "error: window does not show it")
 		find(q.settings, function(n) return n.kind == "CheckBox" end)[1].props.onValueChange(0)
 		closeQueue()
 		MOCK.appClock = MOCK.appClock + 11
@@ -2718,7 +2719,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(hasText(tt, "Die Nachbestellungen in diesem Spielstand stammen von einer anderen Version von Mass Vehicle Replace und bleiben unangetastet."), "foreign format: click must say why nothing was queued")
 		check(saved().queue == "whatever", "foreign format overwritten by a click")
 		local q = openQueue(tt, "foreign")
-		check(lineOf(q.settings, "Die Nachbestellungen in diesem Spielstand") ~= nil, "foreign format: window does not say so")
+		check(lineOf(q.tree, "Die Nachbestellungen in diesem Spielstand") ~= nil, "foreign format: window does not say so")
 		closeQueue()
 		-- damaged string of our own format: the same
 		guiSaveData[MOD] = { queueFormat = "1", queue = "1,m10,m11,0,0,0,0,0:115/x" }

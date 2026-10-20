@@ -2343,43 +2343,33 @@ local function confirmCancelAll()
 end
 
 -- settings card: reserve, paused, a status line, "cancel all"
+-- a line above the orders only when something needs saying; the number of open vehicles is in the tab
+local function queueStatus()
+	if queue.foreign then return _("mvr_queue_foreign") end
+	if queue.paused and queue.lastError then return tr("mvr_queue_error", queue.lastError) end
+	if #queue.jobs == 0 then return _("mvr_queue_empty") end
+	return nil
+end
+
+-- Settings as one footer row below the orders (variant D, user decision 20.10.2026: whoever opens the tab wants
+-- the orders first; reserve and hold are changed rarely): reserve, hold, and "cancel all" on the right.
 local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	ensureLoaded()
-	-- a status line only when something needs saying; the number of open vehicles is in the tab
-	local status = nil
-	if queue.foreign then
-		status = _("mvr_queue_foreign")
-	elseif queue.paused and queue.lastError then
-		status = tr("mvr_queue_error", queue.lastError)
-	elseif #queue.jobs == 0 then
-		status = _("mvr_queue_empty")
-	end
-	-- infinite money (sandbox mode, "no costs"): a reserve means nothing, the row is left out, like the game hides
-	-- its balance card then (maintenance_station_eow.script.tl conditionMaintenanceStationBalance)
-	local reserveRow = nil
+	local parts = {}
+	-- infinite money (sandbox mode, "no costs"): a reserve means nothing and is left out, like the game hides its
+	-- balance card then (maintenance_station_eow.script.tl conditionMaintenanceStationBalance)
 	if not infiniteMoney() then
-		reserveRow = hbox("mvr-row", {
-			builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_reserve_tip") }, text = _("mvr_reserve") },
-			spacer(),
-			-- the game's money field (game_bar.tl:252-266 uses it for the balance): typed or stepped, numbers only;
-			-- the game marks its own text number field deprecated in favour of it (gui_react_util.d.tl:130)
-			builtin.DoubleSpinBox{ meta = { class = "mvr-setting", tooltip = _("mvr_reserve_tip") }, min = 0, max = Queue.RESERVE_MAX,
-				step = 100000, value = queue.reserve, onValueChange = function(v) setReserve(v) end },
-		})
+		parts[#parts + 1] = builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_reserve_tip") }, text = _("mvr_reserve") }
+		-- the game's money field (game_bar.tl:252-266 uses it for the balance): typed or stepped, numbers only;
+		-- the game marks its own text number field deprecated in favour of it (gui_react_util.d.tl:130)
+		parts[#parts + 1] = builtin.DoubleSpinBox{ meta = { class = "mvr-setting", tooltip = _("mvr_reserve_tip") }, min = 0,
+			max = Queue.RESERVE_MAX, step = 100000, value = queue.reserve, onValueChange = function(v) setReserve(v) end }
 	end
-	-- plain rows above the order cards, no card of their own (user decision 20.10.2026: a settings card looked
-	-- like one more order). Only settings here, name on the left, control on the right in one column of the same
-	-- width; "cancel all" acts on the orders and sits below them (variant A, user decision 20.10.2026)
-	return vbox("mvr-rows", {
-		reserveRow or builtin.BoxLayout{ children = {} },
-		hbox("mvr-row", {
-			builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_paused_tip") }, text = _("mvr_paused") },
-			spacer(),
-			hbox("mvr-setting", { spacer(), builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = "",
-				value = queue.paused and 1 or 0, onValueChange = function(v) setPaused(v == 1) end } }),
-		}),
-		status and text(status, "font-scale-body") or builtin.BoxLayout{ children = {} },
-	})
+	parts[#parts + 1] = builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = _("mvr_paused"), value = queue.paused and 1 or 0,
+		onValueChange = function(v) setPaused(v == 1) end }
+	parts[#parts + 1] = spacer()
+	parts[#parts + 1] = textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0)
+	return vbox("mvr-rows", { hbox("mvr-row", parts) })
 end)
 
 -- the small image of a model, as in the lists, and its name
@@ -2453,6 +2443,7 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	ensureLoaded()
 	-- redraw when anything in the queue changes; the signature is a short string compared twice a second
 	engine_react_util.useStepStateTimer(queueSig, 0.5)
+	local status = queueStatus()
 	-- one card per order, numbered in the order they run; the card has no title, the body says it all
 	local cards = {}
 	for k, j in ipairs(queue.jobs) do
@@ -2468,8 +2459,8 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	-- as wide as the replace tab, so the window keeps its width when the tab changes
 	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-content" },
 		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical,
-			children = { MvrQueueSettings{ sig = queueSig() }, panel,
-				hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0) }) } } } } }
+			children = { status and text(status, "font-scale-body") or builtin.BoxLayout{ children = {} }, panel,
+				MvrQueueSettings{ sig = queueSig() } } } } } }
 end)
 queueContent = (okCard and type(content_card) == "table") and MvrQueueContent or nil
 if not queueContent then log("orders tab needs the game's content card, left out") end
