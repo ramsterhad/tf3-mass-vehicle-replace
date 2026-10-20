@@ -387,8 +387,9 @@ local function useOf(v, cfg)
 	return { vehicle = v, parts = cfg.vehicles, keys = keys, units = units }
 end
 
--- returns the entries by key and the parts of every vehicle read (partsOf)
-local function fleet()
+-- returns the entries by key and the parts of every vehicle read (partsOf); vehicles in skip (the queue's) are left
+-- out: a vehicle on order is not offered again (user decision 20.10.2026)
+local function fleet(skip)
 	local byKey, partsByVehicle = {}, {}
 	-- uses: every vehicle this entry is in, with the entry of each of its parts, so the residual value can
 	-- tell replaced parts from kept ones (#26). keys[j] is false for parts of an unknown multiple unit.
@@ -399,7 +400,7 @@ local function fleet()
 		if not seen[key] then seen[key] = true; e.vehicles = e.vehicles + 1 end
 	end
 	for __, v in ipairs(ownVehicles()) do
-		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
+		local tv = not (skip and skip[v]) and api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		if cfg then
 			partsByVehicle[v] = partsOf(cfg)
@@ -499,13 +500,18 @@ local function fleetSig()
 	if cachedFleet.vehiclesSig == nil or cachedFleet.vehiclesBatch ~= result.batch or cachedFleet.steps % SIG_EVERY == 0 then
 		cachedFleet.vehiclesSig, cachedFleet.vehiclesBatch = vehiclesSig(), result.batch
 	end
-	return cachedFleet.vehiclesSig .. ":" .. tostring(result.batch) .. ":" .. tostring(result.ok + result.failed)
+	-- and the queue: a vehicle put on order or out of it changes the lists (fleet leaves queued vehicles out); the
+	-- next job id counts every new order, the open vehicles every one leaving
+	local open = 0
+	for __, j in ipairs(queue.jobs) do open = open + #j.open end
+	return cachedFleet.vehiclesSig .. ":" .. tostring(result.batch) .. ":" .. tostring(result.ok + result.failed) .. ":"
+		.. tostring(queue.nextId) .. ":" .. tostring(open)
 end
 
 local function windowFleet(sig)
 	if cachedFleet.sig ~= sig or cachedFleet.byKey == nil then
 		-- sig only after a successful read: if fleet() throws, the next redraw tries again (as before #10)
-		cachedFleet.byKey, cachedFleet.parts = fleet()
+		cachedFleet.byKey, cachedFleet.parts = fleet(queue.byEntity)
 		cachedFleet.sig = sig
 	end
 	return cachedFleet.byKey
@@ -1011,9 +1017,9 @@ local function pruneJobs()
 	end
 end
 
--- Takes the entities out of the jobs they are queued in: the newest order wins (user decision 20.10.2026: a newer
--- model came out, the player orders that one instead). A vehicle whose command is under way stays. A job left
--- without vehicles goes. Returns how many.
+-- Takes the entities out of the jobs they are queued in. A vehicle whose command is under way stays. A job left
+-- without vehicles goes. Returns how many. Since vehicles on order leave the window's lists (fleet, user decision
+-- 20.10.2026) the window no longer hands queued vehicles over; this stays as a guard should one slip through.
 local function release(entities)
 	ensureLoaded()
 	local n = 0
@@ -1390,7 +1396,7 @@ local function replaceAll(altKey, neuKey, partial, queueRest)
 	if partial or queueRest then
 		local funds = balance()
 		if funds == nil then return end -- infinite or unreadable money: the normal button covers it
-		local e = fleet()[altKey]
+		local e = fleet(queue.byEntity)[altKey]
 		local part = { affordablePart(e, altKey, altInfo, neuInfo, funds) }
 		local n, sorted = part[2], part[4]
 		only = part[1]
@@ -1413,9 +1419,10 @@ local function replaceAll(altKey, neuKey, partial, queueRest)
 		local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 		local cfg = tv and tv.transportVehicleConfig
 		local conf, n = nil, 0
-		-- a vehicle the queue has just sent a command for would be replaced twice
-		local inflight = queue.inflight[v]
-		if cfg and (only == nil or only[v]) and not inflight then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
+		-- a vehicle on order stays with its order (user decision 20.10.2026), and one the queue has just sent a command
+		-- for would be replaced twice
+		local queued = queue.byEntity[v] or queue.inflight[v]
+		if cfg and (only == nil or only[v]) and not queued then conf, n = rebuild(cfg, altInfo, neuInfo, t) end
 		if conf then
 			jobs[#jobs + 1] = { entity = v, conf = conf }
 			units = units + n
@@ -1423,7 +1430,7 @@ local function replaceAll(altKey, neuKey, partial, queueRest)
 	end
 	-- checked again here: the balance may have changed since the window was drawn; residual value by the
 	-- same rule as the window
-	if not partial and not queueRest and not enoughMoney(neuInfo.price * units - residual(fleet()[altKey], altKey)) then
+	if not partial and not queueRest and not enoughMoney(neuInfo.price * units - residual(fleet(queue.byEntity)[altKey], altKey)) then
 		result.text = _("mvr_not_enough_money")
 		return
 	end

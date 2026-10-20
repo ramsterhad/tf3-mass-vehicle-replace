@@ -2131,6 +2131,13 @@ do -- own block: the main chunk is at the 200 local limit
 		local hit = find(body, function(n) return n.kind == "TextView" and tostring(n.props.text):find(prefix, 1, true) == 1 end)[1]
 		return hit and hit.props.text or nil, hit
 	end
+	-- the texts of the old list's entry for this model, nil when the list does not offer it
+	function MOCK.oldEntry(tt, key)
+		for _i, it in ipairs(combos(tt)[1].props.items) do
+			if it.props.value == key then return table.concat(itemTexts(it), " ") end
+		end
+		return nil
+	end
 	-- the value on an order's tile with this label, and the tile (card variant E, user decision 20.10.2026)
 	-- a field, not a local: the main chunk is at Lua's limit of 200 locals
 	function MOCK.tileOf(body, label)
@@ -2191,12 +2198,11 @@ do -- own block: the main chunk is at the 200 local limit
 		check(saved().queueNextId == "2" and saved().queueReserve == "0" and saved().queuePaused == false, "queue fields")
 		tt = content("queue all, after")
 		check(hasText(tt, "Ersetzt: 0 von 8. 8 nachbestellt."), "result line after queueing")
-		-- a second click: the new order takes the vehicles over, the old job that did nothing yet goes
-		tt = chooseKasten("queue all again", 60999)
-		replaceButton(tt).props.onClick()
-		tt = content("queue all again, after")
-		check(hasText(tt, "Ersetzt: 0 von 8. 8 nachbestellt."), "second click must order all 8 again")
-		check(saved().queue == "2,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "second click: one job, the new one: " .. tostring(saved().queue))
+		-- vehicles on order leave the old list (user decision 20.10.2026): all 8 trucks are on order, so the model is
+		-- not offered any more and a second click cannot order them again
+		tt = content("queue all again", 60999)
+		check(MOCK.oldEntry(tt, "m10") == nil, "queued vehicles still offered: " .. tostring(MOCK.oldEntry(tt, "m10")))
+		check(saved().queue == "1,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "queue unchanged: " .. tostring(saved().queue))
 		clearQueue(tt)
 	end)
 
@@ -2517,38 +2523,38 @@ do -- own block: the main chunk is at the 200 local limit
 		bankBalance = 0
 	end)
 
-	section("a newer order takes queued vehicles over; the older job keeps what it did", function()
+	section("vehicles on order leave the old list; cancelling brings them back (user decision 20.10.2026)", function()
 		local tt = queueTrucks("older order", 0)
-		bankBalance, sent = PRICE, {}
-		hostTick()
-		step()
-		check(sentIds() == "115", "older order: one replaced")
-		-- a newer model came out: the player orders the remaining trucks again, now with another new model
-		bankBalance = 0
+		check(MOCK.oldEntry(tt, "m10") == nil, "on order: the trucks still offered: " .. tostring(MOCK.oldEntry(tt, "m10")))
+		-- a newer model came out: the player cancels the order, the trucks are back and can be ordered with it
+		local q = openQueue(tt, "on order")
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
+		closeQueue()
+		tt = content("cancelled")
+		local entry = MOCK.oldEntry(tt, "m10")
+		check(entry ~= nil and entry:find("8 Fahrzeuge", 1, true) ~= nil, "cancelled: the 8 trucks must be back: " .. tostring(entry))
 		tt = chooseKasten("newer order", 0)
 		combos(tt)[2].props.onValueChange("m15")
 		tt = content("newer order, model")
 		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("newer order, box on") end
 		replaceButton(tt).props.onClick()
 		check(tostring(saved().queue):match("^%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
-			"newer order: vehicles moved, the emptied older job gone: " .. tostring(saved().queue))
-		local q = openQueue(content("newer order, window"), "newer order")
-		check(#q.cards == 1 and MOCK.tileOf(q.bodies[1], "Offen") == "8",
-			"newer order: cards " .. table.concat(q.titles, "|"))
-		closeQueue()
+			"newer order: the trucks on the new order: " .. tostring(saved().queue))
 		clearQueue(content("newer order, clear"))
 	end)
 
-	section("replacing at once takes the vehicles out of the queue", function()
+	section("replacing at once leaves vehicles on order alone", function()
 		local tt = queueTrucks("direct", 0)
 		check(openEntries() == 8, "direct: 8 queued")
-		bankBalance = nil
+		-- the window opened again with money: the button must not reach the queue's trucks
 		tt = chooseKasten("direct, money", nil)
 		sent = {}
-		replaceButton(tt).props.onClick()
-		check(#sent == 8 and openEntries() == 0 and tostring(saved().queue) == "", "direct: queue must be empty: " .. tostring(saved().queue))
+		local b = replaceButton(tt)
+		if b and b.props.meta.enabled ~= false and b.props.onClick then b.props.onClick() end
+		check(#sent == 0 and openEntries() == 8, "direct: sent " .. sentIds() .. ", queue " .. tostring(saved().queue))
 		step()
 		bankBalance = 0
+		clearQueue(content("direct, clear"))
 	end)
 
 	section("negative balance: nothing", function()
@@ -2720,9 +2726,12 @@ do -- own block: the main chunk is at the 200 local limit
 		tt = content("race, window")
 		check(buttonText(replaceButton(tt)) == "Ersetzen", "race: button " .. tostring(buttonText(replaceButton(tt))))
 		replaceButton(tt).props.onClick()
-		check(#sent == 8 and not sentIds():find(",115", 1, true), "race: the window must leave the queue's vehicle out: " .. sentIds())
+		-- all 8 are on order: the window sends none of them, the queue alone does (user decision 20.10.2026)
+		check(sentIds() == "115", "race: the window must leave the queue's vehicles out: " .. sentIds())
 		hostTick(3)
-		check(#sent == 8, "race: queue sent while the window's batch is pending")
+		local seen, twice = {}, false
+		for _i, c in ipairs(sent) do twice = twice or seen[c.e] == true; seen[c.e] = true end
+		check(not twice, "race: a vehicle sent twice: " .. sentIds())
 		holdSteps = false
 		step()
 		clearQueue(content("race, clear"))
