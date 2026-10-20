@@ -2206,6 +2206,19 @@ do -- own block: the main chunk is at the 200 local limit
 		local tt = queueTrucks("tab count", 0)
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen (8)", "tab with 8 open: " .. MOCK.tabLabels(mainWindow()))
 		check(mainWindow().props.content.kind == "recipe:MvrContent", "the window must open on the replace tab")
+		-- like the game (react_transform.cpp:183): a node keeps its recipe across redraws, so switching the tab must not
+		-- change what each tab item is (game test 20.10.2026: placeholder <-> MvrQueueContent crashed the game)
+		local function itemKinds()
+			local out = {}
+			local tw = render("MvrWindow", { onClose = function() end }).props.content
+			for _i, t in ipairs(tw.props.tabs) do out[#out + 1] = t.props.item.kind end
+			return table.concat(out, "|"), tw
+		end
+		local before, tw = itemKinds()
+		tw.props.onValueChange(1)
+		local after, tw1 = itemKinds()
+		check(before == after and before == "recipe:MvrContent|recipe:MvrQueueContent", "tab items change with the tab: " .. before .. " -> " .. after)
+		tw1.props.onValueChange(0)
 		clearQueue(tt)
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tab when empty: " .. MOCK.tabLabels(mainWindow()))
 		tt = chooseKasten("box place", 200000)

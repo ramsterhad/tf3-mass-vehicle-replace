@@ -2220,14 +2220,15 @@ local windowOpen = false
 -- tab). They sit at the top of the content, below the title: as the window's header they took the title's place
 -- and cut it to "Mass Veh" (game test 20.10.2026).
 local function tabs(tabState, n, replaceContent, ordersContent)
-	-- only the selected tab builds its content (content is a function), the other one stays empty: a node built and
-	-- not attached makes the game warn "Preserved props" on every redraw
+	-- Each tab keeps the same content node, like the game's own tabs (town.tl:1296-1330: both items always built).
+	-- Swapping an item between a placeholder and the content crashed the game when the tab changed (game test
+	-- 20.10.2026, react_transform.cpp:183 "Assertion (oldNode->recipeId)==(newNode.recipeId)", MvrQueueContent).
 	local function tab(value, label, content)
 		return builtin.TabWidgetChild{
 			localKey = "mvr_tab_" .. value,
 			value = value,
 			indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = label },
-			item = tabState:old() == value and content() or builtin.Component{},
+			item = content,
 		}
 	end
 	-- the game's own tab look, the tabs joined to a framed content (builtin.css.lua:969-984, like its statistics and
@@ -2248,7 +2249,10 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 	local tabState = react.useState(0)
 	-- the count in the tab: two Lua numbers from memory, redrawn only when it changes
 	local countState = engine_react_util.useStepStateTimer(Queue.queuedNow, 0.5)
+	-- the orders tab is always built (see tabs); it reads prices only while it is the one shown
+	Queue.ordersShown = tabState:old() == 1
 	react.onUnmount(function()
+		Queue.ordersShown = false
 		windowOpen = false
 		-- the fleet holds a copy of every vehicle's parts; the next window reads it afresh anyway (#10)
 		cachedFleet.byKey, cachedFleet.parts, cachedFleet.sig = nil, nil, nil
@@ -2265,8 +2269,8 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 		closable = true,
 		movable = true,
 		autoFocusOnBecomingVisible = true,
-		content = queueContent and tabs(tabState, countState:old() or 0, function() return MvrContent{ onClose = p.onClose } end,
-				function() return queueContent{ onClose = p.onClose } end)
+		content = queueContent and tabs(tabState, countState:old() or 0, MvrContent{ onClose = p.onClose },
+				queueContent{ onClose = p.onClose })
 			or MvrContent{ onClose = p.onClose },
 	}
 end)
@@ -2498,9 +2502,10 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	ensureLoaded()
 	-- redraw when anything in the queue changes; the signature is a short string compared twice a second
 	engine_react_util.useStepStateTimer(queueSig, 0.5)
-	-- and when the prices change; read once here as well, so the first drawing has them
-	engine_react_util.useStepStateTimer(orderPrices, 0.5)
-	orderPrices()
+	-- and when the prices change, only while this tab is shown (about five engine calls per open vehicle); read once
+	-- here as well, so the first drawing has them
+	engine_react_util.useStepStateTimer(function() return Queue.ordersShown and orderPrices() or "" end, 0.5)
+	if Queue.ordersShown then orderPrices() end
 	local status = queueStatus()
 	-- one card per order, numbered in the order they run; the card has no title, the body says it all
 	local cards = {}
