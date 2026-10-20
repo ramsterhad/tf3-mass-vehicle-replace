@@ -12,7 +12,7 @@ local CARGO_ICON = 18
 local CARGO_ROW = ITEM_IMAGE[1] + 8 + ITEM_TEXT
 local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits centered below it
 local STATS_HALF = CELL - 20
-local SETTING = 140 -- width of the reserve field in the orders tab
+local SETTING = 125 -- width of the reserve field in the orders tab ("1.000.000.000.000", the cap)
 local ACTION_SIDE = 330 -- width of each side of the replace button
 local ORDER_HALF = 290 -- width of each half of an order's head (image 96, gap 8, name)
 local ORDER_TILE = 145 -- width of each of an order's four tiles
@@ -158,11 +158,6 @@ function data()
 	-- with a fixed height like the game's own number fields (camera_tool.css.lua:44-47: 24): without it the field
 	-- grew huge in the game (game test 20.10.2026)
 	a("!mvr-setting", with(fixed(SETTING, 24), { gravity = { 0, 0.5 } }))
-	-- without the small plus and minus buttons: the reserve is typed (user decision 20.10.2026); the game hides them
-	-- the same way in its waiting time field (line_vehicle_mgmt.css.lua:2120-2122), folded here so the text keeps the room
-	a("Window!mvr-window DoubleSpinBox!mvr-setting Button", {
-		visibility = "folded",
-	})
 
 	-- vehicle stats (#16): two halves of a fixed width below the two columns. The game's card around them takes
 	-- 3 + 3 + 3 px on each side (content_card.css.lua: collapse margin, card-collapsible padding, card-margin-inner

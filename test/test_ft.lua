@@ -2347,13 +2347,14 @@ do -- own block: the main chunk is at the 200 local limit
 
 	section("reserve stays on the account", function()
 		local q = openQueue(content("reserve"), "reserve")
-		local spin = find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1]
-		check(spin ~= nil and spin.props.min == 0 and spin.props.value == 0, "reserve spin box")
+		local spin = find(q.settings, function(n) return n.kind == "TextInputField" end)[1]
+		check(spin ~= nil and spin.props.value == "0" and spin.props.filter("5") and spin.props.filter(".") and not spin.props.filter("-")
+			and not spin.props.filter("a"), "reserve field: digits and separators only")
 		check(hasText(q.settings, "Reserve") and hasText(q.settings, "$"), "reserve: currency sign in front of the field")
-		spin.props.onValueChange(100000)
+		spin.props.onValueChange("100.000")
 		check(saved().queueReserve == "100000", "reserve not kept: " .. tostring(saved().queueReserve))
 		q = queueWindow("reserve set")
-		check(find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1].props.value == 100000, "spin box does not show the reserve")
+		check(find(q.settings, function(n) return n.kind == "TextInputField" end)[1].props.value == "100.000", "field does not show the reserve with separators")
 		closeQueue()
 		bankBalance, sent = PRICE + 99999, {}
 		hostTick()
@@ -2363,7 +2364,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 113, "reserve covered: " .. sentIds())
 		step()
 		openQueue(content("reserve back"), "reserve back")
-		find(queueWindow("reserve back").settings, function(n) return n.kind == "DoubleSpinBox" end)[1].props.onValueChange(0)
+		find(queueWindow("reserve back").settings, function(n) return n.kind == "TextInputField" end)[1].props.onValueChange("0")
 		closeQueue()
 	end)
 
@@ -2499,15 +2500,16 @@ do -- own block: the main chunk is at the 200 local limit
 		local tt = queueTrucks("reserve rules", 0)
 		bankBalance = nil
 		local q = openQueue(content("reserve rules, infinite"), "reserve infinite")
-		check(find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1] == nil, "reserve shown with infinite money")
+		check(find(q.settings, function(n) return n.kind == "TextInputField" end)[1] == nil, "reserve shown with infinite money")
 		closeQueue()
 		bankBalance = 0
 		q = openQueue(content("reserve rules, money"), "reserve money")
-		local spin = find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1]
-		check(spin ~= nil and spin.props.max == 1e12, "reserve field without its upper bound")
-		if spin then spin.props.onValueChange(5e12) end
+		local spin = find(q.settings, function(n) return n.kind == "TextInputField" end)[1]
+		check(spin ~= nil, "reserve field missing")
+		if spin then spin.props.onValueChange("5.000.000.000.000") end
 		check(saved().queueReserve == "1000000000000", "reserve not capped: " .. tostring(saved().queueReserve))
-		if spin then spin.props.onValueChange(0) end
+		if spin then spin.props.onValueChange("") end
+		check(saved().queueReserve == "0", "empty reserve must be 0: " .. tostring(saved().queueReserve))
 		closeQueue()
 		clearQueue(tt)
 	end)

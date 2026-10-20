@@ -2402,10 +2402,18 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 		parts[#parts + 1] = builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_reserve_tip") }, text = _("mvr_reserve") }
 		-- the currency sign as the game writes money, "$" in front (user decision 20.10.2026: "Reserve $ [field]")
 		parts[#parts + 1] = text((money(0):gsub("[%d%s%.,]", "")))
-		-- the game's money field (game_bar.tl:252-266 uses it for the balance): typed or stepped, numbers only;
-		-- the game marks its own text number field deprecated in favour of it (gui_react_util.d.tl:130)
-		parts[#parts + 1] = builtin.DoubleSpinBox{ meta = { class = "mvr-setting", tooltip = _("mvr_reserve_tip") }, min = 0,
-			max = Queue.RESERVE_MAX, step = 100000, value = queue.reserve, onValueChange = function(v) setReserve(v) end }
+		-- a text field like the game's number field (gui_react_util.tl:384-398: TextInputField, a filter per typed
+		-- character, class no-clear-button), so the reserve shows with thousands separators (user decision
+		-- 20.10.2026; the spin box cannot). Digits and separators can be typed, everything else is dropped on accept;
+		-- the key makes the field show the stored value again after each change
+		parts[#parts + 1] = builtin.TextInputField{
+			meta = { class = "font-scale-body, no-clear-button, mvr-setting", tooltip = _("mvr_reserve_tip"),
+				localKey = "reserve:" .. num(queue.reserve) },
+			value = int(queue.reserve),
+			filter = function(t) return t:match("[%d%.,%s]") ~= nil end,
+			acceptOnFocusLoss = true,
+			onValueChange = function(t) setReserve(tonumber((tostring(t):gsub("%D", ""))) or 0) end,
+		}
 	end
 	parts[#parts + 1] = spacer()
 	local function side(children)
