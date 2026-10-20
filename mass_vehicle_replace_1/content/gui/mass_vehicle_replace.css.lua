@@ -203,18 +203,21 @@ function data()
 			backgroundColor1 = { colors.AccentDark[1], colors.AccentDark[2], colors.AccentDark[3], 0.5 },
 		})
 	end
-	-- custom: a soft glow behind the order box while it can be used, asked for by the user (20.10.2026, strength 2 of
-	-- three in a mock-up). The game's own soft light spot (gui/component/highlight@2x.tga in gui.zip, a white radial
-	-- fade) stretched behind the box and tinted with the yellow of the button at about half strength, the way the
-	-- tiles tint their surface (backgroundImage1 with backgroundColor1). The popup shadow tried first drew only a dark,
-	-- offset edge (game test 20.10.2026)
-	a("!mvr-box-calm", { padding = { 6, 18, 6, 18 } })
-	a("!mvr-box-aura", { padding = { 6, 18, 6, 18 } })
+	-- custom: a yellow frame around the order box while it can be used, asked for by the user (20.10.2026: the frame,
+	-- even all round). The game's card contour (line_vehicle_mgmt.css.lua:858-869 InfoBox: card_contour.tga as
+	-- borderImage, tinted with borderColor) in the yellow of the button. Tried before: the popup shadow (a dark edge
+	-- offset to the lower right, it is a drop shadow) and a light spot behind the box
+	a("!mvr-box-calm", { padding = { 3, 8, 3, 8 } })
+	a("!mvr-box-aura", { padding = { 3, 8, 3, 8 } })
 	if okColors and colors and type(colors.Warning) == "table" then
 		local w = colors.Warning
 		a("!mvr-box-aura", {
-			backgroundImage1 = { fileName = "::/gui/component/highlight@2x.tga" },
-			backgroundColor1 = { w[1], w[2], w[3], 0.45 },
+			borderImage = {
+				fileName = "::/gui/entity_window/design/card_contour.tga",
+				horizontal = { 0, 6, 26, 32 },
+				vertical = { 0, 6, 26, 32 },
+			},
+			borderColor = { w[1], w[2], w[3], 0.7 },
 		})
 	end
 	if okColors and colors and colors.Error then
