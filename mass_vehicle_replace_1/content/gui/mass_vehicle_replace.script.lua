@@ -2178,12 +2178,13 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		if line ~= " " then shownLines[#shownLines + 1] = text(line) end
 	end
 	local middle = { button }
-	if engineWarning then
-		middle[2] = builtin.BoxLayout{ meta = { class = "mvr-action-under" }, orientation = builtin.type.Orientation.Horizontal, children = {
-			gui_react_util.makeHorizontalSpacer(),
-			builtin.TextView{ meta = { class = "font-scale-body, warning", tooltip = _("mvr_engine_change_tip") }, text = engineWarning },
-			gui_react_util.makeHorizontalSpacer() } }
-	end
+	-- a line of its own under the whole row, so cost and box stay level with the button; always there, empty without a
+	-- warning, so the window keeps its height (user decision 20.10.2026)
+	local warningRow = builtin.BoxLayout{ meta = { class = "mvr-action-under" }, orientation = builtin.type.Orientation.Horizontal, children = {
+		gui_react_util.makeHorizontalSpacer(),
+		builtin.TextView{ meta = { class = "font-scale-body, warning", tooltip = engineWarning and _("mvr_engine_change_tip") or nil },
+			text = engineWarning or " " },
+		gui_react_util.makeHorizontalSpacer() } }
 	local summaryLines = {}
 	for k, line in ipairs(shownLines) do
 		if k > 1 then summaryLines[#summaryLines + 1] = gui_react_util.makeVerticalSpacer() end
@@ -2223,7 +2224,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 					builtin.Component{ meta = { class = (canQueue and not sel.queueRest) and "mvr-box-aura" or "mvr-box-calm" },
 						layout = builtin.BoxLayout{ children = { queueBox } } } } } },
 		}),
-		builtin.Component{ meta = { class = "mvr-gap" } },
+		-- the engine warning centered under the button; the window's row spacing above it, the details card right
+		-- below (user decision 20.10.2026: closer to the button, less room below)
+		warningRow,
 	}
 	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
 	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,

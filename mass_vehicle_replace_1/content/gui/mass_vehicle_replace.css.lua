@@ -187,10 +187,11 @@ function data()
 		innerSpacing = { 8, 0 },
 	})
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
-	-- the button and, under it, the engine warning, both centered (user decision 20.10.2026)
+	-- the button in the middle of its row; the engine warning in a row of its own under it, centered (user decision
+	-- 20.10.2026)
 	a("Window!mvr-window BoxLayout!mvr-action-mid", {
 		gravity = { 0, 0.5 },
-		innerSpacing = { 0, 4 },
+		innerSpacing = { 0, 0 },
 	})
 	a("Window!mvr-window BoxLayout!mvr-action-under", {
 		gravity = { -1, 0 },

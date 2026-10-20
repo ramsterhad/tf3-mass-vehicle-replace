@@ -1771,10 +1771,14 @@ local wl = engineLine(chooseRail("steam to electric", "m5", "m4"))
 check(wl.text == "Antrieb wechselt: Dampf " .. ARROW .. " Elektrisch", "steam to electric: " .. tostring(wl.text))
 -- centered right under the replace button (user decision 20.10.2026)
 do
-	local mid = find(content("steam to electric, place"), function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-action-mid" end)[1]
-	local under = mid and mid.props.children[2]
-	check(mid and mid.props.children[1].kind == "Button" and under and under.props.children[1].kind == "Spacer"
-		and under.props.children[2].props.text == wl.text and under.props.children[3].kind == "Spacer", "engine warning not centered under the button")
+	local placed = content("steam to electric, place")
+	local under = find(placed, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-action-under" end)[1]
+	check(under and under.props.children[1].kind == "Spacer" and under.props.children[2].props.text == wl.text
+		and under.props.children[3].kind == "Spacer", "engine warning not centered in its own row")
+	-- the row stays without a warning, so the window keeps its height (user decision 20.10.2026)
+	local plain = find(chooseRail("electric to electric, place", "m1", "m4"),
+		function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-action-under" end)[1]
+	check(plain and plain.props.children[2].props.text == " ", "warning row gone without a warning")
 end
 check(wl.meta.tooltip ~= nil and wl.meta.tooltip:find("Oberleitung", 1, true) ~= nil, "steam to electric: tooltip " .. tostring(wl.meta.tooltip))
 wl = engineLine(chooseRail("electric to electric", "m1", "m4"))
