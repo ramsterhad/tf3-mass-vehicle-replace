@@ -2435,6 +2435,25 @@ do -- own block: the main chunk is at the 200 local limit
 		clearQueue(tt)
 	end)
 
+	section("orders tab: prices are read again in a new game year", function()
+		local tt = queueTrucks("revalue", 0)
+		bankBalance = 0
+		hostTick()
+		local q = openQueue(content("revalue"), "revalue")
+		check(lineOf(q.bodies[1], "Stück $61000 | Gesamt $488000") ~= nil, "revalue: first prices")
+		residuals[115] = 1000 -- the oldest truck is worth something after all
+		q = queueWindow("revalue, same year")
+		check(lineOf(q.bodies[1], "Stück $61000 | Gesamt $488000") ~= nil, "revalue: read again within the game year")
+		currentYear = currentYear + 1
+		hostTick()
+		q = queueWindow("revalue, new year")
+		check(lineOf(q.bodies[1], "Stück $60000 | Gesamt $487000") ~= nil, "revalue: not read again in a new game year")
+		currentYear = currentYear - 1
+		residuals[115] = nil
+		closeQueue()
+		clearQueue(tt)
+	end)
+
 	section("infinite money: the whole queue in one tick", function()
 		local tt = queueTrucks("infinite queue", 0)
 		bankBalance, sent = nil, {}

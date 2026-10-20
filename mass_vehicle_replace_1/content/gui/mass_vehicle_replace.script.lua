@@ -1285,6 +1285,8 @@ local function queueTick()
 	-- the window's own batch is still being answered: its vehicles still look unchanged (#9), so wait
 	if pending() then return end
 	local year = api.engine.util.getYear()
+	-- the orders tab values its vehicles once per game year; the year in its signature redraws it then
+	queue.year = year
 	local job = headJob(year)
 	if not job then return end
 	local funds, infinite = queueFunds()
@@ -2301,7 +2303,7 @@ end
 -- memory only (runs in a timed step state, see queuedNow); the content recipe loads the queue before it renders
 local function queueSig()
 	local parts = { queue.paused and "p" or "r", num(queue.reserve), queue.foreign and "f" or "", queue.lastError or "",
-		num(queue.inflightN) }
+		num(queue.inflightN), num(queue.year or 0) }
 	for __, j in ipairs(queue.jobs) do parts[#parts + 1] = jobSig(j) end
 	return table.concat(parts, "|")
 end
