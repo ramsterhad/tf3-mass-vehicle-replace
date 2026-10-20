@@ -140,15 +140,5 @@ function data()
 		innerSpacing = { 4, 4 },
 	})
 
-	-- queue counter in the game bar: the same rules as the game's earnings display
-	-- (game_bar_display_earnings.css.lua), so it sits and spaces like its neighbours
-	a("R::MvrQueueBar", {
-		gravity = { 0.5, 0.5 },
-	})
-	a("R::MvrQueueBar BoxLayout", {
-		innerSpacing = { 8, 0 },
-		outerSpacing = { 14, 0 },
-	})
-
 	return result
 end

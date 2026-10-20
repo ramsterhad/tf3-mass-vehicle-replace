@@ -2602,24 +2602,9 @@ do -- own block: the main chunk is at the 200 local limit
 		clearQueue(content("race, clear"))
 	end)
 
-	section("game bar: Queued n, nothing while empty, nothing in the map editor", function()
-		local bar = render("MvrQueueBar", {})
-		check(bar.kind == "BoxLayout" and #find(bar, function(n) return n.kind == "TextView" end) == 0, "empty queue must give an empty layout")
-		local tt = queueTrucks("bar", 0)
-		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
-		bar = render("MvrQueueBar", {})
-		rules(bar, "game bar")
-		local texts = {}
-		for _i, n in ipairs(find(bar, function(n) return n.kind == "TextView" end)) do texts[#texts + 1] = n.props.text .. ":" .. n.props.meta.class end
-		check(table.concat(texts, "|") == "Nachbestellt:font-scale-headline|8:font-scale-headline", "bar texts: " .. table.concat(texts, "|"))
-		local tip = find(bar, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.tooltip end)[1]
-		check(tip and tip.props.meta.tooltip == "8 Fahrzeuge warten auf Ersatz. Die Nachbestellungen stehen im Fenster „Fahrzeuge ersetzen“ eines Depots.", "bar tooltip: " .. tostring(tip and tip.props.meta.tooltip))
-		-- isMapEditor once per mount, like the game's earnings display; nothing from the engine
-		check(MOCK.apiCalls == (MOCK.apiCallsByName.isMapEditor or 0) and (MOCK.apiCallsByName.getComponent or 0) == 0, "bar reads the engine: " .. MOCK.apiCalls)
-		MOCK.mapEditor = true
-		check(render("MvrQueueBar", {}) == nil, "bar shown in the map editor")
-		MOCK.mapEditor = false
-		clearQueue(tt)
+	section("no counter in the game bar: everything stays in the depot window (user decision 20.10.2026)", function()
+		local ok = pcall(render, "MvrQueueBar", {})
+		check(not ok, "a game bar counter is still registered")
 	end)
 
 	section("an error in the tick never reaches the UI; five in a row pause the queue", function()

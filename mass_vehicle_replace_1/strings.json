@@ -99,10 +99,7 @@
 		"mvr_queue_counts": "Open: %d · Replaced: %d · Skipped: %d",
 		"mvr_cancel_job": "Cancel",
 		"mvr_remove_job": "Remove",
-		"mvr_queue_job": "%s → %s",
-		"mvr_queue_bar": "On order",
-		"mvr_queue_bar_tip": "%d vehicles are waiting to be replaced. The orders are in the \"Replace Vehicles\" window of a depot.",
-		"mvr_queue_bar_tip_1": "1 vehicle is waiting to be replaced. The orders are in the \"Replace Vehicles\" window of a depot."
+		"mvr_queue_job": "%s → %s"
 	},
 	"de": {
 		"mvr_title": "Mass Vehicle Replace",
@@ -204,9 +201,6 @@
 		"mvr_queue_counts": "Offen: %d · Ersetzt: %d · Übersprungen: %d",
 		"mvr_cancel_job": "Abbrechen",
 		"mvr_remove_job": "Entfernen",
-		"mvr_queue_job": "%s → %s",
-		"mvr_queue_bar": "Nachbestellt",
-		"mvr_queue_bar_tip": "%d Fahrzeuge warten auf Ersatz. Die Nachbestellungen stehen im Fenster „Fahrzeuge ersetzen“ eines Depots.",
-		"mvr_queue_bar_tip_1": "1 Fahrzeug wartet auf Ersatz. Die Nachbestellungen stehen im Fenster „Fahrzeuge ersetzen“ eines Depots."
+		"mvr_queue_job": "%s → %s"
 	}
 }

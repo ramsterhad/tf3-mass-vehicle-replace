@@ -1349,7 +1349,7 @@ if not MvrQueueHost then log("mod entry point not available, queue host disabled
 Queue.loadKept, Queue.ensureLoaded, Queue.writeSaveData, Queue.openCount, Queue.jobById = loadKept, ensureLoaded, writeSaveData, openCount, jobById
 Queue.enqueue, Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused = enqueue, removeJob, cancelAll, setReserve, setPaused
 Queue.release = releaseReplaced
-Queue.num, Queue.host, Queue.queuedNow = num, MvrQueueHost, queuedNow
+Queue.num, Queue.host = num, MvrQueueHost
 end
 
 -- Replaces alt with neu in every vehicle; the other parts stay as they are. partial: only the vehicles the balance
@@ -2427,41 +2427,7 @@ openQueueWindow = function()
 	if ok then queueWindowOpen = true else log("opening queue window failed", tostring(err)) end
 end
 
--- Counter in the game bar ----------------------------------------------------------------------------------
--- Built exactly like the game's earnings display (game_bar_display_earnings.script.tl:7-38): a plugin at
--- GameBarInfoDisplayExtension, two headline texts in a component with a tooltip, nothing when the queue is empty.
--- Not clickable: a flat button there would need own colours (custom), not approved (user decision 20.10.2026).
-local okBar, game_bar_widgets = pcall(ug_require, "::/gui/game_bar/game_bar_widgets.tl")
-local MvrQueueBar = okBar and type(game_bar_widgets) == "table" and game_bar_widgets.GameBarInfoDisplayExtension
-	and react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "MvrQueueBar", function()
-		local isMapEditorRef = react.useRefLazy(function()
-			local ok, v = pcall(function() return api.gui.game.isMapEditor() end)
-			return ok and v == true
-		end)
-		-- the count is two Lua numbers; the recipe redraws only when it changes
-		local countState = engine_react_util.useStepStateTimer(Queue.queuedNow, 0.5)
-		if isMapEditorRef:get() then return nil end
-		local n = countState:old()
-		if n == 0 then return builtin.BoxLayout{ children = {} } end
-		return builtin.BoxLayout{
-			orientation = builtin.type.Orientation.Horizontal,
-			children = {
-				builtin.Component{
-					meta = { tooltip = count("mvr_queue_bar_tip", n) },
-					layout = builtin.BoxLayout{
-						orientation = builtin.type.Orientation.Horizontal,
-						children = {
-							text(_("mvr_queue_bar"), "font-scale-headline"),
-							text(num(n), "font-scale-headline"),
-						},
-					},
-				},
-			},
-		}
-	end) or nil
-if not MvrQueueBar then log("game bar extension not available, queue counter disabled") end
-
-Queue.window, Queue.bar = MvrQueueWindow, MvrQueueBar
+Queue.window = MvrQueueWindow
 end
 
 -- "Replace Vehicles" button in the depot window, to the right of "Manage Vehicles".
@@ -2575,7 +2541,6 @@ function data()
 		depotProbe = MvrDepotProbe,
 		depotProbeCondition = depotProbeCondition,
 		queueHost = Queue.host,
-		queueBar = Queue.bar,
 		-- for the offline UI check (tf3-sdk ui_check), not referenced by a resource
 		queueWindow = Queue.window,
 	}
