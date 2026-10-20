@@ -12,7 +12,7 @@ local CARGO_ICON = 18
 local CARGO_ROW = ITEM_IMAGE[1] + 8 + ITEM_TEXT
 local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits centered below it
 local STATS_HALF = CELL - 20
-local SETTING = 180 -- width of the reserve field and the hold box column in the orders tab
+local SETTING = 140 -- width of the reserve field in the orders tab
 
 local function fixed(w, h)
 	return {
@@ -71,8 +71,13 @@ function data()
 	a("!mvr-content", {
 		gravity = { 0, 0 },
 	})
-	-- orders tab: the controls of the settings in one right column of the same width (user decision 20.10.2026)
-	a("!mvr-setting", with(fixed(SETTING), { gravity = { 0, 0.5 } }))
+	-- orders tab: as wide as the replace tab (two cells, the middle and the row spacing), so the window keeps its width
+	-- when the tab changes (game test 20.10.2026: it was narrower)
+	a("!mvr-orders", with(fixed(2 * CELL + MID + 8), { gravity = { 0, 0 } }))
+	-- orders tab: the reserve field
+	-- with a fixed height like the game's own number fields (camera_tool.css.lua:44-47: 24): without it the field
+	-- grew huge in the game (game test 20.10.2026)
+	a("!mvr-setting", with(fixed(SETTING, 24), { gravity = { 0, 0.5 } }))
 
 	-- vehicle stats (#16): two halves of a fixed width below the two columns. The game's card around them takes
 	-- 3 + 3 + 3 px on each side (content_card.css.lua: collapse margin, card-collapsible padding, card-margin-inner

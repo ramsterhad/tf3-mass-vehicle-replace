@@ -2199,9 +2199,10 @@ end)
 
 local windowOpen = false
 
--- Two tabs in the window's header, "Replace" and "Orders (n)" (user decision 20.10.2026), built like the game's
--- entity windows with several parts (make_entity_window.tl:220-250: TabWidget of class no-content as header,
--- empty items, the window content follows the selected tab). Where the header sits is a game test.
+-- Two tabs, "Replace" and "Orders (n)" (user decision 20.10.2026), built like the game's entity windows with several
+-- parts (make_entity_window.tl:220-250: TabWidget of class no-content, empty items, the content follows the selected
+-- tab). They sit at the top of the content, below the title: as the window's header they took the title's place
+-- and cut it to "Mass Veh" (game test 20.10.2026).
 local function tabs(tabState, n)
 	local function tab(value, label)
 		return builtin.TabWidgetChild{
@@ -2246,8 +2247,10 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 		closable = true,
 		movable = true,
 		autoFocusOnBecomingVisible = true,
-		header = queueContent and tabs(tabState, countState:old() or 0) or nil,
-		content = onOrders and queueContent{ onClose = p.onClose } or MvrContent{ onClose = p.onClose },
+		content = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = {
+			queueContent and tabs(tabState, countState:old() or 0) or builtin.BoxLayout{ children = {} },
+			onOrders and queueContent{ onClose = p.onClose } or MvrContent{ onClose = p.onClose },
+		} },
 	}
 end)
 
@@ -2363,6 +2366,8 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	-- balance card then (maintenance_station_eow.script.tl conditionMaintenanceStationBalance)
 	if not infiniteMoney() then
 		parts[#parts + 1] = builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_reserve_tip") }, text = _("mvr_reserve") }
+		-- the currency sign as the game writes money, "$" in front (user decision 20.10.2026: "Reserve $ [field]")
+		parts[#parts + 1] = text((money(0):gsub("[%d%s%.,]", "")))
 		-- the game's money field (game_bar.tl:252-266 uses it for the balance): typed or stepped, numbers only;
 		-- the game marks its own text number field deprecated in favour of it (gui_react_util.d.tl:130)
 		parts[#parts + 1] = builtin.DoubleSpinBox{ meta = { class = "mvr-setting", tooltip = _("mvr_reserve_tip") }, min = 0,
@@ -2460,7 +2465,7 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 		panel = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = cards }
 	end
 	-- as wide as the replace tab, so the window keeps its width when the tab changes
-	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-content" },
+	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-orders" },
 		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical,
 			children = { status and text(status, "font-scale-body") or builtin.BoxLayout{ children = {} }, panel,
 				MvrQueueSettings{ sig = queueSig() } } } } } }

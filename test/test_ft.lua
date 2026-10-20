@@ -2043,7 +2043,13 @@ do -- own block: the main chunk is at the 200 local limit
 	end
 	-- the replace window with its two tabs in the header (user decision 20.10.2026: no second window)
 	local function mainWindow()
-		return render("MvrWindow", { onClose = function() end })
+		local w = render("MvrWindow", { onClose = function() end })
+		-- the tabs sit at the top of the content (game test 20.10.2026: as header they cut the title), the tab's
+		-- content follows them; header and shown content are put where the checks look for them
+		local kids = w.props.content and w.props.content.props.children or {}
+		check(w.props.header == nil, "tabs must not sit in the window header")
+		w.props.header, w.props.content = kids[1], kids[2]
+		return w
 	end
 	-- MOCK: a field, not a local (the main chunk is at Lua's limit of 200 locals)
 	function MOCK.tabLabels(w)
@@ -2190,7 +2196,7 @@ do -- own block: the main chunk is at the 200 local limit
 		tt = chooseKasten("box place", 200000)
 		local col = find(tt, function(n)
 			local c = n.kind == "BoxLayout" and n.props.children
-			return c and #c == 2 and c[2].kind == "CheckBox"
+			return c and #c == 2 and c[2].kind == "CheckBox" and c[1].kind == "Button"
 		end)[1]
 		check(col ~= nil and col.props.orientation == "V" and col.props.children[1].kind == "Button", "the box must sit under the replace button")
 	end)
@@ -2261,6 +2267,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local q = openQueue(content("reserve"), "reserve")
 		local spin = find(q.settings, function(n) return n.kind == "DoubleSpinBox" end)[1]
 		check(spin ~= nil and spin.props.min == 0 and spin.props.value == 0, "reserve spin box")
+		check(hasText(q.settings, "Reserve") and hasText(q.settings, "$"), "reserve: currency sign in front of the field")
 		spin.props.onValueChange(100000)
 		check(saved().queueReserve == "100000", "reserve not kept: " .. tostring(saved().queueReserve))
 		q = queueWindow("reserve set")
@@ -2536,7 +2543,7 @@ do -- own block: the main chunk is at the 200 local limit
 		-- name on the left, the box in the right column of the settings, like the reserve field
 		check(box and box.props.label == "Nachbestellungen anhalten", "hold box label: " .. tostring(box and box.props.label))
 		-- the settings are the footer below the orders (variant D, user decision 20.10.2026)
-		local kids = find(q.tree, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-content" end)[1].props.layout.props.children
+		local kids = find(q.tree, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-orders" end)[1].props.layout.props.children
 		check(kids[#kids].kind == "recipe:MvrQueueSettings", "settings must be the last part of the tab")
 		check(#find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end) == 1, "settings must be one row")
 		check(box ~= nil and box.props.value == 0, "paused box")
