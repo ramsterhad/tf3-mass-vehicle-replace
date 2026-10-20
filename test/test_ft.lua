@@ -2368,7 +2368,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local card = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
 		local kinds = {}
 		for _i, c in ipairs(card and card.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
-		check(table.concat(kinds, "|") == "mvr-order-end|mvr-divider|BoxLayout|mvr-divider|mvr-order-end", "card parts: " .. table.concat(kinds, "|"))
+		check(table.concat(kinds, "|") == "mvr-order-num|mvr-divider|BoxLayout|mvr-divider|mvr-order-end", "card parts: " .. table.concat(kinds, "|"))
 		check(card and #find(card.props.children[1], function(n) return n.kind == "TextView" and n.props.text == "1" end) == 1
 			and #find(card.props.children[5], function(n) return n.kind == "Button" end) == 1, "number left, cancel right, each in an end")
 		local rowsBox = card and card.props.children[3]
@@ -2376,7 +2376,20 @@ do -- own block: the main chunk is at the 200 local limit
 		-- the arrow between two equally wide halves, so it stands in the middle of every card (user decision 20.10.2026)
 		local hk = {}
 		for _i, c in ipairs(head.props.children) do hk[#hk + 1] = c.kind == "Component" and c.props.meta.class or c.kind .. (c.props.text and ("=" .. c.props.text) or "") end
-		check(table.concat(hk, "|") == "mvr-order-half|TextView=→|mvr-order-half", "order head: " .. table.concat(hk, "|"))
+		check(table.concat(hk, "|") == "mvr-order-half-left|TextView=→|mvr-order-half", "order head: " .. table.concat(hk, "|"))
+		-- both models start at the arrow: the old one mirrored, name then image (user decision 20.10.2026)
+		local function cellKinds(h)
+			local cell = h.props.layout.props.children
+			local m = cell[1].kind == "Spacer" and cell[2] or cell[1]
+			local out = {}
+			for _i, c in ipairs(m.props.children) do out[#out + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+			return (cell[1].kind == "Spacer" and "Spacer|" or "") .. table.concat(out, "+") .. (cell[#cell].kind == "Spacer" and "|Spacer" or "")
+		end
+		check(cellKinds(head.props.children[1]) == "Spacer|TextView+ImageView", "old model: " .. cellKinds(head.props.children[1]))
+		check(cellKinds(head.props.children[3]) == "ImageView+TextView|Spacer", "new model: " .. cellKinds(head.props.children[3]))
+		-- the figures centered in their tiles, the labels on the left
+		local val = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-tile-value" end)
+		check(#val == 4 and val[1].props.children[1].kind == "Spacer" and val[1].props.children[3].kind == "Spacer", "tile figures not centered")
 		local texts = {}
 		for _i, c in ipairs(row2 and row2.props.children or {}) do
 			local tv = c.kind == "Component" and c.props.meta.class == "mvr-tile" and find(c, function(n) return n.kind == "TextView" end) or {}

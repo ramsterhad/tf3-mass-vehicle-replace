@@ -2455,8 +2455,9 @@ end)
 -- ending like "(2-teilig)" stay (user decision 20.10.2026); 24 fit the 186 px beside the image even with wide letters
 -- (mock-up measured in Lato 15 px, the game's font)
 local NAME_CHARS = 24
--- the small image of a model, as in the lists, and its name; the full name in the tooltip when it was cut
-local function modelCell(key)
+-- the small image of a model, as in the lists, and its name; the full name in the tooltip when it was cut.
+-- mirrored: name first, image next to the arrow (the old model, so both start from the middle of the card)
+local function modelCell(key, mirrored)
 	local i = info(key)
 	local img = (i and i.icon and i.icon ~= "")
 		and builtin.ImageView{ meta = { class = "mvr-item-image", mouseTransparent = true }, path = i.icon, scaling = builtin.type.ImageViewScaling.AutoFit }
@@ -2475,6 +2476,7 @@ local function modelCell(key)
 	-- game then shows the full name on hover (builtin.d.tl TextViewParam.tooltipWhenClipped)
 	local label = builtin.TextView{ meta = { class = "font-scale-body, mvr-order-name", tooltip = cutName ~= name and name or nil },
 		text = cutName, tooltipWhenClipped = name }
+	if mirrored then return hbox("mvr-row", { label, img }) end
 	return hbox("mvr-row", { img, label })
 end
 
@@ -2527,9 +2529,11 @@ end
 
 -- one figure of an order: a small label over its value, on a tile of its own (user decision 20.10.2026, variant E of
 -- the card mock-ups)
+-- the label on the left, the figure centered (user decision 20.10.2026)
 local function tile(label, value, tooltip)
 	return builtin.Component{ meta = { class = "mvr-tile", tooltip = tooltip },
-		layout = vbox("mvr-tile-rows", { text(label, "font-scale-annotation"), text(value, "font-scale-title-4") }) }
+		layout = vbox("mvr-tile-rows", { text(label, "font-scale-annotation"),
+			hbox("mvr-tile-value", { spacer(), text(value, "font-scale-title-4"), spacer() }) }) }
 end
 
 -- one order: its number, both models with their images, four tiles (open, skipped, the price of the next vehicle and
@@ -2540,12 +2544,14 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	if not j then return builtin.BoxLayout{ children = {} } end
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
-	-- the arrow always in the same place, the middle of the card: two equally wide halves around it, the old model
-	-- pushed to the arrow from the left, the new one from the right (user decision 20.10.2026)
-	local function half(children)
-		return builtin.Component{ meta = { class = "mvr-order-half" }, layout = hbox("mvr-row", children) }
+	-- the arrow always in the same place, the middle of the card: two halves around it, both models starting at the
+	-- arrow, the old one mirrored (user decision 20.10.2026). The left half is wider by what the narrow number end
+	-- saves against the cancel end, so the arrow stays in the middle of the card
+	local function half(class, children)
+		return builtin.Component{ meta = { class = class }, layout = hbox("mvr-row", children) }
 	end
-	local rows = { hbox("mvr-order-head", { half({ spacer(), modelCell(j.alt) }), text("→"), half({ modelCell(j.neu), spacer() }) }) }
+	local rows = { hbox("mvr-order-head", { half("mvr-order-half-left", { spacer(), modelCell(j.alt, true) }), text("→"),
+		half("mvr-order-half", { modelCell(j.neu), spacer() }) }) }
 	if j.blocked then
 		-- the game's red box for problems (default.css.lua:35-39, used like savegame_react_util.tl:653)
 		rows[2] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error-tape")
@@ -2564,9 +2570,8 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	-- three parts with a thin line between them (user decision 20.10.2026): the number, the order, cancel
 	local function divider() return builtin.Component{ meta = { class = "mvr-divider" } } end
 	return hbox("mvr-row", {
-		-- number and cancel in equally wide ends, so the middle of the order is the middle of the card and the arrow
-		-- sits in the middle of the window (user decision 20.10.2026)
-		builtin.Component{ meta = { class = "mvr-order-end" }, layout = hbox("mvr-order-end-row", { spacer(),
+		-- the number in a narrow end (user decision 20.10.2026: at least half), cancel in a wider one
+		builtin.Component{ meta = { class = "mvr-order-num" }, layout = hbox("mvr-order-end-row", { spacer(),
 			text(tostring(p.index), "font-scale-title-2, mvr-order-side"), spacer() }) },
 		divider(),
 		vbox("mvr-order-body", rows),

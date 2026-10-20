@@ -16,7 +16,8 @@ local SETTING = 100 -- width of the reserve field in the orders tab (user decisi
 local ACTION_SIDE = 330 -- width of each side of the replace button
 local ORDER_HALF = 290 -- width of each half of an order's head (image 96, gap 8, name)
 local ORDER_TILE = 145 -- width of each of an order's four tiles
-local ORDER_END = 110 -- width of an order card's two ends, the number and cancel ("Abbrechen" is about 100)
+local ORDER_END = 110 -- width of an order card's cancel end ("Abbrechen" is about 100)
+local ORDER_NUM = 50 -- width of an order card's number end (user decision 20.10.2026: at least half of 110)
 
 local function fixed(w, h)
 	return {
@@ -96,6 +97,10 @@ function data()
 	})
 	-- the two halves of an order's head, equally wide so the arrow between them sits in the same place on every card:
 	-- fixed, the names inside are cut to fit
+	a("!mvr-order-half-left", with(fixed(ORDER_HALF + ORDER_END - ORDER_NUM), { gravity = { -1, 0.5 } }))
+	a("Window!mvr-window Component!mvr-order-half-left > BoxLayout", {
+		gravity = { -1, 0.5 },
+	})
 	a("!mvr-order-half", {
 		size = { ORDER_HALF, -1 },
 		minSize = { ORDER_HALF, 0 },
@@ -103,7 +108,8 @@ function data()
 		gravity = { -1, 0.5 },
 	})
 	-- an order's model name beside its image: the rest of the half (image 96, gap 8), fixed so it never pushes the arrow
-	a("TextView!mvr-order-name", with(fixed(ORDER_HALF - ITEM_IMAGE[1] - 8), { gravity = { 0, 0.5 } }))
+	-- as wide as the name, at most the rest of the half, so it sits right at the image on both sides
+	a("TextView!mvr-order-name", { maxSize = { ORDER_HALF - ITEM_IMAGE[1] - 8, 10000 }, gravity = { 0, 0.5 } })
 	a("Window!mvr-window Component!mvr-order-half > BoxLayout", {
 		gravity = { -1, 0.5 },
 	})
@@ -127,12 +133,17 @@ function data()
 			vertical = { 0, 9, 21, 30 },
 		},
 	})
+	a("Window!mvr-window BoxLayout!mvr-tile-value", {
+		gravity = { -1, 0 },
+		innerSpacing = { 0, 0 },
+	})
 	a("Window!mvr-window BoxLayout!mvr-tile-rows", {
 		innerSpacing = { 0, 0 },
 	})
 	-- number and cancel centered in the height of the card
 	-- the two ends of an order card, equally wide (number, cancel), each centering its content
 	a("!mvr-order-end", with(fixed(ORDER_END), { gravity = { 0, -1 } }))
+	a("!mvr-order-num", with(fixed(ORDER_NUM), { gravity = { 0, -1 } }))
 	a("Window!mvr-window BoxLayout!mvr-order-end-row", {
 		gravity = { -1, 0.5 },
 	})
