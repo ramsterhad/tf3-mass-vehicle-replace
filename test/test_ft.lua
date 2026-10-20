@@ -2178,6 +2178,30 @@ do -- own block: the main chunk is at the 200 local limit
 	vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1 -- the oldest truck
 	guiSaveData[MOD] = {}
 
+	section("the replace button keeps the reserve as well (user decision 20.10.2026)", function()
+		openQueue(content("window reserve"), "window reserve")
+		find(queueWindow("window reserve, set").settings, function(n) return n.kind == "TextInputField" end)[1].props.onValueChange("100.000")
+		closeQueue()
+		-- 488.000 on the account, 100.000 stay: 388.000 cover 6 of the 8 trucks at 61.000
+		local tt = chooseKasten("window reserve, rich", 488000)
+		check(buttonText(replaceButton(tt)) == "6 von 8 ersetzen", "reserve: button " .. tostring(buttonText(replaceButton(tt))))
+		sent = {}
+		local box = queueBox(tt)
+		check(box and box.props.value == 0, "reserve: the order box must be off here")
+		replaceButton(tt).props.onClick()
+		step()
+		check(#sent == 6 and bankBalance == 488000 - 6 * 61000, "reserve: sent " .. #sent .. ", balance left " .. tostring(bankBalance))
+		-- above the reserve not one truck: red, and the tooltip names the reserve
+		tt = chooseKasten("window reserve, poor", 150000)
+		local b = replaceButton(tt)
+		check(b.props.meta.enabled == false and buttonText(b) == "Nicht genug Geld", "reserve, poor: button " .. tostring(buttonText(b)))
+		check(b.props.meta.tooltip == "Nicht genug Geld über der Reserve von $100000 (Reiter Nachbestellungen).", "reserve, poor: tooltip " .. tostring(b.props.meta.tooltip))
+		openQueue(content("window reserve, back"), "window reserve, back")
+		find(queueWindow("window reserve, back").settings, function(n) return n.kind == "TextInputField" end)[1].props.onValueChange("0")
+		closeQueue()
+		clearQueue(content("window reserve, clear"))
+	end)
+
 	section("the box shows only while the money does not cover all", function()
 		local tt = chooseKasten("box, one short", 487999)
 		local box = queueBox(tt)

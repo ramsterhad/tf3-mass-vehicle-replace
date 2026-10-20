@@ -651,19 +651,26 @@ local function infiniteMoney()
 	return ok and funds == nil
 end
 
--- whether the balance covers cost, like the purchase window (funds >= cost): inf covers everything, nan nothing
+-- the reserve of the orders tab: the window keeps it on the account as well (user decision 20.10.2026: three trains
+-- bought by hand took the balance far below it)
+local function reserveNow()
+	return queue and queue.loaded and not queue.foreign and queue.reserve or 0
+end
+
+-- whether the balance above the reserve covers cost, like the purchase window (funds >= cost): inf covers
+-- everything, nan nothing
 local function enoughMoney(cost)
 	if cost <= 0 then return true end
 	local ok, funds = readBalance()
 	if not ok then return true end -- unreadable: leave it to the game, as before
-	return funds == nil or funds >= cost
+	return funds == nil or funds - reserveNow() >= cost
 end
 
 -- the balance for partial replacing: a real, finite number or nil; nan or inf would let every comparison pass
 -- (a test with a nan balance replaced all vehicles), so they count as unreadable
 local function balance()
 	local ok, funds = readBalance()
-	if ok and type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds end
+	if ok and type(funds) == "number" and funds == funds and funds > -math.huge and funds < math.huge then return funds - reserveNow() end
 	return nil
 end
 
@@ -2137,7 +2144,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			enabled = (affordable or partial or queueAll) and not busy and e ~= nil and neuInfo ~= nil,
 			tooltip = partial and (some == 1 and tr("mvr_replace_some_tip_1", e.vehicles)
 				or tr("mvr_replace_some_tip", some, e.vehicles)) or queueAll and _("mvr_queue_rest_tip")
-				or not affordable and _("mvr_not_enough_money") or nil,
+				or not affordable and (reserveNow() > 0 and tr("mvr_not_enough_reserve", money(reserveNow())) or _("mvr_not_enough_money")) or nil,
 		},
 		content = builtin.Component{
 			layout = builtin.BoxLayout{
