@@ -135,6 +135,11 @@ function data()
 	-- with a fixed height like the game's own number fields (camera_tool.css.lua:44-47: 24): without it the field
 	-- grew huge in the game (game test 20.10.2026)
 	a("!mvr-setting", with(fixed(SETTING, 24), { gravity = { 0, 0.5 } }))
+	-- without the small plus and minus buttons: the reserve is typed (user decision 20.10.2026); the game hides them
+	-- the same way in its waiting time field (line_vehicle_mgmt.css.lua:2120-2122), folded here so the text keeps the room
+	a("Window!mvr-window DoubleSpinBox!mvr-setting Button", {
+		visibility = "folded",
+	})
 
 	-- vehicle stats (#16): two halves of a fixed width below the two columns. The game's card around them takes
 	-- 3 + 3 + 3 px on each side (content_card.css.lua: collapse margin, card-collapsible padding, card-margin-inner

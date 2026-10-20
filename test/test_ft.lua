@@ -1347,6 +1347,11 @@ table.sort(partialIds)
 check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
 t = content("partial, after the click")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8." end) == 1, "partial: result line")
+-- the selection stays after the click: the old list shows the 5 trucks left, the new list keeps its model, the result
+-- stands above the cost (game test 20.10.2026: the new list went empty while the old one still offered the rest)
+check(combos(t)[1].props.value == "m10" and combos(t)[2].props.value == "m11", "partial: selection after the click: "
+	.. tostring(combos(t)[1].props.value) .. " / " .. tostring(combos(t)[2].props.value))
+check(buttonText(replaceButton(t)) ~= "Ersetzen", "partial: the button must offer the trucks left: " .. tostring(buttonText(replaceButton(t))))
 check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
 -- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
@@ -1951,6 +1956,10 @@ do -- own block: the main chunk is at the 200 local limit
 	check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
 	body = detailsBody(card, "stats tram")
 	check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+	-- without a new model there is nothing to replace: no count, no click (game test 20.10.2026: "3 ersetzen" stood
+	-- enabled beside an empty new list)
+	check(replaceButton(t).props.meta.enabled == false and buttonText(replaceButton(t)) == "Ersetzen",
+		"no new model: button " .. tostring(buttonText(replaceButton(t))) .. ", enabled " .. tostring(replaceButton(t).props.meta.enabled))
 
 	-- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
 	storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
@@ -2308,7 +2317,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(table.concat(kinds, "|") == "TextView|mvr-divider|BoxLayout|mvr-divider|Button", "card parts: " .. table.concat(kinds, "|"))
 		local rowsBox = card and card.props.children[3]
 		local head, row2 = rowsBox.props.children[1], rowsBox.props.children[2]
-		check(head.props.children[1].kind ~= "Spacer", "models start on the left")
+		check(head.props.children[1].kind == "Spacer" and head.props.children[#head.props.children].kind == "Spacer", "models must be centered")
 		local texts = {}
 		for _i, c in ipairs(row2 and row2.props.children or {}) do
 			local tv = c.kind == "Component" and c.props.meta.class == "mvr-tile" and find(c, function(n) return n.kind == "TextView" end) or {}

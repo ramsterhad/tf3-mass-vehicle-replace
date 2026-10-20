@@ -1898,6 +1898,7 @@ local function topBar(update)
 				update(function()
 					sel.carrier = v == 1 and c.value or nil
 					sel.alt, sel.neu = nil, nil
+					result.text = ""
 				end)
 			end,
 		}
@@ -2025,9 +2026,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	local neuInfo = sel.neu and info(sel.neu) or nil
 	if neuInfo and not (fits(neuInfo) and available(neuInfo, year)) then neuInfo = nil end
 	-- nothing chosen yet: the top model, like the old list (user decision 19.10.2026), so the list shows no empty
-	-- placeholder line; replacing still needs the click. Not while the result of the last batch is shown: it stands in
-	-- the summary until a model is chosen (below), and a preselected model would hide it
-	if not neuInfo and neus[1] and result.text == "" then neuInfo = neus[1] end
+	-- placeholder line; replacing still needs the click. Also after a batch: the new list must not go empty while the
+	-- old one still shows the vehicles left (game test 20.10.2026)
+	if not neuInfo and neus[1] then neuInfo = neus[1] end
 
 	local altItems = {}
 	for k, x in ipairs(alts) do
@@ -2101,8 +2102,12 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	elseif not altInfo then
 		summary = { _("mvr_no_vehicles"), " " }
 	end
-	-- the result of the last replacement stays in the same place until a new model is selected
-	if not neuInfo and resultState:old() ~= "" then summary = { resultState:old(), " " } end
+	-- the result of the last replacement stays above the cost until another model is selected; "not enough money"
+	-- only when the red button does not say so already
+	local last = resultState:old()
+	if last ~= "" and not (last == _("mvr_not_enough_money") and not affordable and not partial and not queueAll) then
+		table.insert(summary, 1, last)
+	end
 
 	local altContent, neuContent = {}, {}
 	for k, x in ipairs(alts) do altContent[k] = x.i.key .. ":" .. x.e.parts .. ":" .. x.e.vehicles end
@@ -2127,7 +2132,9 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		meta = {
 			class = "primary, mvr-replace-btn" .. (affordable and "" or (partial or queueAll) and ", mvr-partial" or ", mvr-no-money"),
 			-- disabled while the previous batch is still being replaced (issue #9)
-			enabled = (affordable or partial or queueAll) and not busy,
+			-- and only with both models: without a new one there is nothing to replace (game test 20.10.2026: "3 ersetzen"
+			-- stood enabled beside an empty new list)
+			enabled = (affordable or partial or queueAll) and not busy and e ~= nil and neuInfo ~= nil,
 			tooltip = partial and (some == 1 and tr("mvr_replace_some_tip_1", e.vehicles)
 				or tr("mvr_replace_some_tip", some, e.vehicles)) or queueAll and _("mvr_queue_rest_tip")
 				or not affordable and _("mvr_not_enough_money") or nil,
@@ -2139,7 +2146,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
 					text(busy and _("mvr_replacing") or partial and tr("mvr_replace_some", some, e.vehicles)
 						or queueAll and count("mvr_queue_all", e.vehicles)
-						or not affordable and _("mvr_not_enough_money") or e and tr("mvr_replace_n", e.vehicles) or _("mvr_replace")),
+						or not affordable and _("mvr_not_enough_money") or e and neuInfo and tr("mvr_replace_n", e.vehicles) or _("mvr_replace")),
 				},
 			},
 		},
@@ -2150,8 +2157,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 				result.text = _("mvr_error") .. " " .. tostring(err)
 				log("error", tostring(err))
 			end
-			-- clear the selection: the result is now shown below
-			update(function() sel.alt, sel.neu = nil, nil end)
+			-- the selection stays (game test 20.10.2026: the new list went empty); the result shows above the cost
+			update(function() end)
 		end,
 	}
 
@@ -2478,7 +2485,8 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	if not j then return builtin.BoxLayout{ children = {} } end
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
-	local rows = { hbox("mvr-order-head", { modelCell(j.alt), text("→"), modelCell(j.neu) }) }
+	-- the models centered over the tiles (game test 20.10.2026)
+	local rows = { hbox("mvr-order-head", { spacer(), modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }) }
 	if j.blocked then
 		-- the game's red box for problems (default.css.lua:35-39, used like savegame_react_util.tl:653)
 		rows[2] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error-tape")
