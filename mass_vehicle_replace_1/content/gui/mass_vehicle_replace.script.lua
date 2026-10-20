@@ -536,6 +536,8 @@ local function updateText()
 	-- commands the game refused, apart from the vehicles skipped for money: the game gives no reason, and it
 	-- does not refuse for lack of money (measured 19.10.2026, tf3-sdk knowledge/vehicles.md)
 	if result.failed > 0 then s = s .. " " .. count("mvr_rejected", result.failed) end
+	-- a sentence ends with a full stop, like the other lines of the window (user decision 20.10.2026)
+	s = s .. "."
 	if result.note == "full" then s = s .. " " .. tr("mvr_queue_full", Queue.MAX_QUEUED) end
 	if result.note == "foreign" then s = s .. " " .. _("mvr_queue_foreign") end
 	result.text = s
@@ -755,9 +757,10 @@ end
 -- Settings and queue in the savegame ---------------------------------------------------------------------
 -- selection in the window; lives outside the recipe so every opening starts fresh
 -- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
--- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026)
+-- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026); by year at first, the old list oldest
+-- first, the new list newest first, so the modern models are on top (user decision 20.10.2026)
 -- queueRest: "queue the rest" box in the window, off at first (plan 20.10.2026, section 4)
-local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "name", sortNew = "name", sortOldAsc = true, sortNewAsc = true,
+local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "year", sortNew = "year", sortOldAsc = true, sortNewAsc = false,
 	sameCargo = true, details = true, queueRest = false }
 
 -- Sorting, "Same cargo", the details card and the queue are kept in the savegame (user decision 19.10.2026), in

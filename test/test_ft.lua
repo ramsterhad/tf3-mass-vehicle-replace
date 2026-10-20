@@ -835,9 +835,7 @@ print("== Sort by year")
 local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
 -- each list has its own sort buttons (user decision 19.10.2026): old Name, old Year, new Name, new Year
 check(#sorts == 4, "two sort buttons per list expected: " .. #sorts)
-sorts[2].props.onValueChange(1)
-t = content("year old")
-find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[4].props.onValueChange(1)
+-- both lists start by year, the old oldest first, the new newest first (user decision 20.10.2026): no click needed
 t = content("year")
 cs = combos(t)
 names = {}
@@ -1347,7 +1345,7 @@ for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
 table.sort(partialIds)
 check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
 t = content("partial, after the click")
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8" end) == 1, "partial: result line")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8." end) == 1, "partial: result line")
 check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
 -- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
@@ -1480,7 +1478,7 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "failing commands: 8 sent expected, " .. #sent)
 holdSteps = false
 t = content("failing commands, step done")
-check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)"), "failure count not shown")
+check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)."), "failure count not shown")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
 commandSucceeds = true
 
@@ -1490,13 +1488,13 @@ refused[113] = true
 t = chooseKasten("one refused", nil)
 replaceButton(t).props.onClick()
 t = content("one refused, done")
-check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "one refused: result line")
+check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)."), "one refused: result line")
 -- partial: 3 trucks planned (200000 covers 3 x 61000), one of them refused
 refused[113], refused[110] = nil, true
 t = chooseKasten("partial, one refused", 200000)
 replaceButton(t).props.onClick()
 t = content("partial, one refused, done")
-check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
+check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)."), "partial, one refused: result line")
 refused = {}
 bankBalance = nil
 
@@ -1525,7 +1523,7 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "new window: 8 commands expected, " .. #sent)
 step() -- the callbacks of the closed window and of the new one arrive in the same step
 t = content("reopen, done")
-check(hasText(t, "Ersetzt: 8 von 8"), "old callbacks mixed into the new batch")
+check(hasText(t, "Ersetzt: 8 von 8."), "old callbacks mixed into the new batch")
 holdSteps = false
 bankBalance = 5000000
 
@@ -2162,12 +2160,12 @@ do -- own block: the main chunk is at the 200 local limit
 		check(saved().queue == "1,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "queue, oldest first: " .. tostring(saved().queue))
 		check(saved().queueNextId == "2" and saved().queueReserve == "0" and saved().queuePaused == false, "queue fields")
 		tt = content("queue all, after")
-		check(hasText(tt, "Ersetzt: 0 von 8, 8 nachbestellt"), "result line after queueing")
+		check(hasText(tt, "Ersetzt: 0 von 8. 8 nachbestellt."), "result line after queueing")
 		-- a second click: the new order takes the vehicles over, the old job that did nothing yet goes
 		tt = chooseKasten("queue all again", 60999)
 		replaceButton(tt).props.onClick()
 		tt = content("queue all again, after")
-		check(hasText(tt, "Ersetzt: 0 von 8, 8 nachbestellt"), "second click must order all 8 again")
+		check(hasText(tt, "Ersetzt: 0 von 8. 8 nachbestellt."), "second click must order all 8 again")
 		check(saved().queue == "2,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "second click: one job, the new one: " .. tostring(saved().queue))
 		clearQueue(tt)
 	end)
@@ -2180,7 +2178,7 @@ do -- own block: the main chunk is at the 200 local limit
 		replaceButton(tt).props.onClick()
 		check(#sent == 3, "box off: 3 commands expected, " .. #sent)
 		check(openEntries() == 0, "box off: vehicles queued")
-		check(hasText(content("box off, after"), "Ersetzt: 3 von 8"), "box off: result line")
+		check(hasText(content("box off, after"), "Ersetzt: 3 von 8."), "box off: result line")
 	end)
 
 	section("orders tab: the count in its label, the box under the replace button", function()
@@ -2204,7 +2202,7 @@ do -- own block: the main chunk is at the 200 local limit
 		table.sort(ids)
 		check(#sent == 3 and table.concat(ids, ",") == "110,111,115", "partial queue: oldest three sent: " .. sentIds())
 		check(tostring(saved().queue):match("^%d+,m10,m11,0,0,0,0,0:112/1,113/1,114/1,116/1,117/1$") ~= nil, "partial queue: " .. tostring(saved().queue))
-		check(hasText(tt, "Ersetzt: 3 von 8, 5 nachbestellt"), "partial queue: result line")
+		check(hasText(tt, "Ersetzt: 3 von 8. 5 nachbestellt."), "partial queue: result line")
 	end)
 
 	section("host: a tick sends what the balance covers, the next tick waits for the answers", function()
@@ -2630,7 +2628,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(openEntries() == 1008, "stale: 1008 queued, " .. openEntries())
 		-- numbers carry the game's thousands separator (user decision 20.10.2026)
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen (1.008)", "thousands separator in the tab: " .. MOCK.tabLabels(mainWindow()))
-		check(hasText(tt, "Ersetzt: 0 von 1.008, 1.008 nachbestellt"), "thousands separator in the result line")
+		check(hasText(tt, "Ersetzt: 0 von 1.008. 1.008 nachbestellt."), "thousands separator in the result line")
 		for id = 2000, 2999 do vehicles[id] = nil end
 		bankBalance, sent = nil, {}
 		hostTick()
