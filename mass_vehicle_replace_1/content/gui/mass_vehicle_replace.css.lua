@@ -13,6 +13,7 @@ local CARGO_ROW = ITEM_IMAGE[1] + 8 + ITEM_TEXT
 local BIG_IMAGE = { CELL, 56 } -- as wide as the list: the fitted image sits centered below it
 local STATS_HALF = CELL - 20
 local SETTING = 140 -- width of the reserve field in the orders tab
+local ACTION_SIDE = 330 -- width of each side of the replace button
 
 local function fixed(w, h)
 	return {
@@ -149,8 +150,11 @@ function data()
 	a("BoxLayout!mvr-summary", {
 		gravity = { 0, -1 },
 	})
-	-- the place of the order box while there is none (a CheckBox line of the game is about 24 high)
-	a("!mvr-box-slot", fixed(1, 24))
+	-- the two sides of the replace button, equally wide so the button sits in the middle: the cost on the left, the
+	-- order box on the right. 2 * 330 leaves 268 of the 928 for the button and its gaps ("1.000 von 1.000 ersetzen").
+	-- Only a minimum: a long result line ("Ersetzt: 1.000 von 1.000. 1.000 nachbestellt.") may push the button aside
+	-- rather than be cut
+	a("!mvr-action-side", { minSize = { ACTION_SIDE, 0 }, gravity = { 0, 0.5 } })
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
 	a("Window!mvr-window Button!mvr-replace-btn", {
 		gravity = { 1, 0.5 },

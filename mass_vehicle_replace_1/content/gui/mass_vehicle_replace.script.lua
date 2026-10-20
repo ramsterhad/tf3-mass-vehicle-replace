@@ -2092,9 +2092,10 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		-- like the game, which shows only the net cost; the purchase price as long as nothing is credited
 		local priceLine = refund ~= 0 and netLine(cost) or tr("mvr_price", money(price))
 		if free then priceLine = " " end
-		summary = { count("mvr_will_replace", e.vehicles), priceLine }
-		-- partial (#23): what the button does, so count, cost and label agree
-		if partial then summary = { count("mvr_will_replace", some), netLine(someCost) } end
+		-- the count is in the button (user decision 20.10.2026: "5 ersetzen", no line of its own)
+		summary = { priceLine }
+		-- partial (#23): what the button does, so cost and label agree
+		if partial then summary = { netLine(someCost) } end
 	elseif #neus == 0 and altInfo then
 		summary = { _("mvr_none_buyable"), " " }
 	elseif not altInfo then
@@ -2138,7 +2139,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 					builtin.ImageView{ meta = { class = "mvr-btn-icon" }, path = "::/gui/entity_window/icons/symbol_arrows_refresh.tga", scaling = builtin.type.ImageViewScaling.AutoFit },
 					text(busy and _("mvr_replacing") or partial and tr("mvr_replace_some", some, e.vehicles)
 						or queueAll and count("mvr_queue_all", e.vehicles)
-						or not affordable and _("mvr_not_enough_money") or _("mvr_replace")),
+						or not affordable and _("mvr_not_enough_money") or e and tr("mvr_replace_n", e.vehicles) or _("mvr_replace")),
 				},
 			},
 		},
@@ -2154,9 +2155,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		end,
 	}
 
-	-- The summary lines fill the height of the button and the box beside them: the first line level with the top of
-	-- the button, the last visible line level with the bottom of the box, the rest spread between them (user decision
-	-- 20.10.2026: they ended at different heights). The warning when the engine type changes (issue #50) is a line of
+	-- The summary lines left of the button fill the height of the row, spread by spacers. The warning when the engine type changes (issue #50) is a line of
 	-- its own in the game's warning colour (class warning, main/default.css.lua), only when there is one.
 	local engineWarning = e and engineChange(altInfo, neuInfo) or nil
 	local shownLines = {}
@@ -2173,22 +2172,14 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		summaryLines[#summaryLines + 1] = line
 	end
 
-	-- orders: "order the rest" box under the replace button while the money does not cover all (user decision
-	-- 20.10.2026); the orders themselves are in the second tab of the window
-	-- without a box its place stays, so the button keeps its height and the window does not jump
-	-- build only the node that is shown: a node built and not attached makes the game warn "Preserved props ... a
-	-- recipe was called but not attached to the tree" on every redraw (game log 20.10.2026)
-	local queueBox
-	if canQueue then
-		queueBox = builtin.CheckBox{
-			meta = { tooltip = _("mvr_queue_rest_tip") },
-			label = count("mvr_queue_rest", e.vehicles - some),
-			value = sel.queueRest and 1 or 0,
-			onValueChange = function(v) update(function() sel.queueRest = v == 1; Queue.writeSaveData() end) end,
-		}
-	else
-		queueBox = builtin.Component{ meta = { class = "mvr-box-slot" } }
-	end
+	-- orders: the "order the rest" box right of the replace button, always there and greyed out while it has nothing
+	-- to do, all affordable or nothing selected (user decision 20.10.2026); the orders are in the second tab
+	local queueBox = builtin.CheckBox{
+		meta = { tooltip = _("mvr_queue_rest_tip"), enabled = canQueue },
+		label = canQueue and count("mvr_queue_rest", e.vehicles - some) or _("mvr_queue_rest_none"),
+		value = sel.queueRest and 1 or 0,
+		onValueChange = function(v) update(function() sel.queueRest = v == 1; Queue.writeSaveData() end) end,
+	}
 
 
 	local children = {
@@ -2199,12 +2190,17 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		row({ cell("cell", bigPicture(altInfo)), cell("mid", empty()), cell("cell", bigPicture(neuInfo)) }),
 		-- gap between images and text; the button stays centered on the text block
 		builtin.Component{ meta = { class = "mvr-gap" } },
+		-- one line: the cost on the left, the button in the middle, the order box on the right (user decision
+		-- 20.10.2026); both sides equally wide, so the button sits in the middle of the window
 		row({
-			builtin.BoxLayout{ meta = { class = "mvr-summary" }, orientation = builtin.type.Orientation.Vertical, children = summaryLines },
+			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-summary" },
+				orientation = builtin.type.Orientation.Vertical, children = summaryLines } },
 			gui_react_util.makeHorizontalSpacer(),
-			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { button, queueBox } },
+			button,
+			gui_react_util.makeHorizontalSpacer(),
+			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{
+				children = { gui_react_util.makeHorizontalSpacer(), queueBox } } },
 		}),
-		-- room between the order box under the button and the details (game test 20.10.2026: the box touched them)
 		builtin.Component{ meta = { class = "mvr-gap" } },
 	}
 	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar

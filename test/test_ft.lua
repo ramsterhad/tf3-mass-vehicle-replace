@@ -817,13 +817,13 @@ cs[2].props.onValueChange("m3")
 t = content("new chosen")
 local big = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-big-image" end)
 check(#big == 2, "two large images expected, " .. #big)
-local summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
-check(#summary == 1, "summary missing")
-print("  " .. (summary[1] and summary[1].props.text or "?"))
+-- the count is in the button, no line of its own (user decision 20.10.2026)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("werden ersetzt") end) == 0, "count line still shown")
 -- wagon 2: 6 pieces in 3 trains (one runs behind the multiple unit); new model 3 costs 280000
 local price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
 check(price[1] and price[1].props.text == "Kaufpreis: $1680000", "purchase price wrong: " .. tostring(price[1] and price[1].props.text))
-check(summary[1] and summary[1].props.text == "3 Fahrzeuge werden ersetzt.", "count wrong")
+-- the button label (replaceButton and buttonText come further down)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "3 ersetzen" end) == 1, "count wrong")
 -- the placeholder must not trigger anything
 cs = combos(t)
 cs[2].props.onValueChange("none")
@@ -928,8 +928,8 @@ cs[2].props.onValueChange("u901")
 t = content("ET 423 chosen")
 price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
 check(price[1] and price[1].props.text == "Kaufpreis: $6600000", "multiple unit price (3 x 2200000): " .. tostring(price[1] and price[1].props.text))
-summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
-check(summary[1] and summary[1].props.text == "2 Fahrzeuge werden ersetzt.", "multiple unit count: " .. tostring(summary[1] and summary[1].props.text))
+-- the button label (replaceButton and buttonText come further down)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "2 ersetzen" end) == 1, "multiple unit count")
 sent = {}
 costPerCommand = 3300000
 bankBalance = 10000000
@@ -1332,7 +1332,7 @@ check(buttonText(partBtn) == "7 von 8 ersetzen", "partial: button text " .. tost
 check(partBtn.props.meta.enabled == true, "partial: button disabled")
 check(partBtn.props.meta.tooltip == "Nicht genug Geld: Es werden nur 7 von 8 ersetzt (älteste zuerst).", "partial: tooltip " .. tostring(partBtn.props.meta.tooltip))
 check(partBtn.props.meta.class:find("mvr-partial", 1, true) and not partBtn.props.meta.class:find("mvr-no-money", 1, true), "partial: class " .. partBtn.props.meta.class)
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "7 Fahrzeuge werden ersetzt." end) == 1, "partial: count line does not match the button")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("werden ersetzt") end) == 0, "partial: a count line besides the button")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Kosten nach Restwert: $427000" end) == 1, "partial: cost line does not match the button")
 -- 200000 covers 3 trucks at 61000; truck 115 is the oldest, the rest by id
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
@@ -1357,11 +1357,11 @@ check(replaceButton(t).props.meta.tooltip == "Nicht genug Geld: Es wird nur 1 vo
 t = chooseKasten("partial, too poor", 60999)
 check(buttonText(replaceButton(t)) == "Nicht genug Geld" and replaceButton(t).props.meta.enabled == false, "partial: not one truck covered")
 t = chooseKasten("partial, rich", 488000)
-check(buttonText(replaceButton(t)) == "Ersetzen", "partial: money covers all")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "partial: money covers all")
 
 t = chooseKasten("exactly enough", 488000)
 check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
-check(buttonText(replaceButton(t)) == "Ersetzen", "button text with enough money: " .. tostring(buttonText(replaceButton(t))))
+check(buttonText(replaceButton(t)) == "8 ersetzen", "button text with enough money: " .. tostring(buttonText(replaceButton(t))))
 check(priceText(t) == "Kaufpreis: $488000", "price line with enough money: " .. tostring(priceText(t)))
 sent = {}
 replaceButton(t).props.onClick()
@@ -1393,7 +1393,7 @@ end
 print("== Only the player's vehicles (issue #1)")
 -- truck 130 is a Kipper like 110-117 but belongs to an AI player
 t = chooseKasten("foreign vehicles", nil)
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "foreign truck counted in the summary")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "foreign truck counted in the summary")
 sent = {}
 replaceButton(t).props.onClick()
 local foreignSent = false
@@ -1404,7 +1404,7 @@ print("== Infinite money: no cost line (issue #20)")
 residuals = {}
 for v = 110, 117 do residuals[v] = 1000 end
 t = chooseKasten("infinite money", nil)
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "infinite money: count missing")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "infinite money: count missing")
 local moneyLines = find(t, function(n) return n.kind == "TextView" and type(n.props.text) == "string" and (n.props.text:find("^Kaufpreis") or n.props.text:find("^Kosten")) end)
 -- the price per model in the list stays, like the game's purchase list
 check(#moneyLines == 0, "infinite money: cost line shown: " .. tostring(moneyLines[1] and moneyLines[1].props.text))
@@ -1469,7 +1469,7 @@ check(#sent == 8, "second batch sent while the first was running: " .. #sent)
 holdSteps = false
 t = content("double click, step done")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after the batch finished")
-check(buttonText(replaceButton(t)) == "Ersetzen", "button text after the batch: " .. tostring(buttonText(replaceButton(t))))
+check(buttonText(replaceButton(t)) == "8 ersetzen", "button text after the batch: " .. tostring(buttonText(replaceButton(t))))
 
 print("== Failed commands also end the batch (issue #9)")
 holdSteps, commandSucceeds = true, false
@@ -1800,7 +1800,7 @@ if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.win
 print("== Fleet changes while the window is open (issue #10)")
 -- seen in the game: a vehicle bought or handed to another player while the window was open left the count stale
 t = chooseKasten("fleet change", 5000000)
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: start count")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "fleet change: start count")
 check(not wouldRedraw(), "fleet change: redraw without any change")
 local readsBefore = fleetBuildReads
 t = content("fleet change, unchanged")
@@ -1808,18 +1808,18 @@ check(fleetBuildReads == readsBefore, "fleet change: fleet rebuilt on a redraw w
 vehicle(118, { 10 }) -- bought
 check(wouldRedraw(), "fleet change: window not redrawn after a purchase")
 t = content("fleet change, bought")
-check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: count after a purchase")
+check(buttonText(replaceButton(t)) == "9 ersetzen", "fleet change: count after a purchase")
 owners[118] = 99 -- handed to another player (makeEntitySetPlayerCmd)
 check(wouldRedraw(), "fleet change: window not redrawn after a handover")
 t = content("fleet change, handed over")
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: count after a handover")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "fleet change: count after a handover")
 owners[118] = nil
 vehicles[118] = nil
 -- reopened right after a change, before the throttled vehicle check ran: the new window must not show the old fleet
 t = chooseKasten("fleet change, reopen 1", 5000000)
 vehicle(118, { 10 })
 t = chooseKasten("fleet change, reopen 2", 5000000)
-check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: reopened window shows the fleet of the last one")
+check(buttonText(replaceButton(t)) == "9 ersetzen", "fleet change: reopened window shows the fleet of the last one")
 vehicles[118] = nil
 t = chooseKasten("fleet change, reopen 3", 5000000)
 -- our own batch: the vehicles keep their ids, the callbacks make the window read the fleet again
@@ -2169,15 +2169,18 @@ do -- own block: the main chunk is at the 200 local limit
 		check(box and box.props.value == 0, "box must be off at first")
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tabs: " .. MOCK.tabLabels(mainWindow()))
 		local enough = chooseKasten("box, enough", 488000)
-		check(queueBox(enough) == nil, "box shown although the money covers all")
-		-- without a box its place stays; the summary lines spread over the height of button and box (user decision
-		-- 20.10.2026): first line, spacer, last line
-		check(#find(enough, function(n) return n.props and n.props.meta and n.props.meta.class == "mvr-box-slot" end) == 1, "the box's place must stay")
+		-- the box is always there, greyed out while it has nothing to do (user decision 20.10.2026)
+		local eb = queueBox(enough)
+		check(eb ~= nil and eb.props.meta.enabled == false and eb.props.label == "Übrige nachbestellen", "box with the money covering all: "
+			.. tostring(eb and eb.props.label) .. ", enabled " .. tostring(eb and eb.props.meta.enabled))
+		-- left of the button only the cost line now
 		local sumBox = find(enough, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-summary" end)[1]
 		local kinds = {}
 		for _i, c in ipairs(sumBox and sumBox.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
-		check(table.concat(kinds, "|") == "TextView|vertical-spacer|TextView", "summary lines: " .. table.concat(kinds, "|"))
-		check(queueBox(chooseKasten("box, infinite", nil)) == nil, "box shown with infinite money")
+		check(table.concat(kinds, "|") == "TextView", "summary lines: " .. table.concat(kinds, "|"))
+		local ib = queueBox(chooseKasten("box, infinite", nil))
+		check(ib ~= nil and ib.props.meta.enabled == false, "box usable with infinite money")
+		check(box.props.meta.enabled == true, "box greyed out although the money is short")
 		box = queueBox(chooseKasten("box, nothing", 60999))
 		check(box ~= nil and box.props.label == "Übrige 8 nachbestellen", "box, nothing affordable: " .. tostring(box and box.props.label))
 	end)
@@ -2237,11 +2240,17 @@ do -- own block: the main chunk is at the 200 local limit
 		clearQueue(tt)
 		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tab when empty: " .. MOCK.tabLabels(mainWindow()))
 		tt = chooseKasten("box place", 200000)
-		local col = find(tt, function(n)
+		-- one line: cost | button | box, both sides of the button equally wide (user decision 20.10.2026)
+		local line = find(tt, function(n)
 			local c = n.kind == "BoxLayout" and n.props.children
-			return c and #c == 2 and c[2].kind == "CheckBox" and c[1].kind == "Button"
+			return c and #c == 5 and c[3].kind == "Button"
 		end)[1]
-		check(col ~= nil and col.props.orientation == "V" and col.props.children[1].kind == "Button", "the box must sit under the replace button")
+		local kinds = {}
+		for _i, c in ipairs(line and line.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "mvr-action-side|Spacer|Button|Spacer|mvr-action-side", "replace line: " .. table.concat(kinds, "|"))
+		check(line and #find(line.props.children[5], function(n) return n.kind == "CheckBox" end) == 1
+			and #find(line.props.children[1], function(n) return n.kind == "TextView" and n.props.text:find("Restwert") end) == 1,
+			"cost on the left, box on the right")
 	end)
 
 	section("partial click queues the rest, oldest first", function()
