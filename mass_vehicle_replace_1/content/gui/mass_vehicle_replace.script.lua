@@ -984,12 +984,20 @@ local function settle(e)
 	end
 end
 
+-- a job without open vehicles goes at once, finished or not (user decision 20.10.2026); a vehicle in flight is
+-- still open, so its job stays until the answer
+local function pruneJobs()
+	for k = #queue.jobs, 1, -1 do
+		if #queue.jobs[k].open == 0 then table.remove(queue.jobs, k) end
+	end
+end
+
 -- Takes the entities out of the jobs they are queued in: the newest order wins (user decision 20.10.2026: a newer
 -- model came out, the player orders that one instead). A vehicle whose command is under way stays. A job left
--- without vehicles that never replaced or skipped one goes; one with counters stays as finished. Returns how many.
+-- without vehicles goes. Returns how many.
 local function release(entities)
 	ensureLoaded()
-	local n, touched = 0, {}
+	local n = 0
 	for __, e in ipairs(entities) do
 		local id = queue.byEntity[e]
 		local job = id and not queue.inflight[e] and jobById(id)
@@ -997,16 +1005,11 @@ local function release(entities)
 		if i then
 			table.remove(job.open, i)
 			queue.byEntity[e] = nil
-			touched[job] = true
 			n = n + 1
 		end
 	end
 	if n == 0 then return 0 end
-	for k = #queue.jobs, 1, -1 do
-		local j = queue.jobs[k]
-		local sk = j.skipped
-		if touched[j] and #j.open == 0 and j.done == 0 and sk.sold + sk.replaced + sk.reused + sk.rejected == 0 then table.remove(queue.jobs, k) end
-	end
+	pruneJobs()
 	queue.cache = nil
 	return n
 end
@@ -1193,7 +1196,10 @@ local function sendEntry(job, entry, checked, now)
 				failEntry(j, i)
 			end
 		end
-		if queue.inflightN == 0 then writeSaveData() end
+		if queue.inflightN == 0 then
+			pruneJobs()
+			writeSaveData()
+		end
 	end)
 	if not ok then
 		settle(e)
@@ -1224,7 +1230,10 @@ local function resolveInflight(now)
 			end
 		end
 	end
-	if dirty then writeSaveData() end
+	if dirty then
+		pruneJobs()
+		writeSaveData()
+	end
 end
 
 local function appTime()
@@ -1295,7 +1304,10 @@ local function queueTick()
 			end
 		end
 	end
-	if dirty then writeSaveData() end
+	if dirty then
+		pruneJobs()
+		writeSaveData()
+	end
 end
 
 -- a Lua error in a tick never reaches the game's UI: logged, the next tick waits, after several in a row the
@@ -2328,8 +2340,6 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		status, class = _("mvr_queue_blocked_model"), "font-scale-body, error"
 	elseif j.blocked == "unknown" then
 		status, class = _("mvr_queue_blocked_unknown"), "font-scale-body, error"
-	elseif #j.open == 0 then
-		status = _("mvr_queue_done")
 	elseif not p.head then
 		status = _("mvr_queue_waiting")
 	elseif j.short then
@@ -2344,7 +2354,7 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		builtin.TextView{ meta = { class = "font-scale-body", tooltip = string.format(_("mvr_queue_skipped_tip"), s.sold + s.reused, s.replaced, s.rejected) },
 			text = string.format(_("mvr_queue_counts"), #j.open, j.done, skipped) },
 		text(status, class),
-		hbox("mvr-tools", { spacer(), textButton("secondary", #j.open > 0 and _("mvr_cancel_job") or _("mvr_remove_job"), function() removeJob(p.id) end) }),
+		hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end) }),
 	})
 end)
 

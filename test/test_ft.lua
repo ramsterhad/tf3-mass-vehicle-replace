@@ -2258,11 +2258,8 @@ do -- own block: the main chunk is at the 200 local limit
 		hostTick()
 		check(#sent == 0, "reused id replaced: " .. sentIds())
 		local q = openQueue(content("reused"), "reused")
-		check(lineOf(q.bodies[2], "Offen: 0 · Ersetzt: 3 · Übersprungen: 2") ~= nil, "counts after a reused id")
-		check(lineOf(q.bodies[2], "Erledigt") ~= nil and buttonIn(q.bodies[2], "Entfernen") ~= nil, "finished job must say so and offer Remove")
-		buttonIn(q.bodies[2], "Entfernen").props.onClick()
-		q = queueWindow("reused removed")
-		check(#q.cards == 1, "finished job not removed")
+		-- the last open vehicle went: the finished job leaves the window by itself (user decision 20.10.2026)
+		check(#q.cards == 1 and tostring(saved().queue) == "", "finished job not removed by itself: " .. tostring(saved().queue))
 		closeQueue()
 		MOCK.births[117] = nil
 	end)
@@ -2379,10 +2376,10 @@ do -- own block: the main chunk is at the 200 local limit
 		tt = content("newer order, model")
 		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("newer order, box on") end
 		replaceButton(tt).props.onClick()
-		check(tostring(saved().queue):match("^%d+,m10,m11,1,0,0,0,0:;%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
-			"newer order: vehicles moved, older job kept as finished: " .. tostring(saved().queue))
+		check(tostring(saved().queue):match("^%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
+			"newer order: vehicles moved, the emptied older job gone: " .. tostring(saved().queue))
 		local q = openQueue(content("newer order, window"), "newer order")
-		check(#q.cards == 3 and lineOf(q.bodies[2], "Erledigt") ~= nil and lineOf(q.bodies[3], "Offen: 8 · Ersetzt: 0 · Übersprungen: 0") ~= nil,
+		check(#q.cards == 2 and lineOf(q.bodies[2], "Offen: 8 · Ersetzt: 0 · Übersprungen: 0") ~= nil,
 			"newer order: cards " .. table.concat(q.titles, "|"))
 		closeQueue()
 		clearQueue(content("newer order, clear"))
