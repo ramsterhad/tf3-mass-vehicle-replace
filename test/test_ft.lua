@@ -2244,6 +2244,10 @@ do -- own block: the main chunk is at the 200 local limit
 		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
 		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
 		check(lineOf(b, "Stück $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
+		-- left-aligned on its own line: a direct child of the rows, not in the head row with the models
+		local rowsBox = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end)[1]
+		local second = rowsBox and rowsBox.props.children[2]
+		check(second and second.kind == "TextView" and second.props.text == "Stück $61000 | Gesamt $244000", "price must be the second line, left-aligned")
 		check(lineOf(b, "Offen 4") ~= nil and lineOf(b, "Ersetzt 1") ~= nil and lineOf(b, "Übersprungen 0") ~= nil, "counters in one row")
 		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")

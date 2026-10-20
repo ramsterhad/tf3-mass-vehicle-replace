@@ -2412,6 +2412,8 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local s = j.skipped
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
 	local head = { modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
+	-- the price on a line of its own, left-aligned under the models (user decision 20.10.2026)
+	local price = nil
 	if not j.blocked and altInfo and neuInfo then
 		local year = api.engine.util.getYear()
 		local first, total = nil, 0
@@ -2422,10 +2424,11 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 				total = total + c
 			end
 		end
-		if first then head[#head + 1] = text(tr("mvr_queue_price", money(first), money(total))) end
+		if first then price = text(tr("mvr_queue_price", money(first), money(total))) end
 	end
 	local rows = {
 		hbox("mvr-row", head),
+		price or builtin.BoxLayout{ children = {} },
 		hbox("mvr-row", {
 			text(tr("mvr_queue_open_n", #j.open)),
 			text(tr("mvr_queue_done_n", j.done)),
