@@ -2477,7 +2477,8 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
 	local rows = { hbox("mvr-order-head", { modelCell(j.alt), text("→"), modelCell(j.neu) }) }
 	if j.blocked then
-		rows[2] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error")
+		-- the game's red box for problems (default.css.lua:35-39, used like savegame_react_util.tl:653)
+		rows[2] = text(j.blocked == "model" and _("mvr_queue_blocked_model") or _("mvr_queue_blocked_unknown"), "font-scale-body, error-tape")
 	else
 		-- prices of the next and of all open vehicles (orderPrices), a dash while they cannot be read
 		local pr = altInfo and neuInfo and prices.byJob[j.id] or nil

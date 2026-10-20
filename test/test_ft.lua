@@ -2425,7 +2425,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 0, "expired model still replaced: " .. #sent)
 		local q = openQueue(content("expiring queue, window"), "expiring")
 		local _t, node = lineOf(q.bodies[1], "Modell nicht mehr erhältlich")
-		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
+		check(node ~= nil and node.props.meta.class:find("error-tape", 1, true) ~= nil, "blocked job must say why, in the game's red box")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "blocked job must offer Cancel")
 		-- the red line takes the place of the tiles (card variant E); cancel stays in its own part on the right (user decision 20.10.2026)
 		local rowsBox = find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-order-body" end)[1]
