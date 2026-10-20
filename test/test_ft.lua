@@ -1769,6 +1769,13 @@ local function chooseRail(label, altKey, neuKey)
 end
 local wl = engineLine(chooseRail("steam to electric", "m5", "m4"))
 check(wl.text == "Antrieb wechselt: Dampf " .. ARROW .. " Elektrisch", "steam to electric: " .. tostring(wl.text))
+-- centered right under the replace button (user decision 20.10.2026)
+do
+	local mid = find(content("steam to electric, place"), function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-action-mid" end)[1]
+	local under = mid and mid.props.children[2]
+	check(mid and mid.props.children[1].kind == "Button" and under and under.props.children[1].kind == "Spacer"
+		and under.props.children[2].props.text == wl.text and under.props.children[3].kind == "Spacer", "engine warning not centered under the button")
+end
 check(wl.meta.tooltip ~= nil and wl.meta.tooltip:find("Oberleitung", 1, true) ~= nil, "steam to electric: tooltip " .. tostring(wl.meta.tooltip))
 wl = engineLine(chooseRail("electric to electric", "m1", "m4"))
 check(wl.text == " " and wl.meta.tooltip == nil, "same engine type warns: " .. tostring(wl.text))
@@ -2294,11 +2301,12 @@ do -- own block: the main chunk is at the 200 local limit
 		-- one line: cost | button | box, both sides of the button equally wide (user decision 20.10.2026)
 		local line = find(tt, function(n)
 			local c = n.kind == "BoxLayout" and n.props.children
-			return c and #c == 5 and c[3].kind == "Button"
+			return c and #c == 5 and c[3].props.meta and c[3].props.meta.class == "mvr-action-mid"
 		end)[1]
 		local kinds = {}
-		for _i, c in ipairs(line and line.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
-		check(table.concat(kinds, "|") == "mvr-action-side|Spacer|Button|Spacer|mvr-action-side", "replace line: " .. table.concat(kinds, "|"))
+		for _i, c in ipairs(line and line.props.children or {}) do kinds[#kinds + 1] = (c.kind == "Component" or c.kind == "BoxLayout") and c.props.meta and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "mvr-action-side|Spacer|mvr-action-mid|Spacer|mvr-action-side", "replace line: " .. table.concat(kinds, "|"))
+		check(line and line.props.children[3].props.children[1].kind == "Button", "the button heads the middle")
 		check(line and #find(line.props.children[5], function(n) return n.kind == "CheckBox" end) == 1
 			and #find(line.props.children[1], function(n) return n.kind == "TextView" and n.props.text:find("Restwert") end) == 1,
 			"cost on the left, box on the right")

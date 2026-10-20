@@ -2169,16 +2169,20 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		end,
 	}
 
-	-- The summary lines left of the button fill the height of the row, spread by spacers. The warning when the engine type changes (issue #50) is a line of
-	-- its own in the game's warning colour (class warning, main/default.css.lua), only when there is one.
+	-- The summary lines left of the button fill the height of the row, spread by spacers. The warning when the
+	-- engine type changes (issue #50) stands centered right under the button (user decision 20.10.2026), in the game's
+	-- warning colour (class warning, main/default.css.lua), only when there is one.
 	local engineWarning = e and engineChange(altInfo, neuInfo) or nil
 	local shownLines = {}
 	for __, line in ipairs(summary) do
 		if line ~= " " then shownLines[#shownLines + 1] = text(line) end
 	end
+	local middle = { button }
 	if engineWarning then
-		shownLines[#shownLines + 1] = builtin.TextView{ meta = { class = "font-scale-body, warning", tooltip = _("mvr_engine_change_tip") },
-			text = engineWarning }
+		middle[2] = builtin.BoxLayout{ meta = { class = "mvr-action-under" }, orientation = builtin.type.Orientation.Horizontal, children = {
+			gui_react_util.makeHorizontalSpacer(),
+			builtin.TextView{ meta = { class = "font-scale-body, warning", tooltip = _("mvr_engine_change_tip") }, text = engineWarning },
+			gui_react_util.makeHorizontalSpacer() } }
 	end
 	local summaryLines = {}
 	for k, line in ipairs(shownLines) do
@@ -2210,7 +2214,7 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-summary" },
 				orientation = builtin.type.Orientation.Vertical, children = summaryLines } },
 			gui_react_util.makeHorizontalSpacer(),
-			button,
+			builtin.BoxLayout{ meta = { class = "mvr-action-mid" }, orientation = builtin.type.Orientation.Vertical, children = middle },
 			gui_react_util.makeHorizontalSpacer(),
 			builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-foot-side" },
 				orientation = builtin.type.Orientation.Horizontal, children = { gui_react_util.makeHorizontalSpacer(),

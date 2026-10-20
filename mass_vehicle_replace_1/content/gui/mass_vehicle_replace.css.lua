@@ -187,8 +187,17 @@ function data()
 		innerSpacing = { 8, 0 },
 	})
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
+	-- the button and, under it, the engine warning, both centered (user decision 20.10.2026)
+	a("Window!mvr-window BoxLayout!mvr-action-mid", {
+		gravity = { 0, 0.5 },
+		innerSpacing = { 0, 4 },
+	})
+	a("Window!mvr-window BoxLayout!mvr-action-under", {
+		gravity = { -1, 0 },
+		innerSpacing = { 0, 0 },
+	})
 	a("Window!mvr-window Button!mvr-replace-btn", {
-		gravity = { 1, 0.5 },
+		gravity = { 0.5, 0.5 },
 		minSize = { 140, 0 },
 	})
 	-- not enough money: red like the game's buy button (vehicle_store.css.lua "R::VehicleCart !error!error!error",
@@ -203,21 +212,24 @@ function data()
 			backgroundColor1 = { colors.AccentDark[1], colors.AccentDark[2], colors.AccentDark[3], 0.5 },
 		})
 	end
-	-- custom: a yellow frame around the order box while it can be used, asked for by the user (20.10.2026: the frame,
-	-- even all round). The game's card contour (line_vehicle_mgmt.css.lua:858-869 InfoBox: card_contour.tga as
-	-- borderImage, tinted with borderColor) in the yellow of the button. Tried before: the popup shadow (a dark edge
-	-- offset to the lower right, it is a drop shadow) and a light spot behind the box
+	-- custom: a soft yellow glow around the order box while it can be used, asked for by the user (20.10.2026: a
+	-- glow at the edge, even all round). Drawn the way the game draws shadows (shadowNinePatch, tinted by shadowColor,
+	-- reaching shadowWidth beyond the element: builtin.css.lua:1963-1968 window, game_bar.css.lua:474-476 buttons), with
+	-- an image of our own (content/gui/mvr_box_glow.tga, 32 px, a 12 px band fading outwards, clear inside): every
+	-- shadow image of the game is offset to the lower right (popup/shadow, window/shadow_simple, measured 20.10.2026),
+	-- the popup one drew a skewed dark edge in the game. Tried as well: a frame, a light spot behind the box
 	a("!mvr-box-calm", { padding = { 3, 8, 3, 8 } })
 	a("!mvr-box-aura", { padding = { 3, 8, 3, 8 } })
 	if okColors and colors and type(colors.Warning) == "table" then
 		local w = colors.Warning
 		a("!mvr-box-aura", {
-			borderImage = {
-				fileName = "::/gui/entity_window/design/card_contour.tga",
-				horizontal = { 0, 6, 26, 32 },
-				vertical = { 0, 6, 26, 32 },
+			shadowNinePatch = {
+				fileName = "::/gui/mvr_box_glow.tga",
+				horizontal = { 0, 12, 20, 32 },
+				vertical = { 0, 12, 20, 32 },
 			},
-			borderColor = { w[1], w[2], w[3], 0.7 },
+			shadowColor = { w[1], w[2], w[3], 0.8 },
+			shadowWidth = { 12, 12, 12, 12 },
 		})
 	end
 	if okColors and colors and colors.Error then
