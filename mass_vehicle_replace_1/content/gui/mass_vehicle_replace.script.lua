@@ -2363,19 +2363,20 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 			spacer(),
 			-- the game's money field (game_bar.tl:252-266 uses it for the balance): typed or stepped, numbers only;
 			-- the game marks its own text number field deprecated in favour of it (gui_react_util.d.tl:130)
-			builtin.DoubleSpinBox{ meta = { tooltip = _("mvr_reserve_tip") }, min = 0, max = Queue.RESERVE_MAX, step = 100000,
-				value = queue.reserve, onValueChange = function(v) setReserve(v) end },
+			builtin.DoubleSpinBox{ meta = { class = "mvr-setting", tooltip = _("mvr_reserve_tip") }, min = 0, max = Queue.RESERVE_MAX,
+				step = 100000, value = queue.reserve, onValueChange = function(v) setReserve(v) end },
 		})
 	end
 	-- plain rows above the order cards, no card of their own (user decision 20.10.2026: a settings card looked
-	-- like one more order)
+	-- like one more order). Only settings here, name on the left, control on the right in one column of the same
+	-- width; "cancel all" acts on the orders and sits below them (variant A, user decision 20.10.2026)
 	return vbox("mvr-rows", {
 		reserveRow or builtin.BoxLayout{ children = {} },
 		hbox("mvr-row", {
-			builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = _("mvr_paused"), value = queue.paused and 1 or 0,
-				onValueChange = function(v) setPaused(v == 1) end },
+			builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_paused_tip") }, text = _("mvr_paused") },
 			spacer(),
-			textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0),
+			hbox("mvr-setting", { spacer(), builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = "",
+				value = queue.paused and 1 or 0, onValueChange = function(v) setPaused(v == 1) end } }),
 		}),
 		status and text(status, "font-scale-body") or builtin.BoxLayout{ children = {} },
 	})
@@ -2467,7 +2468,8 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	-- as wide as the replace tab, so the window keeps its width when the tab changes
 	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-content" },
 		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical,
-			children = { MvrQueueSettings{ sig = queueSig() }, panel } } } } }
+			children = { MvrQueueSettings{ sig = queueSig() }, panel,
+				hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0) }) } } } } }
 end)
 queueContent = (okCard and type(content_card) == "table") and MvrQueueContent or nil
 if not queueContent then log("orders tab needs the game's content card, left out") end

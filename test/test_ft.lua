@@ -2096,7 +2096,9 @@ do -- own block: the main chunk is at the 200 local limit
 	-- "cancel all" through the window and the game's dialog, like the player
 	local function clearQueue(tt)
 		local q = openQueue(tt, "clear")
-		local b = buttonIn(q.settings, "Alle abbrechen")
+		-- below the list, not among the settings (variant A, user decision 20.10.2026)
+		check(buttonIn(q.settings, "Alle abbrechen") == nil, "clear: cancel all must not sit among the settings")
+		local b = buttonIn(q.tree, "Alle abbrechen")
 		check(b ~= nil, "clear: cancel all button missing")
 		if b and b.props.meta.enabled ~= false then
 			b.props.onClick()
@@ -2534,18 +2536,21 @@ do -- own block: the main chunk is at the 200 local limit
 	section("paused: nothing until the box is cleared", function()
 		local tt = queueTrucks("paused", 0)
 		local q = openQueue(tt, "paused")
-		local box = find(q.settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1]
+		local box = find(q.settings, function(n) return n.kind == "CheckBox" end)[1]
+		-- name on the left, the box in the right column of the settings, like the reserve field
+		check(lineOf(q.settings, "Nachbestellungen anhalten") ~= nil and box and box.props.label == "", "hold: name left, box without its own label")
+		check(#find(q.settings, function(n) return n.props and n.props.meta and n.props.meta.class == "mvr-setting" end) == 2, "hold: reserve and box must share the setting column")
 		check(box ~= nil and box.props.value == 0, "paused box")
 		box.props.onValueChange(1)
 		check(saved().queuePaused == true, "paused not kept")
 		q = queueWindow("paused on")
-		check(find(q.settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1].props.value == 1, "hold box must show it is on")
+		check(find(q.settings, function(n) return n.kind == "CheckBox" end)[1].props.value == 1, "hold box must show it is on")
 		closeQueue()
 		bankBalance, sent = nil, {}
 		hostTick(3)
 		check(#sent == 0, "sent while paused")
 		openQueue(content("paused off"), "paused off")
-		find(queueWindow("paused off").settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1].props.onValueChange(0)
+		find(queueWindow("paused off").settings, function(n) return n.kind == "CheckBox" end)[1].props.onValueChange(0)
 		closeQueue()
 		hostTick()
 		check(#sent == 8, "not resumed: " .. #sent)
@@ -2674,7 +2679,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 0 and saved().queuePaused == true, "error: queue not paused after five errors")
 		local q = openQueue(content("error, window"), "error")
 		check(lineOf(q.settings, "Fehler, Nachbestellungen angehalten: ") ~= nil, "error: window does not show it")
-		find(q.settings, function(n) return n.kind == "CheckBox" and n.props.label == "Nachbestellungen anhalten" end)[1].props.onValueChange(0)
+		find(q.settings, function(n) return n.kind == "CheckBox" end)[1].props.onValueChange(0)
 		closeQueue()
 		MOCK.appClock = MOCK.appClock + 11
 		hostTick()
