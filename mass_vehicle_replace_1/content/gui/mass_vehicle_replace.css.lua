@@ -193,8 +193,10 @@ function data()
 
 	a("!mvr-gap", fixed(10, 8))
 	-- the summary stretches to the height of the button and the box beside it; its spacers spread the lines
-	a("BoxLayout!mvr-summary", {
+	a("Window!mvr-window BoxLayout!mvr-summary", {
 		gravity = { 0, -1 },
+		innerSpacing = { 0, 0 },
+		minSize = { 0, 44 }, -- two lines of body text and a gap
 	})
 	-- the two sides of the replace button, equally wide so the button sits in the middle: the cost on the left, the
 	-- order box on the right. 2 * 330 leaves 268 of the 928 for the button and its gaps ("1.000 von 1.000 ersetzen").

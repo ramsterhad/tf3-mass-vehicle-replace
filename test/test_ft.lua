@@ -1974,6 +1974,25 @@ do -- own block: the main chunk is at the 200 local limit
 	check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
 	body = detailsBody(card, "stats tram")
 	check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+	-- the window keeps its height whichever models are chosen (user decision 20.10.2026): as many table rows for
+	-- wagons as for locomotives
+	do
+		local function tableRows(tt, label)
+			local n = 0
+			for _i, tl in ipairs(find(detailsBody(detailsCardOf(tt), label), function(x) return x.kind == "TableLayout" end)) do n = n + #tl.props.rows end
+			return n
+		end
+		-- wagons have capacity and loading, locomotives power and tractive effort: different rows
+		storeStats.m2 = { totalCapacity = 50, speed = 160 / 3.6, loadingSpeed = 1, weight = 40, runningCosts = 9000 }
+		storeStats.m3 = { totalCapacity = 60, speed = 200 / 3.6, loadingSpeed = 1, weight = 42, runningCosts = 9500 }
+		storeStats.m5 = { speed = 80 / 3.6, power = 1000, weight = 100, runningCosts = 40000 }
+		storeStats.m4 = { speed = 150 / 3.6, power = 5000, weight = 110, runningCosts = 60000 }
+		local wagons = tableRows(chooseRail("rows, wagons", "m2", "m3"), "rows, wagons")
+		local locos = tableRows(chooseRail("rows, locomotives", "m5", "m4"), "rows, locomotives")
+		-- 11 values in two halves of 6 lines and a header each
+		check(wagons == 14 and locos == 14, "stats rows differ: wagons " .. wagons .. ", locomotives " .. locos)
+		storeStats.m2, storeStats.m3, storeStats.m4, storeStats.m5 = nil, nil, nil, nil
+	end
 	-- without a new model there is nothing to replace: no count, no click (game test 20.10.2026: "3 ersetzen" stood
 	-- enabled beside an empty new list)
 	check(replaceButton(t).props.meta.enabled == false and buttonText(replaceButton(t)) == "Ersetzen",
@@ -2231,7 +2250,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local sumBox = find(enough, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-summary" end)[1]
 		local kinds = {}
 		for _i, c in ipairs(sumBox and sumBox.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
-		check(table.concat(kinds, "|") == "TextView", "summary lines: " .. table.concat(kinds, "|"))
+		check(table.concat(kinds, "|") == "vertical-spacer|TextView|vertical-spacer", "summary lines: " .. table.concat(kinds, "|"))
 		local ib = queueBox(chooseKasten("box, infinite", nil))
 		check(ib ~= nil and ib.props.meta.enabled == false, "box usable with infinite money")
 		check(box.props.meta.enabled == true, "box greyed out although the money is short")

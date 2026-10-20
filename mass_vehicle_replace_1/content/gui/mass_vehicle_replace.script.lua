@@ -1779,11 +1779,16 @@ local MvrStats = react.RegisterRecipe("MvrStats", function(p)
 	if #rows == 0 then
 		return builtin.BoxLayout{ children = { text(_("mvr_stat_none")) } }
 	end
-	local half = math.ceil(#rows / 2)
+	-- always as many lines as the longest list of values could have, so the window keeps its height whichever models
+	-- are chosen (user decision 20.10.2026); the lines a model has no value for stay empty at the end
+	local half = math.ceil(#STATS / 2)
 	local left, right = {}, {}
 	for k, r in ipairs(rows) do
-		if k <= half then left[#left + 1] = r else right[#right + 1] = r end
+		if k <= math.ceil(#rows / 2) then left[#left + 1] = r else right[#right + 1] = r end
 	end
+	local blank = { label = " ", change = "", old = " ", new = " " }
+	while #left < half do left[#left + 1] = blank end
+	while #right < half do right[#right + 1] = blank end
 	return builtin.BoxLayout{
 		orientation = builtin.type.Orientation.Horizontal,
 		children = { statTable(left), builtin.Component{ meta = { class = "mvr-mid" } }, statTable(right) },
@@ -2185,11 +2190,14 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		builtin.TextView{ meta = { class = "font-scale-body, warning", tooltip = engineWarning and _("mvr_engine_change_tip") or nil },
 			text = engineWarning or " " },
 		gui_react_util.makeHorizontalSpacer() } }
-	local summaryLines = {}
+	-- the lines centered in a box of two lines' height, so one line or two (result and cost) never change the height
+	-- of the window (user decision 20.10.2026)
+	local summaryLines = { gui_react_util.makeVerticalSpacer() }
 	for k, line in ipairs(shownLines) do
 		if k > 1 then summaryLines[#summaryLines + 1] = gui_react_util.makeVerticalSpacer() end
 		summaryLines[#summaryLines + 1] = line
 	end
+	summaryLines[#summaryLines + 1] = gui_react_util.makeVerticalSpacer()
 
 	-- orders: the "order the rest" box right of the replace button, always there and greyed out while it has nothing
 	-- to do, all affordable or nothing selected (user decision 20.10.2026); the orders are in the second tab
