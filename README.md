@@ -16,6 +16,7 @@ Replaces all vehicles of one model with another, across all lines. Adds a "Repla
 - Each list sorts by name or year on its own; a second click reverses the order. Sorting, "Same cargo" and the Details card are kept in the savegame.
 - Cargo icons for every model. The color of the old vehicles is kept where possible.
 - Uses the game's own replace command. Like the game's purchase window, the cost is the purchase price minus the residual value of the old vehicles; replacing is only possible when the balance covers it. Trains where only some vehicles are replaced are priced like the game's "Modify" window. When the money does not cover all vehicles, a yellow "Replace x of y" button replaces only the oldest ones it covers.
+- Orders: tick "Order n" and the vehicles the money does not cover are replaced automatically as money comes in, oldest first. The "Orders" tab lists every order with its open and skipped vehicles and prices, a reserve that stays on the account, "Hold orders" and "Cancel all". Orders are kept in the savegame.
 - English and German.
 
 ## Install

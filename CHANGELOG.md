@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-20
+
 ### Added
 
-- Orders (#23, stage 2): when the money does not cover all vehicles, the box "Order n" right of the replace button can be ticked (greyed out while the money covers all; off again in every new window, with a soft yellow glow while it can be used and is not ticked). With it ticked, the yellow button replaces what the balance covers now and puts the rest on order, oldest first; with nothing affordable it says "Order 8". About once a second of real time, the orders replace as many vehicles at once as the balance minus a reserve covers (oldest first, up to 100 per second), also while the game is paused. Vehicles on order leave the list of old models and are no longer counted there; cancelling the order brings them back (a newer model came out: cancel, then order that one). Orders are kept in the savegame and survive saving, a restart and loading.
+- Orders (#23, stage 2): when the money does not cover all vehicles, the box "Order n" right of the replace button can be ticked (greyed out while the money covers all; off again in every new window, with a yellow frame while it can be used and is not ticked). With it ticked, the yellow button replaces what the balance covers now and puts the rest on order, oldest first; with nothing affordable it says "Order 8". About once a second of real time, the orders replace as many vehicles at once as the balance minus a reserve covers (oldest first, up to 100 per second), also while the game is paused. Vehicles on order leave the list of old models and are no longer counted there; cancelling the order brings them back (a newer model came out: cancel, then order that one). Orders are kept in the savegame and survive saving, a restart and loading.
 - The replace window has two tabs, "Replace" and "Orders (n)". Cost, replace button and order box share one line: the cost on the left, the button in the middle, the box on the right. The button always carries the count ("Replace 5"); the line "5 vehicles will be replaced." is gone. The orders tab shows one numbered card per order; below the list one row with the reserve (stays on the account, also when replacing by hand in the replace tab; typed with thousands separators; hidden with infinite money), "Hold orders" and "Cancel all" (with the game's confirmation dialog): both models with their small images, four tiles "Open", "Skipped" (the reasons in the tooltip), "Next" and "Total" (the price of the next vehicle and of all open ones, live while the game runs) and "Cancel"; "Model no longer available" in red instead of the tiles when the new model can no longer be bought.
 - Numbers carry the game's thousands separator.
 - Both model lists start sorted by year: the old list oldest first, the new list newest first.
@@ -97,7 +99,8 @@ First public release. Versions 0.x were internal test builds.
 - Decorative models are hidden: copies without a store entry (e.g. from asset mods) and "fake" locomotives without engine and cargo.
 - English and German.
 
-[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/ramsterhad/tf3-mass-vehicle-replace/compare/v1.0.1...v1.0.2
