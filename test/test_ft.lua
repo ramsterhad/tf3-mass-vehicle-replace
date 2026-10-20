@@ -2248,7 +2248,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local rowsBox = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end)[1]
 		local second = rowsBox and rowsBox.props.children[2]
 		check(second and second.kind == "TextView" and second.props.text == "Stück $61000 | Gesamt $244000", "price must be the second line, left-aligned")
-		check(lineOf(b, "Offen 4") ~= nil and lineOf(b, "Ersetzt 1") ~= nil and lineOf(b, "Übersprungen 0") ~= nil, "counters in one row")
+		check(lineOf(b, "Offen 4") ~= nil and lineOf(b, "Übersprungen 0") ~= nil and lineOf(b, "Ersetzt") == nil, "counters in one row, no replaced count (user decision 20.10.2026)")
 		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
 		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")
 		-- a plain tree, no own classes without a rule (rules() checked that), and the game's spacing classes on the rows
@@ -2285,7 +2285,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 116, "next vehicle not sent in the same tick: " .. sentIds())
 		step()
 		local q = openQueue(content("sold"), "sold")
-		check(lineOf(q.bodies[1], "Offen 1") ~= nil and lineOf(q.bodies[1], "Ersetzt 3") ~= nil and lineOf(q.bodies[1], "Übersprungen 1") ~= nil, "counts after a sold vehicle")
+		check(lineOf(q.bodies[1], "Offen 1") ~= nil and lineOf(q.bodies[1], "Übersprungen 1") ~= nil, "counts after a sold vehicle")
 		local _t, node = lineOf(q.bodies[1], "Übersprungen")
 		check(node and node.props.meta.tooltip == "1 verkauft, 0 schon ersetzt, 0 vom Spiel abgelehnt", "skipped tooltip: " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
@@ -2313,7 +2313,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 1 and sent[1].e == 110, "by hand: 110 expected after dropping 115: " .. sentIds())
 		step()
 		local q = openQueue(content("by hand, window"), "by hand")
-		check(lineOf(q.bodies[1], "Offen 6") ~= nil and lineOf(q.bodies[1], "Ersetzt 1") ~= nil, "by hand: counts")
+		check(lineOf(q.bodies[1], "Offen 6") ~= nil, "by hand: counts")
 		local _t, node = lineOf(q.bodies[1], "Übersprungen 1")
 		check(node and node.props.meta.tooltip == "0 verkauft, 1 schon ersetzt, 0 vom Spiel abgelehnt", "by hand: tooltip " .. tostring(node and node.props.meta.tooltip))
 		closeQueue()
@@ -2583,7 +2583,7 @@ do -- own block: the main chunk is at the 200 local limit
 		queuedCommands = {}
 		holdSteps = false
 		local q = openQueue(content("no callback, window"), "no callback")
-		check(lineOf(q.bodies[1], "Offen 7") ~= nil and lineOf(q.bodies[1], "Ersetzt 1") ~= nil, "no callback: counts")
+		check(lineOf(q.bodies[1], "Offen 7") ~= nil, "no callback: counts")
 		closeQueue()
 		vehicle(115, { 10 })
 		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1

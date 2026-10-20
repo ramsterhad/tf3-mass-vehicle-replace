@@ -2431,7 +2431,6 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		price or builtin.BoxLayout{ children = {} },
 		hbox("mvr-row", {
 			text(tr("mvr_queue_open_n", #j.open)),
-			text(tr("mvr_queue_done_n", j.done)),
 			-- a vehicle whose id now belongs to something else is gone like a sold one
 			builtin.TextView{ meta = { class = "font-scale-body", tooltip = tr("mvr_queue_skipped_tip", s.sold + s.reused, s.replaced, s.rejected) },
 				text = tr("mvr_queue_skipped_n", s.sold + s.replaced + s.reused + s.rejected) },
