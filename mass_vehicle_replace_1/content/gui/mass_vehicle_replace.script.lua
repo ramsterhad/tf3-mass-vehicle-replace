@@ -2182,6 +2182,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			gui_react_util.makeHorizontalSpacer(),
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { button, queueBox } },
 		}),
+		-- room between the order box under the button and the details (game test 20.10.2026: the box touched them)
+		builtin.Component{ meta = { class = "mvr-gap" } },
 	}
 	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
 	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,
