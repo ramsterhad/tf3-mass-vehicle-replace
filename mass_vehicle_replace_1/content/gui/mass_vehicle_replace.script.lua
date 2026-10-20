@@ -2425,13 +2425,31 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 		layout = vbox("mvr-rows", { hbox("mvr-row", line) }) } } }
 end)
 
--- the small image of a model, as in the lists, and its name
+-- names of an order's head: at most NAME_CHARS characters, a longer name loses its middle, so the start and an
+-- ending like "(2-teilig)" stay (user decision 20.10.2026); 24 fit the 186 px beside the image even with wide letters
+-- (mock-up measured in Lato 15 px, the game's font)
+local NAME_CHARS = 24
+-- the small image of a model, as in the lists, and its name; the full name in the tooltip when it was cut
 local function modelCell(key)
 	local i = info(key)
 	local img = (i and i.icon and i.icon ~= "")
 		and builtin.ImageView{ meta = { class = "mvr-item-image", mouseTransparent = true }, path = i.icon, scaling = builtin.type.ImageViewScaling.AutoFit }
 		or builtin.Component{ meta = { class = "mvr-item-image" } }
-	return hbox("mvr-row", { img, text(modelName(key)) })
+	local name = modelName(key)
+	-- characters, not bytes, like shorten
+	local chars = {}
+	for ch in name:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
+	local cutName = name
+	if #chars > NAME_CHARS then
+		local tail = math.floor((NAME_CHARS - 1) * 0.45)
+		local head = NAME_CHARS - 1 - tail
+		cutName = table.concat(chars, "", 1, head) .. "…" .. table.concat(chars, "", #chars - tail + 1)
+	end
+	-- a fixed width, so a name the game draws wider than expected is clipped instead of pushing the arrow aside; the
+	-- game then shows the full name on hover (builtin.d.tl TextViewParam.tooltipWhenClipped)
+	local label = builtin.TextView{ meta = { class = "font-scale-body, mvr-order-name", tooltip = cutName ~= name and name or nil },
+		text = cutName, tooltipWhenClipped = name }
+	return hbox("mvr-row", { img, label })
 end
 
 -- Cost of one open vehicle by the formula of the window and the tick (#26, #37): price of its new units minus its

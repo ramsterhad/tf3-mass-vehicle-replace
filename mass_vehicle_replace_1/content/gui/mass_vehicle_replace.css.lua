@@ -95,11 +95,15 @@ function data()
 		innerSpacing = { 8, 0 },
 	})
 	-- the two halves of an order's head, equally wide so the arrow between them sits in the same place on every card:
-	-- the same minimum, larger than their content, so both also grow by the same amount
+	-- fixed, the names inside are cut to fit
 	a("!mvr-order-half", {
+		size = { ORDER_HALF, -1 },
 		minSize = { ORDER_HALF, 0 },
+		maxSize = { ORDER_HALF, 10000 },
 		gravity = { -1, 0.5 },
 	})
+	-- an order's model name beside its image: the rest of the half (image 96, gap 8), fixed so it never pushes the arrow
+	a("TextView!mvr-order-name", with(fixed(ORDER_HALF - ITEM_IMAGE[1] - 8), { gravity = { 0, 0.5 } }))
 	a("Window!mvr-window Component!mvr-order-half > BoxLayout", {
 		gravity = { -1, 0.5 },
 	})

@@ -2631,6 +2631,12 @@ do -- own block: the main chunk is at the 200 local limit
 		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("waiting prices, box on") end
 		replaceButton(tt).props.onClick()
 		local q = openQueue(tt, "waiting prices")
+		-- a long name loses its middle, the ending stays; the full name in the tooltip (user decision 20.10.2026)
+		local nm = find(q.bodies[2], function(n) return n.kind == "TextView" and n.props.meta.class:find("mvr-order-name", 1, true) ~= nil end)
+		check(#nm == 2 and nm[1].props.text == "Bm 235 (IC) D…Elfenbein)" and nm[1].props.meta.tooltip == "Bm 235 (IC) DB (Ozeanblau-Elfenbein)",
+			"long name: " .. tostring(nm[1] and nm[1].props.text) .. " / " .. tostring(nm[1] and nm[1].props.meta.tooltip))
+		local short = find(q.bodies[1], function(n) return n.kind == "TextView" and n.props.text == "Benz Dreitonner Kipper" end)[1]
+		check(short and short.props.meta.tooltip == nil, "short name: shown whole, without a tooltip")
 		-- the prices of a waiting order follow the residual value as well, before and after the order above it goes
 		-- (game test 20.10.2026: the second order's figures stood still)
 		local before = MOCK.tileOf(q.bodies[2], "Gesamt")
