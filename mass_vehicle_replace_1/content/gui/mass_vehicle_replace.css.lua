@@ -44,6 +44,11 @@ function data()
 	a("Window!mvr-window BoxLayout", {
 		innerSpacing = { 4, 8 },
 	})
+	-- the TabWidget stacks its tabs and its framed content in an inner BoxLayout (debug.css.lua:59 "TabWidget > BoxLayout");
+	-- the rule above put a gap between them (game test 20.10.2026), the game's tabs touch their frame
+	a("Window!mvr-window TabWidget > BoxLayout", {
+		innerSpacing = { 0, 0 },
+	})
 
 	-- cells of the rows: columns and narrow middle, centered in the row
 	a("!mvr-cell", with(fixed(CELL), { gravity = { 0, 0.5 } }))
