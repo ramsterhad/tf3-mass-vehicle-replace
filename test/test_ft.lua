@@ -2329,14 +2329,51 @@ do -- own block: the main chunk is at the 200 local limit
 		hostTick(2)
 		check(#sent == 0, "expired model still replaced: " .. #sent)
 		local q = openQueue(content("expiring queue, window"), "expiring")
-		local _t, node = lineOf(q.bodies[2], "Neues Modell nicht erhältlich, wartet")
+		local _t, node = lineOf(q.bodies[2], "Modell nicht mehr erhältlich")
 		check(node ~= nil and node.props.meta.class:find("error", 1, true) ~= nil, "blocked job must say why, in the error colour")
+		check(buttonIn(q.bodies[2], "Entfernen") ~= nil, "blocked job must offer Remove")
 		closeQueue()
 		currentYear = 1980
 		hostTick()
 		check(#sent == 8, "model back: not resumed: " .. #sent)
 		step()
 		clearQueue(content("expiring queue, clear"))
+	end)
+
+	section("a blocked job is removed with its button", function()
+		step()
+		bankBalance = 0
+		openAndRender("blocked remove", 501, true)
+		local tt = content("blocked remove")
+		combos(tt)[2].props.onValueChange("m15")
+		tt = content("blocked remove, Auslauf")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("blocked remove, box on") end
+		replaceButton(tt).props.onClick()
+		currentYear = 1981
+		hostTick()
+		local q = openQueue(content("blocked remove, window"), "blocked remove")
+		buttonIn(q.bodies[2], "Entfernen").props.onClick()
+		q = queueWindow("blocked removed")
+		check(#q.cards == 1 and tostring(saved().queue) == "", "blocked job not removed: " .. tostring(saved().queue))
+		closeQueue()
+		currentYear = 1980
+	end)
+
+	section("reserve: hidden with infinite money, capped at a trillion", function()
+		local tt = queueTrucks("reserve rules", 0)
+		bankBalance = nil
+		local q = openQueue(content("reserve rules, infinite"), "reserve infinite")
+		check(find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1] == nil, "reserve shown with infinite money")
+		closeQueue()
+		bankBalance = 0
+		q = openQueue(content("reserve rules, money"), "reserve money")
+		local spin = find(q.bodies[1], function(n) return n.kind == "DoubleSpinBox" end)[1]
+		check(spin ~= nil and spin.props.max == 1e12, "reserve field without its upper bound")
+		if spin then spin.props.onValueChange(5e12) end
+		check(saved().queueReserve == "1000000000000", "reserve not capped: " .. tostring(saved().queueReserve))
+		if spin then spin.props.onValueChange(0) end
+		closeQueue()
+		clearQueue(tt)
 	end)
 
 	section("infinite money: the whole queue in one tick", function()

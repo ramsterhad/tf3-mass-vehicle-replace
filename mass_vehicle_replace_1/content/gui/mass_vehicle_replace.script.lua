@@ -1075,9 +1075,12 @@ local function cancelAll()
 	writeSaveData()
 end
 
+-- upper bound of the reserve: far above any balance a normal game reaches, and an exact integer in a double
+Queue.RESERVE_MAX = 1e12
+
 local function setReserve(v)
 	ensureLoaded()
-	queue.reserve = countValue(v) or 0
+	queue.reserve = math.min(countValue(v) or 0, Queue.RESERVE_MAX)
 	writeSaveData()
 end
 
@@ -2314,14 +2317,21 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	else
 		status = count("mvr_queue_n_open", open)
 	end
-	return vbox("mvr-rows", {
-		hbox("mvr-row", {
+	-- infinite money (sandbox mode, "no costs"): a reserve means nothing, the row is left out, like the game hides
+	-- its balance card then (maintenance_station_eow.script.tl conditionMaintenanceStationBalance)
+	local reserveRow = nil
+	if not infiniteMoney() then
+		reserveRow = hbox("mvr-row", {
 			builtin.TextView{ meta = { class = "font-scale-body", tooltip = _("mvr_reserve_tip") }, text = _("mvr_reserve") },
 			spacer(),
-			-- the game's money field (game_bar.tl:252-266 uses it for the balance); no upper bound
-			builtin.DoubleSpinBox{ meta = { tooltip = _("mvr_reserve_tip") }, min = 0, step = 100000, value = queue.reserve,
-				onValueChange = function(v) setReserve(v) end },
-		}),
+			-- the game's money field (game_bar.tl:252-266 uses it for the balance): typed or stepped, numbers only;
+			-- the game marks its own text number field deprecated in favour of it (gui_react_util.d.tl:130)
+			builtin.DoubleSpinBox{ meta = { tooltip = _("mvr_reserve_tip") }, min = 0, max = Queue.RESERVE_MAX, step = 100000,
+				value = queue.reserve, onValueChange = function(v) setReserve(v) end },
+		})
+	end
+	return vbox("mvr-rows", {
+		reserveRow or builtin.BoxLayout{ children = {} },
 		builtin.CheckBox{ label = _("mvr_paused"), value = queue.paused and 1 or 0, onValueChange = function(v) setPaused(v == 1) end },
 		text(status, "font-scale-annotation"),
 		hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0) }),
@@ -2354,7 +2364,7 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 		builtin.TextView{ meta = { class = "font-scale-body", tooltip = string.format(_("mvr_queue_skipped_tip"), s.sold + s.reused, s.replaced, s.rejected) },
 			text = string.format(_("mvr_queue_counts"), #j.open, j.done, skipped) },
 		text(status, class),
-		hbox("mvr-tools", { spacer(), textButton("secondary", _("mvr_cancel_job"), function() removeJob(p.id) end) }),
+		hbox("mvr-tools", { spacer(), textButton("secondary", j.blocked and _("mvr_remove_job") or _("mvr_cancel_job"), function() removeJob(p.id) end) }),
 	})
 end)
 
