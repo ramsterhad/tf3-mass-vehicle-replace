@@ -93,12 +93,12 @@ function data()
 	-- orders tab: wider gaps in the counter row of an order (game test 20.10.2026: too cramped). With the window in
 	-- the selector, or the window's own BoxLayout rule above wins (game test 20.10.2026: the gap stayed small)
 	-- the order between number and cancel takes the rest of the card; its rows stretch so the tiles share its width
-	-- 4 below the tiles, so they keep the same room to the card's lower edge as the models to its upper edge (game
-	-- test 20.10.2026: too close at the bottom)
+	-- 16 below the tiles, so they keep the same room to the card's lower edge as the models to its upper edge
+	-- (game tests 20.10.2026: too close at the bottom with 0 and with 4; screenshot: about 25 above, 12 below)
 	a("!mvr-order-body", {
 		gravity = { -1, 0.5 },
 		innerSpacing = { 8, 4 },
-		margin = { 0, 0, 4, 0 },
+		margin = { 0, 0, 16, 0 },
 	})
 	a("Window!mvr-window BoxLayout!mvr-order-head", {
 		gravity = { -1, 0.5 },
