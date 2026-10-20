@@ -1285,8 +1285,6 @@ local function queueTick()
 	-- the window's own batch is still being answered: its vehicles still look unchanged (#9), so wait
 	if pending() then return end
 	local year = api.engine.util.getYear()
-	-- the orders tab values its vehicles once per game year; the year in its signature redraws it then
-	queue.year = year
 	local job = headJob(year)
 	if not job then return end
 	local funds, infinite = queueFunds()
@@ -2303,7 +2301,7 @@ end
 -- memory only (runs in a timed step state, see queuedNow); the content recipe loads the queue before it renders
 local function queueSig()
 	local parts = { queue.paused and "p" or "r", num(queue.reserve), queue.foreign and "f" or "", queue.lastError or "",
-		num(queue.inflightN), num(queue.year or 0) }
+		num(queue.inflightN) }
 	for __, j in ipairs(queue.jobs) do parts[#parts + 1] = jobSig(j) end
 	return table.concat(parts, "|")
 end
@@ -2392,17 +2390,50 @@ local function modelCell(key)
 end
 
 -- Cost of one open vehicle by the formula of the window and the tick (#26, #37): price of its new units minus its
--- credit. Kept on the entry and read again in a new game year (the residual value falls slowly), so a redraw reads
--- only the vehicles it has not valued yet. nil when the vehicle cannot be read (sold: the tick drops it).
-local function entryCost(entry, job, altInfo, neuInfo, year)
-	if entry.cost and entry.costYear == year then return entry.cost end
+-- credit. nil when the vehicle cannot be read (sold: the tick drops it).
+local function entryCost(entry, job, altInfo, neuInfo)
 	local ok, cost = pcall(function()
 		local cfg = api.engine.getComponent(entry.entity, CT.TRANSPORT_VEHICLE).transportVehicleConfig
 		local use = useOf(entry.entity, cfg)
 		return neuInfo.price * unitsIn(use, job.alt, altInfo) - creditOf(use, job.alt)
 	end)
-	entry.cost, entry.costYear = ok and type(cost) == "number" and cost or nil, year
-	return entry.cost
+	return ok and type(cost) == "number" and cost or nil
+end
+
+-- Live prices of every order's open vehicles, like the replace window's cost line (shownCost): read again only once
+-- game time has passed (nothing ages while paused), at most twice a second and only while the tab is open (user
+-- decision 20.10.2026: the total must follow the falling residual values). About five engine calls per open
+-- vehicle, the same work the replace window does for the vehicles it shows.
+local prices = { key = nil, byJob = {} }
+local function orderPrices()
+	-- read again when game time passed or an order changed (another vehicle at the head, one gone)
+	local t = gameTime()
+	local key = tostring(t) .. "#" .. queueSig()
+	if t == nil or key ~= prices.key then
+		prices.key = key
+		local byJob = {}
+		for __, j in ipairs(queue.jobs) do
+			local altInfo, neuInfo = info(j.alt), info(j.neu)
+			if not j.blocked and altInfo and neuInfo then
+				local first, total = nil, 0
+				for __, e in ipairs(j.open) do
+					local c = entryCost(e, j, altInfo, neuInfo)
+					if c then
+						first = first or c
+						total = total + c
+					end
+				end
+				if first then byJob[j.id] = { first, total } end
+			end
+		end
+		prices.byJob = byJob
+	end
+	local parts = {}
+	for __, j in ipairs(queue.jobs) do
+		local pr = prices.byJob[j.id]
+		parts[#parts + 1] = pr and (num(pr[1]) .. ":" .. num(pr[2])) or ""
+	end
+	return table.concat(parts, "|")
 end
 
 -- one order: its number, both models with their images, the price of the next vehicle and of all open ones, the
@@ -2414,21 +2445,11 @@ local MvrQueueJob = react.RegisterRecipe("MvrQueueJob", function(p)
 	local altInfo, neuInfo = info(j.alt), info(j.neu)
 	-- the models centered over the card (user decision 20.10.2026)
 	local head = { spacer(), modelCell(j.alt), text("→"), modelCell(j.neu), spacer() }
-	-- prices of the next and of all open vehicles; the widest case, prices in the billions and 10000 open, still
-	-- fits the window
+	-- prices of the next and of all open vehicles (orderPrices); the widest case, prices in the billions and 10000
+	-- open, still fits the window
 	local price = nil
-	if not j.blocked and altInfo and neuInfo then
-		local year = api.engine.util.getYear()
-		local first, total = nil, 0
-		for __, e in ipairs(j.open) do
-			local c = entryCost(e, j, altInfo, neuInfo, year)
-			if c then
-				first = first or c
-				total = total + c
-			end
-		end
-		if first then price = text(tr("mvr_queue_price", money(first), money(total))) end
-	end
+	local pr = not j.blocked and altInfo and neuInfo and prices.byJob[j.id] or nil
+	if pr then price = text(tr("mvr_queue_price", money(pr[1]), money(pr[2]))) end
 	-- open on the left, the prices on the right (user decision 20.10.2026)
 	local rows = {
 		hbox("mvr-order-head", head),
@@ -2460,11 +2481,16 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	ensureLoaded()
 	-- redraw when anything in the queue changes; the signature is a short string compared twice a second
 	engine_react_util.useStepStateTimer(queueSig, 0.5)
+	-- and when the prices change; read once here as well, so the first drawing has them
+	engine_react_util.useStepStateTimer(orderPrices, 0.5)
+	orderPrices()
 	local status = queueStatus()
 	-- one card per order, numbered in the order they run; the card has no title, the body says it all
 	local cards = {}
 	for k, j in ipairs(queue.jobs) do
-		cards[#cards + 1] = card("job" .. num(j.id), nil, MvrQueueJob, { id = j.id, index = k, sig = jobSig(j) })
+		local pr = prices.byJob[j.id]
+		cards[#cards + 1] = card("job" .. num(j.id), nil, MvrQueueJob, { id = j.id, index = k,
+			sig = jobSig(j) .. (pr and (":" .. num(pr[1]) .. ":" .. num(pr[2])) or "") })
 	end
 	local panel
 	if entity_window_util and entity_window_util.ContentWidgetScrollContainer then

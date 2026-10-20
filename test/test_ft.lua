@@ -2248,7 +2248,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#find(b, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-divider" end) == 2, "lines around the order missing")
 		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
 		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
-		check(lineOf(b, "Stück $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
+		check(lineOf(b, "Nächstes $61000 | Gesamt $244000") ~= nil, "price of one and of all open vehicles")
 		-- number | order | cancel (user decision 20.10.2026): the models centered, open left and prices right below
 		local card = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
 		local kinds = {}
@@ -2260,7 +2260,7 @@ do -- own block: the main chunk is at the 200 local limit
 		check(row2.props.children[2].kind == "Spacer", "open left, prices right")
 		local texts = {}
 		for _i, c in ipairs(row2 and row2.props.children or {}) do texts[#texts + 1] = c.kind == "TextView" and c.props.text or c.kind end
-		check(#rowsBox.props.children == 2 and texts[1] == "Offen 4 (übersprungen 0)" and texts[3] == "Stück $61000 | Gesamt $244000"
+		check(#rowsBox.props.children == 2 and texts[1] == "Offen 4 (übersprungen 0)" and texts[3] == "Nächstes $61000 | Gesamt $244000"
 			and #texts == 3, "second row: " .. table.concat(texts, "|"))
 		check(lineOf(b, "Offen 4 (übersprungen 0)") ~= nil and lineOf(b, "Ersetzt") == nil, "counters in one row, no replaced count (user decision 20.10.2026)")
 		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
@@ -2435,20 +2435,18 @@ do -- own block: the main chunk is at the 200 local limit
 		clearQueue(tt)
 	end)
 
-	section("orders tab: prices are read again in a new game year", function()
+	section("orders tab: prices follow the residual value while the game runs", function()
 		local tt = queueTrucks("revalue", 0)
 		bankBalance = 0
 		hostTick()
 		local q = openQueue(content("revalue"), "revalue")
-		check(lineOf(q.bodies[1], "Stück $61000 | Gesamt $488000") ~= nil, "revalue: first prices")
+		check(lineOf(q.bodies[1], "Nächstes $61000 | Gesamt $488000") ~= nil, "revalue: first prices")
 		residuals[115] = 1000 -- the oldest truck is worth something after all
-		q = queueWindow("revalue, same year")
-		check(lineOf(q.bodies[1], "Stück $61000 | Gesamt $488000") ~= nil, "revalue: read again within the game year")
-		currentYear = currentYear + 1
-		hostTick()
-		q = queueWindow("revalue, new year")
-		check(lineOf(q.bodies[1], "Stück $60000 | Gesamt $487000") ~= nil, "revalue: not read again in a new game year")
-		currentYear = currentYear - 1
+		q = queueWindow("revalue, paused")
+		check(lineOf(q.bodies[1], "Nächstes $61000 | Gesamt $488000") ~= nil, "revalue: read again although the game stood still")
+		gameTimeNow = gameTimeNow + 1 -- the game runs: the prices follow at once (user decision 20.10.2026: live)
+		q = queueWindow("revalue, game runs")
+		check(lineOf(q.bodies[1], "Nächstes $60000 | Gesamt $487000") ~= nil, "revalue: prices do not follow the residual value")
 		residuals[115] = nil
 		closeQueue()
 		clearQueue(tt)
