@@ -94,10 +94,12 @@ function data()
 	-- the selector, or the window's own BoxLayout rule above wins (game test 20.10.2026: the gap stayed small)
 	-- the order between number and cancel takes the rest of the card; its rows stretch so the tiles share its width
 	-- 16 below the tiles, so they keep the same room to the card's lower edge as the models to its upper edge
-	-- (game tests 20.10.2026: too close at the bottom with 0 and with 4; screenshot: about 25 above, 12 below)
-	a("!mvr-order-body", {
+	-- (game tests 20.10.2026: too close at the bottom; screenshot: about 25 above, 12 below). With the window in the
+	-- selector, or the window's own BoxLayout rule above wins: 4 and then 16 had no effect in the game. Its 8 between
+	-- the rows stays, that is what the game showed so far
+	a("Window!mvr-window BoxLayout!mvr-order-body", {
 		gravity = { -1, 0.5 },
-		innerSpacing = { 8, 4 },
+		innerSpacing = { 8, 8 },
 		margin = { 0, 0, 16, 0 },
 	})
 	a("Window!mvr-window BoxLayout!mvr-order-head", {
