@@ -203,22 +203,18 @@ function data()
 			backgroundColor1 = { colors.AccentDark[1], colors.AccentDark[2], colors.AccentDark[3], 0.5 },
 		})
 	end
-	-- custom: a soft glow around the order box while it can be used, asked for by the user (20.10.2026, strength 2 of
-	-- three in a mock-up). Drawn like the game's popups and tabs draw their shadow and surface (builtin.css.lua:679-683
-	-- popup/shadow.tga, 785-796 shadowColor tints it, shadowWidth lets it reach beyond the element), in the yellow of the
-	-- button at about half strength
-	a("!mvr-box-calm", { padding = { 2, 6, 2, 6 } })
-	a("!mvr-box-aura", { padding = { 2, 6, 2, 6 } })
+	-- custom: a soft glow behind the order box while it can be used, asked for by the user (20.10.2026, strength 2 of
+	-- three in a mock-up). The game's own soft light spot (gui/component/highlight@2x.tga in gui.zip, a white radial
+	-- fade) stretched behind the box and tinted with the yellow of the button at about half strength, the way the
+	-- tiles tint their surface (backgroundImage1 with backgroundColor1). The popup shadow tried first drew only a dark,
+	-- offset edge (game test 20.10.2026)
+	a("!mvr-box-calm", { padding = { 6, 18, 6, 18 } })
+	a("!mvr-box-aura", { padding = { 6, 18, 6, 18 } })
 	if okColors and colors and type(colors.Warning) == "table" then
 		local w = colors.Warning
 		a("!mvr-box-aura", {
-			shadowNinePatch = {
-				fileName = "::/gui/builtin/popup/shadow.tga",
-				horizontal = { 0, 8, 10, 18 },
-				vertical = { 0, 8, 10, 18 },
-			},
-			shadowColor = { w[1], w[2], w[3], 0.45 },
-			shadowWidth = { 6, 6, 6, 6 },
+			backgroundImage1 = { fileName = "::/gui/component/highlight@2x.tga" },
+			backgroundColor1 = { w[1], w[2], w[3], 0.45 },
 		})
 	end
 	if okColors and colors and colors.Error then
