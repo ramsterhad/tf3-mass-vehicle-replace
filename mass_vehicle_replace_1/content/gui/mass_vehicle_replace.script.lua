@@ -1349,7 +1349,7 @@ if not MvrQueueHost then log("mod entry point not available, queue host disabled
 Queue.loadKept, Queue.ensureLoaded, Queue.writeSaveData, Queue.openCount, Queue.jobById = loadKept, ensureLoaded, writeSaveData, openCount, jobById
 Queue.enqueue, Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused = enqueue, removeJob, cancelAll, setReserve, setPaused
 Queue.release = releaseReplaced
-Queue.num, Queue.host = num, MvrQueueHost
+Queue.num, Queue.host, Queue.queuedNow = num, MvrQueueHost, queuedNow
 end
 
 -- Replaces alt with neu in every vehicle; the other parts stay as they are. partial: only the vehicles the balance
@@ -1936,7 +1936,7 @@ local function textButton(class, label, onClick, tooltip, disabled)
 	return builtin.Button{ meta = { class = class, tooltip = tooltip, enabled = not disabled }, content = text(label), onClick = onClick }
 end
 
-local openQueueWindow -- defined with the queue window below; the replace window has a button to it
+local queueContent -- the recipe of the orders tab, defined with it below
 
 local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 	react.useInputAction("IA_MENU_BACK", react.iaHandler(p.onClose))
@@ -2138,8 +2138,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		text = engineWarning or " ",
 	}
 
-	-- replacement queue: "queue the rest" box while the money does not cover all, and the way to the queue window;
-	-- the row is always there so the window keeps its height
+	-- orders: "order the rest" box under the replace button while the money does not cover all (user decision
+	-- 20.10.2026); the orders themselves are in the second tab of the window
 	local queueBox = builtin.Component{}
 	if canQueue then
 		queueBox = builtin.CheckBox{
@@ -2149,8 +2149,6 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 			onValueChange = function(v) update(function() sel.queueRest = v == 1; Queue.writeSaveData() end) end,
 		}
 	end
-	local queueRow = row({ queueBox, gui_react_util.makeHorizontalSpacer(),
-		textButton("secondary", _("mvr_queue_open"), function() openQueueWindow() end, _("mvr_queue_open_tip")) })
 
 
 	local children = {
@@ -2164,9 +2162,8 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 		row({
 			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = summaryLines },
 			gui_react_util.makeHorizontalSpacer(),
-			button,
+			builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { button, queueBox } },
 		}),
-		queueRow,
 	}
 	-- stats of both models below the button (#16): collapsed it adds only a title and the game's arrow bar
 	local details = detailsCard(altInfo, neuInfo, e and e.carrier, year, sel.details == true,
@@ -2184,7 +2181,36 @@ end)
 
 local windowOpen = false
 
+-- Two tabs in the window's header, "Replace" and "Orders (n)" (user decision 20.10.2026), built like the game's
+-- entity windows with several parts (make_entity_window.tl:220-250: TabWidget of class no-content as header,
+-- empty items, the window content follows the selected tab). Where the header sits is a game test.
+local function tabs(tabState, n)
+	local function tab(value, label)
+		return builtin.TabWidgetChild{
+			localKey = "mvr_tab_" .. value,
+			value = value,
+			indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = label },
+			item = builtin.Component{},
+		}
+	end
+	return builtin.TabWidget{
+		meta = { class = "no-content" },
+		orientation = builtin.type.TabOrientation.North,
+		deselectAllowed = false,
+		value = tabState:old(),
+		onValueChange = function(v) tabState:set(v) end,
+		tabs = {
+			tab(0, _("mvr_tab_replace")),
+			tab(1, n > 0 and string.format(_("mvr_tab_orders_n"), n) or _("mvr_tab_orders")),
+		},
+	}
+end
+
 local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, function(p)
+	local tabState = react.useState(0)
+	-- the count in the tab: two Lua numbers from memory, redrawn only when it changes
+	local countState = engine_react_util.useStepStateTimer(Queue.queuedNow, 0.5)
+	local onOrders = tabState:old() == 1 and queueContent ~= nil
 	react.onUnmount(function()
 		windowOpen = false
 		-- the fleet holds a copy of every vehicle's parts; the next window reads it afresh anyway (#10)
@@ -2202,7 +2228,8 @@ local MvrWindow = react.RegisterWrapperRecipe("MvrWindow", builtin.Window, funct
 		closable = true,
 		movable = true,
 		autoFocusOnBecomingVisible = true,
-		content = MvrContent{ onClose = p.onClose },
+		header = queueContent and tabs(tabState, countState:old() or 0) or nil,
+		content = onOrders and queueContent{ onClose = p.onClose } or MvrContent{ onClose = p.onClose },
 	}
 end)
 
@@ -2230,14 +2257,13 @@ local function openWindow(carrier)
 	if ok then windowOpen = true else log("opening window failed", tostring(err)) end
 end
 
--- Queue window ---------------------------------------------------------------------------------------------
--- A window like the game's entity windows (class entity-window, top right): cards in the game's scroll container
--- (entity_window_util.tl:2467-2489), one card with the settings, one per job. Redrawn twice a second from a
+-- Orders tab -----------------------------------------------------------------------------------------------
+-- Cards like the game's entity windows: the game's scroll container (entity_window_util.tl:2467-2489), one card
+-- with the settings, one per job. Redrawn twice a second from a
 -- signature string of the queue, so an unchanged queue costs nothing (tf3-ui-design skill, tf3-sdk ui.md).
 do
 local ensureLoaded, openCount, num, jobById = Queue.ensureLoaded, Queue.openCount, Queue.num, Queue.jobById
 local removeJob, cancelAll, setReserve, setPaused = Queue.removeJob, Queue.cancelAll, Queue.setReserve, Queue.setPaused
-local QUEUE_WINDOW_KEY = "mass_vehicle_replace.queue"
 local CONFIRM_KEY = "mass_vehicle_replace.confirm"
 
 local function modelName(key)
@@ -2389,45 +2415,14 @@ local MvrQueueContent = react.RegisterRecipe("MvrQueueContent", function(p)
 	else
 		panel = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = cards }
 	end
-	return builtin.BoxLayout{ children = { panel } }
+	-- as wide as the replace tab, so the window keeps its width when the tab changes
+	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-content" },
+		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = { panel } } } } }
 end)
+queueContent = (okCard and type(content_card) == "table") and MvrQueueContent or nil
+if not queueContent then log("orders tab needs the game's content card, left out") end
 
-local queueWindowOpen = false
-
-local MvrQueueWindow = react.RegisterWrapperRecipe("MvrQueueWindow", builtin.Window, function(p)
-	react.onUnmount(function() queueWindowOpen = false end)
-	return builtin.Window{
-		meta = { class = "entity-window" },
-		id = QUEUE_WINDOW_KEY,
-		-- top right like the game's entity windows
-		initialX = 1,
-		initialY = 0,
-		title = _("mvr_queue_title"),
-		onClose = p.onClose,
-		closable = true,
-		movable = true,
-		autoFocusOnBecomingVisible = true,
-		content = MvrQueueContent{ onClose = p.onClose },
-	}
-end)
-
-local function closeQueueWindow()
-	queueWindowOpen = false
-	local wc = windowApi()
-	if wc then pcall(wc.removeWindow, MvrQueueWindow, QUEUE_WINDOW_KEY) end
-end
-
-openQueueWindow = function()
-	local wc = windowApi()
-	if not wc then log("no window access"); return end
-	if not (okCard and type(content_card) == "table") then log("queue window needs the game's content card"); return end
-	if queueWindowOpen then closeQueueWindow() end
-	ensureLoaded()
-	local ok, err = pcall(wc.addWindow, MvrQueueWindow, QUEUE_WINDOW_KEY, { onClose = closeQueueWindow })
-	if ok then queueWindowOpen = true else log("opening queue window failed", tostring(err)) end
-end
-
-Queue.window = MvrQueueWindow
+Queue.window = MvrQueueContent
 end
 
 -- "Replace Vehicles" button in the depot window, to the right of "Manage Vehicles".

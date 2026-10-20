@@ -33,6 +33,8 @@ local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true, Ta
 local builtin = setmetatable({
 	type = {
 		Orientation = { Horizontal = "H", Vertical = "V" },
+		-- builtin.d.tl:10-14, used by the game for the tabs of entity windows (make_entity_window.tl:242)
+		TabOrientation = { North = "N", South = "S" },
 		ImageViewScaling = { AutoFit = "AutoFit", AutoZoom = "AutoZoom", Stretch = "Stretch" },
 	},
 }, { __index = function(t, kind)
@@ -2035,19 +2037,27 @@ do -- own block: the main chunk is at the 200 local limit
 	local function queueBox(tt)
 		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):find("nachbestellen", 1, true) ~= nil end)[1]
 	end
-	local function queueButton(tt)
-		return find(tt, function(n) return n.kind == "Button" and buttonText(n) == "Nachbestellungen …" end)[1]
+	-- the replace window with its two tabs in the header (user decision 20.10.2026: no second window)
+	local function mainWindow()
+		return render("MvrWindow", { onClose = function() end })
+	end
+	-- MOCK: a field, not a local (the main chunk is at Lua's limit of 200 locals)
+	function MOCK.tabLabels(w)
+		local out = {}
+		local h = w.props.header
+		for _i, t in ipairs(h and h.props.tabs or {}) do out[#out + 1] = t.props.indicator.props.text end
+		return table.concat(out, "|")
 	end
 	local function buttonIn(tree, label)
 		return find(tree, function(n) return n.kind == "Button" and buttonText(n) == label end)[1]
 	end
-	-- the queue window: its content and the body of every card, rendered like the game's card does it
+	-- the orders tab: its content and the body of every card, rendered like the game's card does it
 	local function queueWindow(label)
-		local w = windows["mass_vehicle_replace.queue"]
-		check(w ~= nil, label .. ": queue window not open")
-		if not w then return { cards = {}, bodies = {}, titles = {} } end
-		local win = render("MvrQueueWindow", w.params)
-		check(win.kind == "Window" and win.props.meta.class == "entity-window", label .. ": queue window must use the game's entity-window class")
+		local win = mainWindow()
+		local h = win.props.header
+		check(h and h.kind == "TabWidget" and h.props.meta.class == "no-content" and h.props.value == 1, label .. ": orders tab not selected")
+		check(win.props.content and win.props.content.kind == "recipe:MvrQueueContent", label .. ": window does not show the orders")
+		if not (h and h.props.value == 1) then return { cards = {}, bodies = {}, titles = {} } end
 		if not holdSteps then step() end
 		stepStates = {}
 		local tt = render("MvrQueueContent", { onClose = function() end })
@@ -2064,15 +2074,15 @@ do -- own block: the main chunk is at the 200 local limit
 		end
 		return out
 	end
-	local function openQueue(tt, label)
-		local b = queueButton(tt)
-		check(b ~= nil, label .. ": queue button missing in the replace window")
-		if b then b.props.onClick() end
+	local function openQueue(_tt, label)
+		local h = mainWindow().props.header
+		check(h ~= nil, label .. ": tabs missing in the window header")
+		if h then h.props.onValueChange(1) end
 		return queueWindow(label)
 	end
 	local function closeQueue()
-		local w = windows["mass_vehicle_replace.queue"]
-		if w then w.params.onClose() end
+		local h = mainWindow().props.header
+		if h then h.props.onValueChange(0) end
 	end
 	-- "cancel all" through the window and the game's dialog, like the player
 	local function clearQueue(tt)
@@ -2121,7 +2131,7 @@ do -- own block: the main chunk is at the 200 local limit
 		local box = queueBox(tt)
 		check(box ~= nil and box.props.label == "Übriges nachbestellen", "box, one short: " .. tostring(box and box.props.label))
 		check(box and box.props.value == 0, "box must be off at first")
-		check(queueButton(tt) ~= nil, "queue window button missing")
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tabs: " .. MOCK.tabLabels(mainWindow()))
 		check(queueBox(chooseKasten("box, enough", 488000)) == nil, "box shown although the money covers all")
 		check(queueBox(chooseKasten("box, infinite", nil)) == nil, "box shown with infinite money")
 		box = queueBox(chooseKasten("box, nothing", 60999))
@@ -2162,6 +2172,20 @@ do -- own block: the main chunk is at the 200 local limit
 		check(#sent == 3, "box off: 3 commands expected, " .. #sent)
 		check(openEntries() == 0, "box off: vehicles queued")
 		check(hasText(content("box off, after"), "Ersetzt: 3 von 8"), "box off: result line")
+	end)
+
+	section("orders tab: the count in its label, the box under the replace button", function()
+		local tt = queueTrucks("tab count", 0)
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen (8)", "tab with 8 open: " .. MOCK.tabLabels(mainWindow()))
+		check(mainWindow().props.content.kind == "recipe:MvrContent", "the window must open on the replace tab")
+		clearQueue(tt)
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tab when empty: " .. MOCK.tabLabels(mainWindow()))
+		tt = chooseKasten("box place", 200000)
+		local col = find(tt, function(n)
+			local c = n.kind == "BoxLayout" and n.props.children
+			return c and #c == 2 and c[2].kind == "CheckBox"
+		end)[1]
+		check(col ~= nil and col.props.orientation == "V" and col.props.children[1].kind == "Button", "the box must sit under the replace button")
 	end)
 
 	section("partial click queues the rest, oldest first", function()
