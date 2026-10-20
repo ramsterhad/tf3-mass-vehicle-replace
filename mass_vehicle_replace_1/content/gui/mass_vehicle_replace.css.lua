@@ -203,6 +203,25 @@ function data()
 			backgroundColor1 = { colors.AccentDark[1], colors.AccentDark[2], colors.AccentDark[3], 0.5 },
 		})
 	end
+	-- custom: the order box blinks twice in the warning colour when it becomes usable, a reminder asked for by the
+	-- user (20.10.2026). Built like the game's own blinking (builtin.css.lua:75-88 window-blinking, 1971-1975: a keyframe
+	-- table in result.animations, a class that names it, a fixed count); the colour is the yellow of the button
+	if okColors and colors and type(colors.Warning) == "table" then
+		local w = colors.Warning
+		result.animations = result.animations or {}
+		result.animations["mvr-box-hint"] = {
+			[0.0] = { backgroundColor1 = { w[1], w[2], w[3], 0 } },
+			[0.5] = { backgroundColor1 = { w[1], w[2], w[3], 0.5 } },
+			[1.0] = { backgroundColor1 = { w[1], w[2], w[3], 0 } },
+		}
+		a("CheckBox!mvr-box-hint", {
+			animationName = "mvr-box-hint",
+			animationIterationCount = 2,
+			animationDuration = 0.6,
+		})
+	else
+		a("CheckBox!mvr-box-hint", {})
+	end
 	if okColors and colors and colors.Error then
 		a([[Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money,
 			Window!mvr-window Button!mvr-no-money!mvr-no-money!mvr-no-money:hover]], {

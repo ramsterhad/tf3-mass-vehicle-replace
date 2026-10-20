@@ -773,7 +773,8 @@ end
 -- details: the stats card is expanded (#16); expanded at first (user decision 19.10.2026)
 -- sortOld, sortNew: each list has its own sorting (user decision 19.10.2026); by year at first, the old list oldest
 -- first, the new list newest first, so the modern models are on top (user decision 20.10.2026)
--- queueRest: "queue the rest" box in the window, off at first (plan 20.10.2026, section 4)
+-- queueRest: "queue the rest" box in the window, off at every opening (user decision 20.10.2026: kept in the
+-- savegame it caught the player unawares)
 local sel = { carrier = nil, alt = nil, neu = nil, sortOld = "year", sortNew = "year", sortOldAsc = true, sortNewAsc = false,
 	sameCargo = true, details = true, queueRest = false }
 
@@ -793,7 +794,6 @@ local KEPT = {
 	sortNewAsc = isBool,
 	sameCargo = isBool,
 	details = isBool,
-	queueRest = isBool,
 }
 
 -- the save data as last read, so a write keeps every field it does not own (another version of this mod may have
@@ -2188,11 +2188,13 @@ local MvrContent = react.RegisterRecipe("MvrContent", function(p)
 
 	-- orders: the "order the rest" box right of the replace button, always there and greyed out while it has nothing
 	-- to do, all affordable or nothing selected (user decision 20.10.2026); the orders are in the second tab
+	-- while the box can be used it blinks once in the warning colour when it becomes usable, a reminder beside the
+	-- yellow button (user decision 20.10.2026; mass_vehicle_replace.css.lua mvr-box-hint)
 	local queueBox = builtin.CheckBox{
-		meta = { tooltip = _("mvr_queue_rest_tip"), enabled = canQueue },
+		meta = { class = canQueue and "mvr-box-hint" or nil, tooltip = _("mvr_queue_rest_tip"), enabled = canQueue },
 		label = canQueue and count("mvr_queue_rest", e.vehicles - some) or _("mvr_queue_rest_none"),
 		value = sel.queueRest and 1 or 0,
-		onValueChange = function(v) update(function() sel.queueRest = v == 1; Queue.writeSaveData() end) end,
+		onValueChange = function(v) update(function() sel.queueRest = v == 1 end) end,
 	}
 
 
@@ -2310,7 +2312,7 @@ local function openWindow(carrier)
 	result.batch = result.batch + 1
 	result.sent, result.ok, result.failed, result.total = 0, 0, 0, nil
 	result.queued, result.note = 0, nil
-	sel.carrier, sel.alt, sel.neu = carrier, nil, nil
+	sel.carrier, sel.alt, sel.neu, sel.queueRest = carrier, nil, nil, false
 	Queue.loadKept()
 	Queue.ensureLoaded()
 	local ok, err = pcall(wc.addWindow, MvrWindow, WINDOW_KEY, { onClose = closeWindow })
