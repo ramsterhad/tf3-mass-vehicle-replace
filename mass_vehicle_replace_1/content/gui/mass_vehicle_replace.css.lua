@@ -173,6 +173,11 @@ function data()
 	-- Only a minimum: a long result line ("Ersetzt: 1.000 von 1.000. 1.000 nachbestellt.") may push the button aside
 	-- rather than be cut
 	a("!mvr-action-side", { minSize = { ACTION_SIDE, 0 }, gravity = { 0, 0.5 } })
+	-- the inside of a side in the orders footer: stretched so its spacer pushes the button to the right, the gaps of a row
+	a("Window!mvr-window BoxLayout!mvr-foot-side", {
+		gravity = { -1, 0.5 },
+		innerSpacing = { 8, 0 },
+	})
 	a("ImageView!mvr-btn-icon", with(fixed(20, 20), { margin = { 0, 8, 0, 0 } }))
 	a("Window!mvr-window Button!mvr-replace-btn", {
 		gravity = { 1, 0.5 },

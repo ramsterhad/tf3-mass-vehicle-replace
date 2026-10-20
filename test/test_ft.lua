@@ -2610,6 +2610,39 @@ do -- own block: the main chunk is at the 200 local limit
 		clearQueue(content("fifo, clear"))
 	end)
 
+	section("a waiting order's prices follow the residual value, also once it moves up", function()
+		step()
+		queueTrucks("waiting prices trucks", 0)
+		openAndRender("waiting prices trains", 500, true)
+		local tt = content("waiting prices trains")
+		combos(tt)[1].props.onValueChange("m3")
+		tt = content("waiting prices, Bm 235")
+		combos(tt)[2].props.onValueChange("m2")
+		tt = content("waiting prices, Avmz")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("waiting prices, box on") end
+		replaceButton(tt).props.onClick()
+		local q = openQueue(tt, "waiting prices")
+		-- the prices of a waiting order follow the residual value as well, before and after the order above it goes
+		-- (game test 20.10.2026: the second order's figures stood still)
+		local before = MOCK.tileOf(q.bodies[2], "Gesamt")
+		residuals[100] = 5000
+		gameTimeNow = gameTimeNow + 1
+		q = queueWindow("waiting prices, game runs")
+		local moved = MOCK.tileOf(q.bodies[2], "Gesamt")
+		check(moved ~= nil and moved ~= before, "waiting prices: the second order's total stood still: " .. tostring(before) .. " -> " .. tostring(moved))
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
+		q = queueWindow("waiting prices, first cancelled")
+		check(#q.cards == 1 and MOCK.tileOf(q.bodies[1], "Gesamt") == moved, "waiting prices: the order left keeps its total: " .. tostring(MOCK.tileOf(q.bodies[1], "Gesamt")))
+		residuals[100] = 9000
+		gameTimeNow = gameTimeNow + 1
+		q = queueWindow("waiting prices, game runs on")
+		check(MOCK.tileOf(q.bodies[1], "Gesamt") ~= moved, "waiting prices: the order left stood still: " .. tostring(MOCK.tileOf(q.bodies[1], "Gesamt")))
+		residuals[100] = nil
+		closeQueue()
+		clearQueue(content("waiting prices, clear"))
+		bankBalance = 0
+	end)
+
 	section("cancelling a job while its command is in flight", function()
 		local tt = queueTrucks("cancel", 0)
 		holdSteps, bankBalance, sent = true, PRICE, {}
@@ -2636,6 +2669,11 @@ do -- own block: the main chunk is at the 200 local limit
 		local kids = find(q.tree, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-orders" end)[1].props.layout.props.children
 		check(kids[#kids].kind == "recipe:MvrQueueSettings", "settings must be the last part of the tab")
 		check(#find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end) == 1, "settings must be one row")
+		-- reserve | hold box in the middle | cancel all (user decision 20.10.2026)
+		local foot = find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
+		local fk = {}
+		for _i, c in ipairs(foot and foot.props.children or {}) do fk[#fk + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(fk, "|") == "mvr-action-side|Spacer|CheckBox|Spacer|mvr-action-side", "orders footer: " .. table.concat(fk, "|"))
 		check(box ~= nil and box.props.value == 0, "paused box")
 		box.props.onValueChange(1)
 		check(saved().queuePaused == true, "paused not kept")

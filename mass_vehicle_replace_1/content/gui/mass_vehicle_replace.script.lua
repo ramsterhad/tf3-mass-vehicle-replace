@@ -2393,6 +2393,8 @@ end
 -- the orders first; reserve and hold are changed rarely): reserve, hold, and "cancel all" on the right.
 local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 	ensureLoaded()
+	-- the reserve on the left, the hold box in the middle, cancel all on the right (user decision 20.10.2026): both
+	-- sides equally wide like the replace line, so the box sits in the middle with room to both
 	local parts = {}
 	-- infinite money (sandbox mode, "no costs"): a reserve means nothing and is left out, like the game hides its
 	-- balance card then (maintenance_station_eow.script.tl conditionMaintenanceStationBalance)
@@ -2405,13 +2407,21 @@ local MvrQueueSettings = react.RegisterRecipe("MvrQueueSettings", function()
 		parts[#parts + 1] = builtin.DoubleSpinBox{ meta = { class = "mvr-setting", tooltip = _("mvr_reserve_tip") }, min = 0,
 			max = Queue.RESERVE_MAX, step = 100000, value = queue.reserve, onValueChange = function(v) setReserve(v) end }
 	end
-	parts[#parts + 1] = builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = _("mvr_paused"), value = queue.paused and 1 or 0,
-		onValueChange = function(v) setPaused(v == 1) end }
 	parts[#parts + 1] = spacer()
-	parts[#parts + 1] = textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0)
+	local function side(children)
+		return builtin.Component{ meta = { class = "mvr-action-side" }, layout = builtin.BoxLayout{ meta = { class = "mvr-foot-side" }, children = children } }
+	end
+	local line = {
+		side(parts),
+		spacer(),
+		builtin.CheckBox{ meta = { tooltip = _("mvr_paused_tip") }, label = _("mvr_paused"), value = queue.paused and 1 or 0,
+			onValueChange = function(v) setPaused(v == 1) end },
+		spacer(),
+		side({ spacer(), textButton("secondary", _("mvr_cancel_all"), confirmCancelAll, nil, #queue.jobs == 0) }),
+	}
 	-- indented like the cards above it (game test 20.10.2026: the row stuck out on both sides)
 	return builtin.BoxLayout{ children = { builtin.Component{ meta = { class = "mvr-orders-foot" },
-		layout = vbox("mvr-rows", { hbox("mvr-row", parts) }) } } }
+		layout = vbox("mvr-rows", { hbox("mvr-row", line) }) } } }
 end)
 
 -- the small image of a model, as in the lists, and its name
