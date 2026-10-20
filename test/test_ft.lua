@@ -33,6 +33,8 @@ local LAYOUTS = { BoxLayout = true, FloatingLayout = true, GridLayout = true, Ta
 local builtin = setmetatable({
 	type = {
 		Orientation = { Horizontal = "H", Vertical = "V" },
+		-- builtin.d.tl:10-14, used by the game for the tabs of entity windows (make_entity_window.tl:242)
+		TabOrientation = { North = "N", South = "S" },
 		ImageViewScaling = { AutoFit = "AutoFit", AutoZoom = "AutoZoom", Stretch = "Stretch" },
 	},
 }, { __index = function(t, kind)
@@ -72,6 +74,20 @@ react.iaHandler = function(f) return f end
 react.onUnmount = function() end
 react.onEvent = function() end
 react.getCurrentRecipeName = function() return currentRecipe end
+-- step and mount hooks of a recipe (react.d.tl:303-304, 340): collected per render, played by the test (hostFrame
+-- below). onStepTimer bodies run as deferred steps with a restricted api in the game (react.lua:525-534); the mock
+-- records them apart so a test can tell the two kinds.
+-- MOCK: mock state of the queue tests in one table
+-- MOCK: a global on purpose: the main chunk of this file is at Lua's limit of 200 locals
+MOCK = { hooks = { steps = {}, timers = {}, mounts = {} }, hooksOf = {} }
+react.onStep = function(fn) MOCK.hooks.steps[#MOCK.hooks.steps + 1] = fn end
+react.onStepTimer = function(fn, interval) MOCK.hooks.timers[#MOCK.hooks.timers + 1] = { fn = fn, interval = interval } end
+react.onMount = function(fn) MOCK.hooks.mounts[#MOCK.hooks.mounts + 1] = fn end
+-- a ref whose value is computed once (react.d.tl:316); the earnings plugin reads isMapEditor that way
+react.useRefLazy = function(fn)
+	local v = fn()
+	return { get = function() return v end }
+end
 -- like react.lua: recipes are known by id, a call goes to the replacement if one is set, and
 -- CallOriginalRecipe only works with a registered recipe (in the game a plain function fails here)
 _react = { recipeReplace = {} }
@@ -100,7 +116,9 @@ end }
 
 local function render(name, params)
 	currentRecipe, stateIdx = name, 0
+	MOCK.hooks = { steps = {}, timers = {}, mounts = {} }
 	local out = recipes[name](params)
+	MOCK.hooksOf[name] = MOCK.hooks
 	currentRecipe = nil
 	return out
 end
@@ -122,13 +140,30 @@ engine_react_util.useStepStateTimer = function(f, interval)
 	return st
 end
 local spacerOrig = function() return { kind = "Spacer", props = {} } end
-local gui_react_util = { makeHorizontalSpacer = spacerOrig }
+-- makeVerticalSpacer: gui_react_util.tl:370-372, a component of class vertical-spacer
+local gui_react_util = { makeHorizontalSpacer = spacerOrig, makeVerticalSpacer = function() return { kind = "Component", props = { meta = { class = "vertical-spacer" } } } end }
 local windows = {}
 local game_react_globals = { getDefaultWindowApi = function() return {
 	addWindow = function(recipe, key, params) windows[key] = { recipe = recipe, params = params } end,
 	removeWindow = function(recipe, key) windows[key] = nil end,
 } end }
 local entity_window_util = { ActionButtonBar = gameRecipe("ActionButtonBar", function(ref, p) return { kind = "ActionButtonBar", props = p } end) }
+-- the inner panel of the game's windows (entity_window_util.tl:2467-2489): two positional arguments
+entity_window_util.ContentWidgetScrollContainer = function(children, first)
+	assert(type(children) == "table" and type(first) == "boolean", "ContentWidgetScrollContainer(children, first)")
+	return { kind = "ContentWidgetScrollContainer", props = { children = children } }
+end
+-- the game's text button (button_react_util.tl:6-30): 5th argument = disabled
+MOCK.button_react_util = { makeTextButton = function(class, label, onClick, tooltip, disabled)
+	assert(type(class) == "string" and type(label) == "string", "makeTextButton(class, text, ...)")
+	return { kind = "Button", props = { meta = { class = class, tooltip = tooltip, enabled = disabled == nil and true or not disabled },
+		content = { kind = "TextView", props = { meta = { class = "font-scale-body" }, text = label } }, onClick = onClick } }
+end }
+-- the game's dialog (menu/dialog_react_util.tl, params in dialog_react_util.d.tl:4-26)
+MOCK.dialog_react_util = { DialogWindow = makeRecipe("DialogWindow", function(p) return { kind = "Window", props = p } end) }
+-- the two extension points the queue uses (main/mod_entry_point.tl:5, game_bar/game_bar_widgets.tl:70)
+MOCK.mod_entry_point = { ModEntryPointExtension = { id = "::ModEntryPointExtension" } }
+MOCK.game_bar_widgets = { GameBarInfoDisplayExtension = { id = "::GameBarInfoDisplayExtension" } }
 local MaintenanceStationWindow = makeRecipe("MaintenanceStationWindow", function() return builtin.BoxLayout{} end)
 recipeIds[MaintenanceStationWindow] = "MaintenanceStationWindow"
 originalFns.MaintenanceStationWindow = function(params) return { kind = "recipe:MaintenanceStationWindow", props = params } end
@@ -180,6 +215,10 @@ local modules = {
 	["::/gui/main/engine_react_util.tl"] = engine_react_util,
 	["::/gui/main/game_react_globals.tl"] = game_react_globals,
 	["::/gui/entity_window/entity_window_util.tl"] = entity_window_util,
+	["::/gui/main/button_react_util.tl"] = MOCK.button_react_util,
+	["::/gui/menu/dialog_react_util.tl"] = MOCK.dialog_react_util,
+	["::/gui/main/mod_entry_point.tl"] = MOCK.mod_entry_point,
+	["::/gui/game_bar/game_bar_widgets.tl"] = MOCK.game_bar_widgets,
 	["::/gui/entity_window/maintenance_station/maintenance_station.tl"] = MaintenanceStationWindow,
 	["::/gui/entity_window/maintenance_station/maintenance_station_eow.script.tl"] = {
 		MaintenanceStationEowExtensionPoint = { id = "::MaintenanceStationEowExtensionPoint" },
@@ -193,7 +232,7 @@ end
 
 -- Game world -------------------------------------------------------------------------------------------
 local Carrier = { ROAD = 0, RAIL = 1, TRAM = 2, AIR = 3, WATER = 4 }
-local CT = { TRANSPORT_VEHICLE = "TV", GAME_TIME = "GT", VEHICLE_DEPOT = "VD" }
+local CT = { TRANSPORT_VEHICLE = "TV", GAME_TIME = "GT", VEHICLE_DEPOT = "VD", PLAYER_OWNED = "PO" }
 
 -- engine types of the game (api/tealdef/api/type.d.tl:1892); the values are made up, only equality counts
 local VehicleEngineType = { HORSE = 40, STEAM = 41, ELECTRIC = 42, DIESEL = 43 }
@@ -386,10 +425,23 @@ local function copyTable(t)
 	for k, v in pairs(t) do c[k] = copyTable(v) end
 	return c
 end
+-- real time of the application in seconds (api/tealdef/api/util.d.tl:176), advanced by the test
+MOCK.appClock = 1000
+-- revision num[1] per vehicle (tf3-sdk knowledge/gui-change-detection-and-perf.md section 6): the engine's
+-- identity slot; a test raises it to stand for an entity id reused for another entity
+MOCK.births = {}
+MOCK.mapEditor = false
+MOCK.ownedReal = { player = PLAYER }
+MOCK.owned = engineRecord("PlayerOwned", MOCK.ownedReal)
+MOCK.revisionReal = { num = { 1, 5, 0 } }
+MOCK.revision = engineRecord("Revision", MOCK.revisionReal)
+-- native calls of the game API, for the budget checks of the queue (counted below)
+MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
 api = {
 	gui = { game = {
 		getGuiSaveData = function(modId) return copyTable(guiSaveData[modId]) end,
 		setGuiSaveData = function(modId, data) assert(type(data) == "table", "setGuiSaveData: table expected"); guiSaveData[modId] = copyTable(data) end,
+		isMapEditor = function() return MOCK.mapEditor end,
 	} },
 	type = {
 		ComponentType = CT,
@@ -439,8 +491,22 @@ api = {
 			if ct == CT.TRANSPORT_VEHICLE then return vehicles[e] end
 			if ct == CT.GAME_TIME then return { gameTime = gameTimeNow } end
 			if ct == CT.VEHICLE_DEPOT then return depots[e] end
+			-- the owner, the way the game's entity windows read it (eow_extension_util.tl:5-17); one shared record
+			-- (a file handle each), its field set per call
+			if ct == CT.PLAYER_OWNED then
+				if not vehicles[e] then return nil end
+				MOCK.ownedReal.player = owners[e]
+				return MOCK.owned
+			end
 		end,
 		entityExists = function(e) return depots[e] ~= nil or vehicles[e] ~= nil end,
+		-- userdata with num = {rev0, rev1, rev2} (api/tealdef/api/engine.d.tl:15-18); what it does for an entity that
+		-- does not exist is not measured: the mock throws, so the code must check entityExists first
+		getRevision = function(e)
+			assert(vehicles[e], "revision of an unknown entity")
+			MOCK.revisionReal.num = { MOCK.births[e] or 1, 5, 0 }
+			return MOCK.revision
+		end,
 		util = { getYear = function() return currentYear end, getWorld = function() return 0 end, getPlayer = function() return PLAYER end,
 			finance = { getPlayersBalance = function(pl) assert(pl == PLAYER); return bankBalance end },
 			-- residual value per whole vehicle (api/tealdef/api/engine/util.d.tl:465-468); 0 unless a test sets it
@@ -464,6 +530,13 @@ api = {
 		system = { transportVehicleSystem = { getDepotVehicles = function(d) return d == 503 and { 120 } or {} end } },
 	},
 	util = { formatMoney = function(v) return "$" .. tostring(v) end,
+		-- the game's counters with a thousands separator, as seen in the German game bar ("896.439")
+		lang = { formatInt = function(v)
+			local s = string.format("%d", v)
+			local out = s:reverse():gsub("(%d%d%d)", "%1."):reverse()
+			return (out:gsub("^%.", ""))
+		end },
+		getApplicationTime = function() return MOCK.appClock end,
 		-- units as documented in api/tealdef/api/util.d.tl:36-96 (m/s, kW, kN, t)
 		formatSpeed = function(v) return string.format("%.0f km/h", v * 3.6) end,
 		formatPower = function(v) return string.format("%.0f kW", v) end,
@@ -487,6 +560,24 @@ api = {
 		end,
 	},
 }
+
+-- every function of the game API counts as one native call (budget checks of the queue)
+do
+	local function countCalls(t)
+		for k, v in pairs(t) do
+			if type(v) == "function" then
+				t[k] = function(...)
+					MOCK.apiCalls = MOCK.apiCalls + 1
+					MOCK.apiCallsByName[k] = (MOCK.apiCallsByName[k] or 0) + 1
+					return v(...)
+				end
+			elseif type(v) == "table" then
+				countCalls(v)
+			end
+		end
+	end
+	countCalls(api.engine); countCalls(api.util); countCalls(api.gui); countCalls(api.cmd)
+end
 
 -- Load the script ---------------------------------------------------------------------------------------
 -- the game's GUI Lua has no rawget (crashed at startup in 1.0.1 testing)
@@ -545,6 +636,13 @@ local function rules(tree, label)
 		end
 		invariant(not (p.meta and p.meta.styleSheet and (p.meta.styleSheet.minSize or p.meta.styleSheet.maxSize or p.meta.styleSheet.gravity or p.meta.styleSheet.padding)),
 			path .. ": makeStyle only knows size; minSize/maxSize/gravity/padding have no effect")
+		-- a horizontal spacer only works in a horizontal layout; a BoxLayout without orientation stacks its children
+		-- (game test 20.10.2026: the orders footer stood one below the other)
+		if n.kind == "BoxLayout" and p.orientation ~= "H" then
+			for _i, c in ipairs(p.children or {}) do
+				invariant(c.kind ~= "Spacer", path .. ": horizontal spacer in a vertical BoxLayout")
+			end
+		end
 		if n.kind == "ComboBoxItem" then
 			invariant(p.content and COMPONENTS[p.content.kind], path .. ": ComboBoxItem.content must be a component, is " .. tostring(p.content and p.content.kind))
 		elseif n.kind == "ComboBox" then
@@ -726,13 +824,13 @@ cs[2].props.onValueChange("m3")
 t = content("new chosen")
 local big = find(t, function(n) return n.kind == "ImageView" and n.props.meta and n.props.meta.class == "mvr-big-image" end)
 check(#big == 2, "two large images expected, " .. #big)
-local summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
-check(#summary == 1, "summary missing")
-print("  " .. (summary[1] and summary[1].props.text or "?"))
+-- the count is in the button, no line of its own (user decision 20.10.2026)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("werden ersetzt") end) == 0, "count line still shown")
 -- wagon 2: 6 pieces in 3 trains (one runs behind the multiple unit); new model 3 costs 280000
 local price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
 check(price[1] and price[1].props.text == "Kaufpreis: $1680000", "purchase price wrong: " .. tostring(price[1] and price[1].props.text))
-check(summary[1] and summary[1].props.text == "3 Fahrzeuge werden ersetzt.", "count wrong")
+-- the button label (replaceButton and buttonText come further down)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "3 ersetzen" end) == 1, "count wrong")
 -- the placeholder must not trigger anything
 cs = combos(t)
 cs[2].props.onValueChange("none")
@@ -745,9 +843,7 @@ print("== Sort by year")
 local sorts = find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)
 -- each list has its own sort buttons (user decision 19.10.2026): old Name, old Year, new Name, new Year
 check(#sorts == 4, "two sort buttons per list expected: " .. #sorts)
-sorts[2].props.onValueChange(1)
-t = content("year old")
-find(t, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[4].props.onValueChange(1)
+-- both lists start by year, the old oldest first, the new newest first (user decision 20.10.2026): no click needed
 t = content("year")
 cs = combos(t)
 names = {}
@@ -839,8 +935,8 @@ cs[2].props.onValueChange("u901")
 t = content("ET 423 chosen")
 price = find(t, function(n) return n.kind == "TextView" and n.props.text:find("Kaufpreis") end)
 check(price[1] and price[1].props.text == "Kaufpreis: $6600000", "multiple unit price (3 x 2200000): " .. tostring(price[1] and price[1].props.text))
-summary = find(t, function(n) return n.kind == "TextView" and n.props.text:find("ersetzt") end)
-check(summary[1] and summary[1].props.text == "2 Fahrzeuge werden ersetzt.", "multiple unit count: " .. tostring(summary[1] and summary[1].props.text))
+-- the button label (replaceButton and buttonText come further down)
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "2 ersetzen" end) == 1, "multiple unit count")
 sent = {}
 costPerCommand = 3300000
 bankBalance = 10000000
@@ -1243,7 +1339,7 @@ check(buttonText(partBtn) == "7 von 8 ersetzen", "partial: button text " .. tost
 check(partBtn.props.meta.enabled == true, "partial: button disabled")
 check(partBtn.props.meta.tooltip == "Nicht genug Geld: Es werden nur 7 von 8 ersetzt (älteste zuerst).", "partial: tooltip " .. tostring(partBtn.props.meta.tooltip))
 check(partBtn.props.meta.class:find("mvr-partial", 1, true) and not partBtn.props.meta.class:find("mvr-no-money", 1, true), "partial: class " .. partBtn.props.meta.class)
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "7 Fahrzeuge werden ersetzt." end) == 1, "partial: count line does not match the button")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text:find("werden ersetzt") end) == 0, "partial: a count line besides the button")
 check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Kosten nach Restwert: $427000" end) == 1, "partial: cost line does not match the button")
 -- 200000 covers 3 trucks at 61000; truck 115 is the oldest, the rest by id
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
@@ -1257,7 +1353,12 @@ for _i, c in ipairs(sent) do partialIds[#partialIds + 1] = c.e end
 table.sort(partialIds)
 check(table.concat(partialIds, ",") == "110,111,115", "partial: oldest first expected 110,111,115, got " .. table.concat(partialIds, ","))
 t = content("partial, after the click")
-check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8" end) == 1, "partial: result line")
+check(#find(t, function(n) return n.kind == "TextView" and n.props.text == "Ersetzt: 3 von 8." end) == 1, "partial: result line")
+-- the selection stays after the click: the old list shows the 5 trucks left, the new list keeps its model, the result
+-- stands above the cost (game test 20.10.2026: the new list went empty while the old one still offered the rest)
+check(combos(t)[1].props.value == "m10" and combos(t)[2].props.value == "m11", "partial: selection after the click: "
+	.. tostring(combos(t)[1].props.value) .. " / " .. tostring(combos(t)[2].props.value))
+check(buttonText(replaceButton(t)) ~= "Ersetzen", "partial: the button must offer the trucks left: " .. tostring(buttonText(replaceButton(t))))
 check(bankBalance == 200000 - 3 * 61000, "partial: booked " .. tostring(200000 - bankBalance))
 vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
 -- not even one truck: red "Nicht genug Geld" as before; enough for all: plain "Ersetzen"
@@ -1268,11 +1369,11 @@ check(replaceButton(t).props.meta.tooltip == "Nicht genug Geld: Es wird nur 1 vo
 t = chooseKasten("partial, too poor", 60999)
 check(buttonText(replaceButton(t)) == "Nicht genug Geld" and replaceButton(t).props.meta.enabled == false, "partial: not one truck covered")
 t = chooseKasten("partial, rich", 488000)
-check(buttonText(replaceButton(t)) == "Ersetzen", "partial: money covers all")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "partial: money covers all")
 
 t = chooseKasten("exactly enough", 488000)
 check(replaceButton(t).props.meta.enabled == true, "button disabled with exactly the price")
-check(buttonText(replaceButton(t)) == "Ersetzen", "button text with enough money: " .. tostring(buttonText(replaceButton(t))))
+check(buttonText(replaceButton(t)) == "8 ersetzen", "button text with enough money: " .. tostring(buttonText(replaceButton(t))))
 check(priceText(t) == "Kaufpreis: $488000", "price line with enough money: " .. tostring(priceText(t)))
 sent = {}
 replaceButton(t).props.onClick()
@@ -1304,7 +1405,7 @@ end
 print("== Only the player's vehicles (issue #1)")
 -- truck 130 is a Kipper like 110-117 but belongs to an AI player
 t = chooseKasten("foreign vehicles", nil)
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "foreign truck counted in the summary")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "foreign truck counted in the summary")
 sent = {}
 replaceButton(t).props.onClick()
 local foreignSent = false
@@ -1315,7 +1416,7 @@ print("== Infinite money: no cost line (issue #20)")
 residuals = {}
 for v = 110, 117 do residuals[v] = 1000 end
 t = chooseKasten("infinite money", nil)
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "infinite money: count missing")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "infinite money: count missing")
 local moneyLines = find(t, function(n) return n.kind == "TextView" and type(n.props.text) == "string" and (n.props.text:find("^Kaufpreis") or n.props.text:find("^Kosten")) end)
 -- the price per model in the list stays, like the game's purchase list
 check(#moneyLines == 0, "infinite money: cost line shown: " .. tostring(moneyLines[1] and moneyLines[1].props.text))
@@ -1380,7 +1481,7 @@ check(#sent == 8, "second batch sent while the first was running: " .. #sent)
 holdSteps = false
 t = content("double click, step done")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after the batch finished")
-check(buttonText(replaceButton(t)) == "Ersetzen", "button text after the batch: " .. tostring(buttonText(replaceButton(t))))
+check(buttonText(replaceButton(t)) == "8 ersetzen", "button text after the batch: " .. tostring(buttonText(replaceButton(t))))
 
 print("== Failed commands also end the batch (issue #9)")
 holdSteps, commandSucceeds = true, false
@@ -1390,7 +1491,7 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "failing commands: 8 sent expected, " .. #sent)
 holdSteps = false
 t = content("failing commands, step done")
-check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)"), "failure count not shown")
+check(hasText(t, "Ersetzt: 0 von 8 (8 geplante Fahrzeuge wurden vom Spiel abgelehnt)."), "failure count not shown")
 check(replaceButton(t).props.meta.enabled == true, "button stays disabled after failed commands")
 commandSucceeds = true
 
@@ -1400,13 +1501,13 @@ refused[113] = true
 t = chooseKasten("one refused", nil)
 replaceButton(t).props.onClick()
 t = content("one refused, done")
-check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "one refused: result line")
+check(hasText(t, "Ersetzt: 7 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)."), "one refused: result line")
 -- partial: 3 trucks planned (200000 covers 3 x 61000), one of them refused
 refused[113], refused[110] = nil, true
 t = chooseKasten("partial, one refused", 200000)
 replaceButton(t).props.onClick()
 t = content("partial, one refused, done")
-check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)"), "partial, one refused: result line")
+check(hasText(t, "Ersetzt: 2 von 8 (1 geplantes Fahrzeug wurde vom Spiel abgelehnt)."), "partial, one refused: result line")
 refused = {}
 bankBalance = nil
 
@@ -1435,7 +1536,7 @@ replaceButton(t).props.onClick()
 check(#sent == 8, "new window: 8 commands expected, " .. #sent)
 step() -- the callbacks of the closed window and of the new one arrive in the same step
 t = content("reopen, done")
-check(hasText(t, "Ersetzt: 8 von 8"), "old callbacks mixed into the new batch")
+check(hasText(t, "Ersetzt: 8 von 8."), "old callbacks mixed into the new batch")
 holdSteps = false
 bankBalance = 5000000
 
@@ -1652,8 +1753,10 @@ print("== Warning when the engine type changes (issue #50)")
 local ARROW = "\226\134\146"
 local function engineLine(tt)
 	local w = find(tt, function(n) return n.kind == "TextView" and n.props.meta.class == "font-scale-body, warning" end)
-	check(#w == 1, "engine warning line missing or doubled: " .. #w)
-	return w[1] and w[1].props or { meta = {} }
+	-- the warning is a line of its own only while there is one (user decision 20.10.2026: the summary lines are
+	-- spread over the height of button and box, an empty line would leave a gap at the bottom)
+	check(#w <= 1, "engine warning line doubled: " .. #w)
+	return w[1] and w[1].props or { text = " ", meta = {} }
 end
 local function chooseRail(label, altKey, neuKey)
 	step()
@@ -1666,6 +1769,17 @@ local function chooseRail(label, altKey, neuKey)
 end
 local wl = engineLine(chooseRail("steam to electric", "m5", "m4"))
 check(wl.text == "Antrieb wechselt: Dampf " .. ARROW .. " Elektrisch", "steam to electric: " .. tostring(wl.text))
+-- centered right under the replace button (user decision 20.10.2026)
+do
+	local placed = content("steam to electric, place")
+	local under = find(placed, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-action-under" end)[1]
+	check(under and under.props.children[1].kind == "Spacer" and under.props.children[2].props.text == wl.text
+		and under.props.children[3].kind == "Spacer", "engine warning not centered in its own row")
+	-- the row stays without a warning, so the window keeps its height (user decision 20.10.2026)
+	local plain = find(chooseRail("electric to electric, place", "m1", "m4"),
+		function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-action-under" end)[1]
+	check(plain and plain.props.children[2].props.text == " ", "warning row gone without a warning")
+end
 check(wl.meta.tooltip ~= nil and wl.meta.tooltip:find("Oberleitung", 1, true) ~= nil, "steam to electric: tooltip " .. tostring(wl.meta.tooltip))
 wl = engineLine(chooseRail("electric to electric", "m1", "m4"))
 check(wl.text == " " and wl.meta.tooltip == nil, "same engine type warns: " .. tostring(wl.text))
@@ -1709,7 +1823,7 @@ if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.win
 print("== Fleet changes while the window is open (issue #10)")
 -- seen in the game: a vehicle bought or handed to another player while the window was open left the count stale
 t = chooseKasten("fleet change", 5000000)
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: start count")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "fleet change: start count")
 check(not wouldRedraw(), "fleet change: redraw without any change")
 local readsBefore = fleetBuildReads
 t = content("fleet change, unchanged")
@@ -1717,18 +1831,18 @@ check(fleetBuildReads == readsBefore, "fleet change: fleet rebuilt on a redraw w
 vehicle(118, { 10 }) -- bought
 check(wouldRedraw(), "fleet change: window not redrawn after a purchase")
 t = content("fleet change, bought")
-check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: count after a purchase")
+check(buttonText(replaceButton(t)) == "9 ersetzen", "fleet change: count after a purchase")
 owners[118] = 99 -- handed to another player (makeEntitySetPlayerCmd)
 check(wouldRedraw(), "fleet change: window not redrawn after a handover")
 t = content("fleet change, handed over")
-check(hasText(t, "8 Fahrzeuge werden ersetzt."), "fleet change: count after a handover")
+check(buttonText(replaceButton(t)) == "8 ersetzen", "fleet change: count after a handover")
 owners[118] = nil
 vehicles[118] = nil
 -- reopened right after a change, before the throttled vehicle check ran: the new window must not show the old fleet
 t = chooseKasten("fleet change, reopen 1", 5000000)
 vehicle(118, { 10 })
 t = chooseKasten("fleet change, reopen 2", 5000000)
-check(hasText(t, "9 Fahrzeuge werden ersetzt."), "fleet change: reopened window shows the fleet of the last one")
+check(buttonText(replaceButton(t)) == "9 ersetzen", "fleet change: reopened window shows the fleet of the last one")
 vehicles[118] = nil
 t = chooseKasten("fleet change, reopen 3", 5000000)
 -- our own batch: the vehicles keep their ids, the callbacks make the window read the fleet again
@@ -1860,6 +1974,29 @@ do -- own block: the main chunk is at the 200 local limit
 	check(card and card.collapsibleExpanded == true, "stats: expanded card does not stay expanded for the session")
 	body = detailsBody(card, "stats tram")
 	check(hasText(body, "Keine Daten zu diesen Modellen."), "stats: no data text missing")
+	-- the window keeps its height whichever models are chosen (user decision 20.10.2026): as many table rows for
+	-- wagons as for locomotives
+	do
+		local function tableRows(tt, label)
+			local n = 0
+			for _i, tl in ipairs(find(detailsBody(detailsCardOf(tt), label), function(x) return x.kind == "TableLayout" end)) do n = n + #tl.props.rows end
+			return n
+		end
+		-- wagons have capacity and loading, locomotives power and tractive effort: different rows
+		storeStats.m2 = { totalCapacity = 50, speed = 160 / 3.6, loadingSpeed = 1, weight = 40, runningCosts = 9000 }
+		storeStats.m3 = { totalCapacity = 60, speed = 200 / 3.6, loadingSpeed = 1, weight = 42, runningCosts = 9500 }
+		storeStats.m5 = { speed = 80 / 3.6, power = 1000, weight = 100, runningCosts = 40000 }
+		storeStats.m4 = { speed = 150 / 3.6, power = 5000, weight = 110, runningCosts = 60000 }
+		local wagons = tableRows(chooseRail("rows, wagons", "m2", "m3"), "rows, wagons")
+		local locos = tableRows(chooseRail("rows, locomotives", "m5", "m4"), "rows, locomotives")
+		-- 11 values in two halves of 6 lines and a header each
+		check(wagons == 14 and locos == 14, "stats rows differ: wagons " .. wagons .. ", locomotives " .. locos)
+		storeStats.m2, storeStats.m3, storeStats.m4, storeStats.m5 = nil, nil, nil, nil
+	end
+	-- without a new model there is nothing to replace: no count, no click (game test 20.10.2026: "3 ersetzen" stood
+	-- enabled beside an empty new list)
+	check(replaceButton(t).props.meta.enabled == false and buttonText(replaceButton(t)) == "Ersetzen",
+		"no new model: button " .. tostring(buttonText(replaceButton(t))) .. ", enabled " .. tostring(replaceButton(t).props.meta.enabled))
 
 	-- multiple units are read as the whole unit, like the store (makeVehicleData(id, true))
 	storeStats.u900 = { totalCapacity = 100, speed = 120 / 3.6, power = 2000, weight = 150, runningCosts = 90000 }
@@ -1911,6 +2048,954 @@ do -- own block: the main chunk is at the 200 local limit
 	check(find(content("kept unreachable after"), function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.value == 1,
 		"kept: without save data the sorting must still switch")
 	api.gui.game = savedGame
+end
+
+print("== Replacement queue (#23 stage 2)")
+do -- own block: the main chunk is at the 200 local limit
+	local MOD = "mass_vehicle_replace_1"
+	-- every scenario in a pcall: against a script without the queue the recipes are missing, and the counter-check
+	-- (new tests against the old code) must count failures instead of stopping at the first error
+	local function section(name, fn)
+		print("== queue: " .. name)
+		local ok, err = pcall(fn)
+		if not ok then fail("queue: " .. name .. ": " .. tostring(err)) end
+	end
+	-- the host: an invisible plugin at the mod entry point; mounting reads the queue from the savegame, every
+	-- frame runs its step hooks, a tick is one second of application time
+	local function mountHost()
+		local tree = render("MvrQueueHost", {})
+		rules(tree, "queue host")
+		for _i, fn in ipairs(MOCK.hooksOf.MvrQueueHost.mounts) do fn() end
+	end
+	local function frame()
+		for _i, fn in ipairs(MOCK.hooksOf.MvrQueueHost.steps) do fn() end
+	end
+	local function hostTick(n)
+		for _i = 1, n or 1 do
+			MOCK.appClock = MOCK.appClock + 1
+			frame()
+		end
+	end
+	local function saved() return guiSaveData[MOD] or {} end
+	local function openEntries()
+		local n = 0
+		for _e in tostring(saved().queue or ""):gmatch("%d+/%d+") do n = n + 1 end
+		return n
+	end
+	local function sentIds()
+		local ids = {}
+		for _i, c in ipairs(sent) do ids[#ids + 1] = c.e end
+		return table.concat(ids, ",")
+	end
+	local function queueBox(tt)
+		return find(tt, function(n) return n.kind == "CheckBox" and tostring(n.props.label):lower():find("nachbestellen", 1, true) ~= nil end)[1]
+	end
+	-- the replace window with its two tabs in the header (user decision 20.10.2026: no second window)
+	local function mainWindow()
+		local w = render("MvrWindow", { onClose = function() end })
+		-- the tabs are the window content (game test 20.10.2026: as header they cut the title), with the game's
+		-- frame around the selected tab's content; tabs and shown content are put where the checks look for them
+		local tw = w.props.content
+		check(w.props.header == nil and tw and tw.kind == "TabWidget", "tabs must be the window content")
+		check(tw and tw.props.meta == nil, "tabs must keep the game's framed look, no class like no-content")
+		w.props.header = tw
+		for _i, t in ipairs(tw and tw.props.tabs or {}) do
+			if t.props.value == tw.props.value then w.props.content = t.props.item end
+		end
+		return w
+	end
+	-- MOCK: a field, not a local (the main chunk is at Lua's limit of 200 locals)
+	function MOCK.tabLabels(w)
+		local out = {}
+		local h = w.props.header
+		for _i, t in ipairs(h and h.props.tabs or {}) do out[#out + 1] = t.props.indicator.props.text end
+		return table.concat(out, "|")
+	end
+	local function buttonIn(tree, label)
+		return find(tree, function(n) return n.kind == "Button" and buttonText(n) == label end)[1]
+	end
+	-- the orders tab: its content and the body of every card, rendered like the game's card does it
+	local function queueWindow(label)
+		local win = mainWindow()
+		local h = win.props.header
+		check(h and h.kind == "TabWidget" and h.props.value == 1, label .. ": orders tab not selected")
+		check(win.props.content and win.props.content.kind == "recipe:MvrQueueContent", label .. ": window does not show the orders")
+		if not (h and h.props.value == 1) then return { cards = {}, bodies = {}, titles = {}, settings = { kind = "none", props = {} } } end
+		if not holdSteps then step() end
+		stepStates = {}
+		local tt = render("MvrQueueContent", { onClose = function() end })
+		rules(tt, label)
+		local cards = find(tt, function(n) return n.kind == "recipe:ContentCard" end)
+		-- the settings: plain rows above the cards (user decision 20.10.2026), rendered like the content does
+		local settings = render("MvrQueueSettings", {})
+		rules(settings, label .. " settings")
+		local out = { tree = tt, cards = cards, bodies = {}, titles = {}, settings = settings }
+		for k, c in ipairs(cards) do
+			local rp = c.props.recipeAndParamPermanent
+			check(rp and rp.recipe and rp.param, label .. ": card " .. k .. " without a permanent body")
+			local body = render(rp.recipe.name, rp.param)
+			rules(body, label .. " card " .. k)
+			out.bodies[k] = body
+			out.titles[k] = c.props.title
+		end
+		return out
+	end
+	local function openQueue(_tt, label)
+		local h = mainWindow().props.header
+		check(h ~= nil, label .. ": tabs missing in the window header")
+		if h then h.props.onValueChange(1) end
+		return queueWindow(label)
+	end
+	local function closeQueue()
+		local h = mainWindow().props.header
+		if h then h.props.onValueChange(0) end
+	end
+	-- "cancel all" through the window and the game's dialog, like the player
+	local function clearQueue(tt)
+		local q = openQueue(tt, "clear")
+		local b = buttonIn(q.settings, "Alle abbrechen")
+		check(b ~= nil, "clear: cancel all button missing")
+		if b and b.props.meta.enabled ~= false then
+			b.props.onClick()
+			local d = windows["mass_vehicle_replace.confirm"]
+			check(d ~= nil, "clear: confirmation dialog not opened with its own key")
+			if d then d.params.choices[1].onClick() end
+			check(windows["mass_vehicle_replace.confirm"] == nil, "clear: dialog not closed")
+		end
+		closeQueue()
+		check(openEntries() == 0, "clear: entries left: " .. tostring(saved().queue))
+	end
+	local function queueTrucks(label, b)
+		local tt = chooseKasten(label, b)
+		local box = queueBox(tt)
+		if box and box.props.value == 0 then box.props.onValueChange(1); tt = content(label .. ", box on") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		return content(label .. ", queued")
+	end
+	local function lineOf(body, prefix)
+		local hit = find(body, function(n) return n.kind == "TextView" and tostring(n.props.text):find(prefix, 1, true) == 1 end)[1]
+		return hit and hit.props.text or nil, hit
+	end
+	-- the texts of the old list's entry for this model, nil when the list does not offer it
+	function MOCK.oldEntry(tt, key)
+		for _i, it in ipairs(combos(tt)[1].props.items) do
+			if it.props.value == key then return table.concat(itemTexts(it), " ") end
+		end
+		return nil
+	end
+	-- the value on an order's tile with this label, and the tile (card variant E, user decision 20.10.2026)
+	-- a field, not a local: the main chunk is at Lua's limit of 200 locals
+	function MOCK.tileOf(body, label)
+		for _i, t in ipairs(find(body, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-tile" end)) do
+			local tv = find(t, function(n) return n.kind == "TextView" end)
+			if tv[1] and tv[1].props.text == label then return tv[2] and tv[2].props.text, t end
+		end
+		return nil
+	end
+	local function newSession()
+		-- a new game session: the script loads again (fresh memory), the savegame data stays
+		_react.recipeReplace.ActionButtonBar = nil
+		chunk()
+		exports = data()
+		MOCK.appClock = MOCK.appClock + 100
+	end
+	local PRICE = 61000
+
+	residuals, partValues, refused = {}, {}, {}
+	commandSucceeds, holdSteps, throwAtCommand = true, false, nil
+	costPerCommand = PRICE
+	vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1 -- the oldest truck
+	guiSaveData[MOD] = {}
+
+	section("the replace button keeps the reserve as well (user decision 20.10.2026)", function()
+		openQueue(content("window reserve"), "window reserve")
+		find(queueWindow("window reserve, set").settings, function(n) return n.kind == "TextInputField" end)[1].props.onValueChange("100.000")
+		closeQueue()
+		-- 488.000 on the account, 100.000 stay: 388.000 cover 6 of the 8 trucks at 61.000
+		local tt = chooseKasten("window reserve, rich", 488000)
+		check(buttonText(replaceButton(tt)) == "6 von 8 ersetzen", "reserve: button " .. tostring(buttonText(replaceButton(tt))))
+		sent = {}
+		local box = queueBox(tt)
+		check(box and box.props.value == 0, "reserve: the order box must be off here")
+		replaceButton(tt).props.onClick()
+		step()
+		check(#sent == 6 and bankBalance == 488000 - 6 * 61000, "reserve: sent " .. #sent .. ", balance left " .. tostring(bankBalance))
+		-- above the reserve not one truck: red, and the tooltip names the reserve
+		tt = chooseKasten("window reserve, poor", 150000)
+		local b = replaceButton(tt)
+		check(b.props.meta.enabled == false and buttonText(b) == "Nicht genug Geld", "reserve, poor: button " .. tostring(buttonText(b)))
+		check(b.props.meta.tooltip == "Nicht genug Geld über der Reserve von $100000 (Reiter Nachbestellungen).", "reserve, poor: tooltip " .. tostring(b.props.meta.tooltip))
+		openQueue(content("window reserve, back"), "window reserve, back")
+		find(queueWindow("window reserve, back").settings, function(n) return n.kind == "TextInputField" end)[1].props.onValueChange("0")
+		closeQueue()
+		clearQueue(content("window reserve, clear"))
+	end)
+
+	section("the box shows only while the money does not cover all", function()
+		local tt = chooseKasten("box, one short", 487999)
+		local box = queueBox(tt)
+		check(box ~= nil and box.props.label == "1 nachbestellen", "box, one short: " .. tostring(box and box.props.label))
+		check(box and box.props.value == 0, "box must be off at first")
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tabs: " .. MOCK.tabLabels(mainWindow()))
+		local function auras(t2) return #find(t2, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-box-aura" end) end
+		check(auras(tt) == 1, "usable box without its glow")
+		local enough = chooseKasten("box, enough", 488000)
+		check(auras(enough) == 0, "glow although the money covers all")
+		-- the box is always there, greyed out while it has nothing to do (user decision 20.10.2026)
+		local eb = queueBox(enough)
+		check(eb ~= nil and eb.props.meta.enabled == false and eb.props.label == "Nachbestellen", "box with the money covering all: "
+			.. tostring(eb and eb.props.label) .. ", enabled " .. tostring(eb and eb.props.meta.enabled))
+		-- left of the button only the cost line now
+		local sumBox = find(enough, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-summary" end)[1]
+		local kinds = {}
+		for _i, c in ipairs(sumBox and sumBox.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "vertical-spacer|TextView|vertical-spacer", "summary lines: " .. table.concat(kinds, "|"))
+		local ib = queueBox(chooseKasten("box, infinite", nil))
+		check(ib ~= nil and ib.props.meta.enabled == false, "box usable with infinite money")
+		check(box.props.meta.enabled == true, "box greyed out although the money is short")
+		box = queueBox(chooseKasten("box, nothing", 60999))
+		check(box ~= nil and box.props.label == "8 nachbestellen", "box, nothing affordable: " .. tostring(box and box.props.label))
+	end)
+
+	section("nothing affordable: the box turns the button into Queue 8", function()
+		local tt = chooseKasten("queue all", 60999)
+		queueBox(tt).props.onValueChange(1)
+		-- not kept: every opening starts with the box off (user decision 20.10.2026)
+		check(saved().queueRest == nil, "box state written to the savegame: " .. tostring(saved().queueRest))
+		-- the glow: while the box is usable and not ticked (user decision 20.10.2026)
+		local function glow(t2) return #find(t2, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-box-aura" end) end
+		check(glow(content("queue all, box ticked")) == 0, "glow around a ticked box")
+		local again = queueBox(chooseKasten("queue all, reopened", 60999))
+		check(again and again.props.value == 0, "box still ticked in a new window")
+		queueBox(content("queue all, tick again")).props.onValueChange(1)
+		tt = content("queue all, ticked again")
+		tt = content("queue all, box on")
+		local b = replaceButton(tt)
+		check(buttonText(b) == "8 nachbestellen", "button text: " .. tostring(buttonText(b)))
+		check(b.props.meta.enabled == true and b.props.meta.class:find("mvr-partial", 1, true) ~= nil, "button must be enabled and yellow")
+		sent = {}
+		b.props.onClick()
+		check(#sent == 0, "queue all sent commands: " .. #sent)
+		check(saved().queueFormat == "1", "queueFormat: " .. tostring(saved().queueFormat))
+		check(saved().queue == "1,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "queue, oldest first: " .. tostring(saved().queue))
+		check(saved().queueNextId == "2" and saved().queueReserve == "0" and saved().queuePaused == false, "queue fields")
+		tt = content("queue all, after")
+		check(hasText(tt, "Ersetzt: 0 von 8. 8 nachbestellt."), "result line after queueing")
+		-- vehicles on order leave the old list (user decision 20.10.2026): all 8 trucks are on order, so the model is
+		-- not offered any more and a second click cannot order them again
+		tt = content("queue all again", 60999)
+		check(MOCK.oldEntry(tt, "m10") == nil, "queued vehicles still offered: " .. tostring(MOCK.oldEntry(tt, "m10")))
+		check(saved().queue == "1,m10,m11,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1", "queue unchanged: " .. tostring(saved().queue))
+		clearQueue(tt)
+	end)
+
+	section("box off: replacing as before, nothing queued (regression, passes on 1.1.0 too)", function()
+		local tt = chooseKasten("box off", 200000)
+		local box = queueBox(tt)
+		if box and box.props.value == 1 then box.props.onValueChange(0); tt = content("box off, off") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(#sent == 3, "box off: 3 commands expected, " .. #sent)
+		check(openEntries() == 0, "box off: vehicles queued")
+		check(hasText(content("box off, after"), "Ersetzt: 3 von 8."), "box off: result line")
+	end)
+
+	section("orders tab: the count in its label, the box under the replace button", function()
+		local tt = queueTrucks("tab count", 0)
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen (8)", "tab with 8 open: " .. MOCK.tabLabels(mainWindow()))
+		check(mainWindow().props.content.kind == "recipe:MvrContent", "the window must open on the replace tab")
+		-- like the game (react_transform.cpp:183): a node keeps its recipe across redraws, so switching the tab must not
+		-- change what each tab item is (game test 20.10.2026: placeholder <-> MvrQueueContent crashed the game)
+		local function itemKinds()
+			local out = {}
+			local tw = render("MvrWindow", { onClose = function() end }).props.content
+			for _i, t in ipairs(tw.props.tabs) do out[#out + 1] = t.props.item.kind end
+			return table.concat(out, "|"), tw
+		end
+		local before, tw = itemKinds()
+		tw.props.onValueChange(1)
+		local after, tw1 = itemKinds()
+		check(before == after and before == "recipe:MvrContent|recipe:MvrQueueContent", "tab items change with the tab: " .. before .. " -> " .. after)
+		tw1.props.onValueChange(0)
+		clearQueue(tt)
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen", "tab when empty: " .. MOCK.tabLabels(mainWindow()))
+		tt = chooseKasten("box place", 200000)
+		-- one line: cost | button | box, both sides of the button equally wide (user decision 20.10.2026)
+		local line = find(tt, function(n)
+			local c = n.kind == "BoxLayout" and n.props.children
+			return c and #c == 5 and c[3].props.meta and c[3].props.meta.class == "mvr-action-mid"
+		end)[1]
+		local kinds = {}
+		for _i, c in ipairs(line and line.props.children or {}) do kinds[#kinds + 1] = (c.kind == "Component" or c.kind == "BoxLayout") and c.props.meta and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "mvr-action-side|Spacer|mvr-action-mid|Spacer|mvr-action-side", "replace line: " .. table.concat(kinds, "|"))
+		check(line and line.props.children[3].props.children[1].kind == "Button", "the button heads the middle")
+		check(line and #find(line.props.children[5], function(n) return n.kind == "CheckBox" end) == 1
+			and #find(line.props.children[1], function(n) return n.kind == "TextView" and n.props.text:find("Restwert") end) == 1,
+			"cost on the left, box on the right")
+	end)
+
+	section("partial click queues the rest, oldest first", function()
+		local tt = queueTrucks("partial queue", 200000)
+		local ids = {}
+		for _i, c in ipairs(sent) do ids[#ids + 1] = c.e end
+		table.sort(ids)
+		check(#sent == 3 and table.concat(ids, ",") == "110,111,115", "partial queue: oldest three sent: " .. sentIds())
+		check(tostring(saved().queue):match("^%d+,m10,m11,0,0,0,0,0:112/1,113/1,114/1,116/1,117/1$") ~= nil, "partial queue: " .. tostring(saved().queue))
+		check(hasText(tt, "Ersetzt: 3 von 8. 5 nachbestellt."), "partial queue: result line")
+	end)
+
+	section("host: a tick sends what the balance covers, the next tick waits for the answers", function()
+		mountHost()
+		bankBalance, sent = 0, {}
+		hostTick(3)
+		check(#sent == 0, "sent without money")
+		bankBalance = PRICE - 1
+		hostTick()
+		check(#sent == 0, "sent one short")
+		bankBalance = 2 * PRICE - 1
+		holdSteps = true
+		hostTick()
+		check(#sent == 1 and sent[1].e == 112, "money for one: one command for the head expected: " .. sentIds())
+		hostTick(2)
+		check(#sent == 1, "commands while the last tick's are in flight")
+		holdSteps = false
+		step()
+		check(bankBalance == PRICE - 1, "balance after the command: " .. tostring(bankBalance))
+		check(tostring(saved().queue):match("^%d+,m10,m11,1,0,0,0,0:113/1,114/1,116/1,117/1$") ~= nil, "after the callback: " .. tostring(saved().queue))
+		bankBalance = 0
+		-- the head is checked only when the money could cover it (its net cost only rises): one balance read per tick
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		hostTick(10)
+		-- one validation reads three components (owner, vehicle, game time)
+		check((MOCK.apiCallsByName.getComponent or 0) == 3, "head validated more than once while the money stays short: " .. tostring(MOCK.apiCallsByName.getComponent))
+		check((MOCK.apiCallsByName.getPlayersBalance or 0) == 10, "balance reads: " .. tostring(MOCK.apiCallsByName.getPlayersBalance))
+	end)
+
+	section("queue window: cards, counters, the next vehicle and what is short", function()
+		local tt = content("window")
+		local q = openQueue(tt, "window")
+		-- one card per order, without a title: number, both models with their images, price, counters
+		check(#q.cards == 1 and q.titles[1] == nil, "order cards: " .. #q.cards .. ", title " .. tostring(q.titles[1]))
+		local b = q.bodies[1]
+		check(#find(b, function(n) return n.kind == "TextView" and n.props.text == "1" and n.props.meta.class:find("font-scale-title-2", 1, true) ~= nil end) == 1, "order number missing")
+		check(#find(b, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-divider" end) == 2, "lines around the order missing")
+		check(lineOf(b, "Benz Dreitonner Kipper") ~= nil and lineOf(b, "Benz Dreitonner Kasten") ~= nil and lineOf(b, "→") ~= nil, "models in the head")
+		check(#find(b, function(n) return n.kind == "ImageView" and n.props.meta.class == "mvr-item-image" end) == 2, "model images in the head")
+		check(MOCK.tileOf(b, "Nächstes") == "$61000" and MOCK.tileOf(b, "Gesamt") == "$244000", "price of one and of all open vehicles")
+		-- number | order | cancel (user decision 20.10.2026): the models, below them four tiles (variant E)
+		local card = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
+		local kinds = {}
+		for _i, c in ipairs(card and card.props.children or {}) do kinds[#kinds + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(kinds, "|") == "mvr-order-num|mvr-divider|BoxLayout|mvr-divider|mvr-order-end", "card parts: " .. table.concat(kinds, "|"))
+		check(card and #find(card.props.children[1], function(n) return n.kind == "TextView" and n.props.text == "1" end) == 1
+			and #find(card.props.children[5], function(n) return n.kind == "Button" end) == 1, "number left, cancel right, each in an end")
+		local rowsBox = card and card.props.children[3]
+		local head, row2 = rowsBox.props.children[1], rowsBox.props.children[2]
+		-- the arrow between two equally wide halves, so it stands in the middle of every card (user decision 20.10.2026)
+		local hk = {}
+		for _i, c in ipairs(head.props.children) do hk[#hk + 1] = c.kind == "Component" and c.props.meta.class or c.kind .. (c.props.text and ("=" .. c.props.text) or "") end
+		check(table.concat(hk, "|") == "mvr-order-half-left|TextView=→|mvr-order-half", "order head: " .. table.concat(hk, "|"))
+		check(head.props.children[2].props.meta.class == "font-scale-title-2", "arrow in the size of the number")
+		-- both models start at the arrow: the old one mirrored, name then image (user decision 20.10.2026)
+		local function cellKinds(h)
+			local cell = h.props.layout.props.children
+			local m = cell[1].kind == "Spacer" and cell[2] or cell[1]
+			local out = {}
+			for _i, c in ipairs(m.props.children) do out[#out + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+			return (cell[1].kind == "Spacer" and "Spacer|" or "") .. table.concat(out, "+") .. (cell[#cell].kind == "Spacer" and "|Spacer" or "")
+		end
+		check(cellKinds(head.props.children[1]) == "Spacer|TextView+ImageView", "old model: " .. cellKinds(head.props.children[1]))
+		check(cellKinds(head.props.children[3]) == "ImageView+TextView|Spacer", "new model: " .. cellKinds(head.props.children[3]))
+		-- the figures centered in their tiles, the labels on the left
+		local val = find(b, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-tile-value" end)
+		check(#val == 4 and val[1].props.children[1].kind == "Spacer" and val[1].props.children[3].kind == "Spacer", "tile figures not centered")
+		local texts = {}
+		for _i, c in ipairs(row2 and row2.props.children or {}) do
+			local tv = c.kind == "Component" and c.props.meta.class == "mvr-tile" and find(c, function(n) return n.kind == "TextView" end) or {}
+			texts[#texts + 1] = (tv[1] and tv[2]) and (tv[1].props.text .. "=" .. tv[2].props.text) or c.kind
+		end
+		check(#rowsBox.props.children == 2 and table.concat(texts, "|") == "Offen=4|Übersprungen=0|Nächstes=$61000|Gesamt=$244000",
+			"tiles: " .. table.concat(texts, "|"))
+		check(lineOf(b, "Ersetzt") == nil and MOCK.tileOf(b, "Ersetzt") == nil, "no replaced count (user decision 20.10.2026)")
+		check(lineOf(q.settings, "4 Fahrzeuge") == nil and lineOf(q.settings, "Pausiert") == nil, "settings without a count or status line")
+		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "cancel button of the job")
+		-- a plain tree, no own classes without a rule (rules() checked that), and the game's spacing classes on the rows
+		check(#find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-rows" end) == 1, "settings rows without the spacing class")
+		closeQueue()
+	end)
+
+	section("reserve stays on the account", function()
+		local q = openQueue(content("reserve"), "reserve")
+		local spin = find(q.settings, function(n) return n.kind == "TextInputField" end)[1]
+		check(spin ~= nil and spin.props.value == "0" and spin.props.filter("5") and spin.props.filter(".") and not spin.props.filter("-")
+			and not spin.props.filter("a"), "reserve field: digits and separators only")
+		check(hasText(q.settings, "Reserve") and hasText(q.settings, "$"), "reserve: currency sign in front of the field")
+		spin.props.onValueChange("100.000")
+		check(saved().queueReserve == "100000", "reserve not kept: " .. tostring(saved().queueReserve))
+		q = queueWindow("reserve set")
+		check(find(q.settings, function(n) return n.kind == "TextInputField" end)[1].props.value == "100.000", "field does not show the reserve with separators")
+		closeQueue()
+		bankBalance, sent = PRICE + 99999, {}
+		hostTick()
+		check(#sent == 0, "sent into the reserve")
+		bankBalance = PRICE + 100000
+		hostTick()
+		check(#sent == 1 and sent[1].e == 113, "reserve covered: " .. sentIds())
+		step()
+		openQueue(content("reserve back"), "reserve back")
+		find(queueWindow("reserve back").settings, function(n) return n.kind == "TextInputField" end)[1].props.onValueChange("0")
+		closeQueue()
+	end)
+
+	section("a sold vehicle is dropped and the next one checked in the same tick", function()
+		local truck = vehicles[114]
+		vehicles[114] = nil
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 116, "next vehicle not sent in the same tick: " .. sentIds())
+		step()
+		local q = openQueue(content("sold"), "sold")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == "1" and MOCK.tileOf(q.bodies[1], "Übersprungen") == "1", "counts after a sold vehicle")
+		local _t, node = MOCK.tileOf(q.bodies[1], "Übersprungen")
+		check(node and node.props.meta.tooltip == "1 verkauft, 0 schon ersetzt, 0 vom Spiel abgelehnt", "skipped tooltip: " .. tostring(node and node.props.meta.tooltip))
+		closeQueue()
+		vehicles[114] = truck
+	end)
+
+	section("an entity id reused for another entity is dropped", function()
+		MOCK.births[117] = 2
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 0, "reused id replaced: " .. sentIds())
+		local q = openQueue(content("reused"), "reused")
+		-- the last open vehicle went: the finished job leaves the window by itself (user decision 20.10.2026)
+		check(#q.cards == 0 and tostring(saved().queue) == "", "finished job not removed by itself: " .. tostring(saved().queue))
+		closeQueue()
+		MOCK.births[117] = nil
+	end)
+
+	section("a vehicle replaced by hand is dropped, the next one goes on", function()
+		local tt = queueTrucks("by hand", 0)
+		check(openEntries() == 8, "by hand: 8 queued")
+		vehicle(115, { 11 }) -- the oldest got the new model in the game's own window; the id stays
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 110, "by hand: 110 expected after dropping 115: " .. sentIds())
+		step()
+		local q = openQueue(content("by hand, window"), "by hand")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == "6", "by hand: counts")
+		local _t, node = MOCK.tileOf(q.bodies[1], "Übersprungen")
+		check(node and node.props.meta.tooltip == "0 verkauft, 1 schon ersetzt, 0 vom Spiel abgelehnt", "by hand: tooltip " .. tostring(node and node.props.meta.tooltip))
+		closeQueue()
+		clearQueue(tt)
+		vehicle(115, { 10 })
+		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+	end)
+
+	section("a train rebuilt by hand keeps the new locomotive, the queue swaps only the wagons", function()
+		-- Bm 235 (3) in trains 100 and 102; the player swaps the locomotive of 102 meanwhile
+		step()
+		bankBalance = 0
+		openAndRender("train queue", 500, true)
+		local tt = content("train queue")
+		combos(tt)[1].props.onValueChange("m3")
+		tt = content("train queue, Bm 235")
+		combos(tt)[2].props.onValueChange("m2")
+		tt = content("train queue, Avmz")
+		local box = queueBox(tt)
+		check(box ~= nil, "train queue: box missing")
+		if box and box.props.value == 0 then box.props.onValueChange(1); tt = content("train queue, box on") end
+		check(buttonText(replaceButton(tt)) == "2 nachbestellen", "train queue: button " .. tostring(buttonText(replaceButton(tt))))
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(openEntries() == 2, "train queue: 2 trains expected: " .. tostring(saved().queue))
+		local saved102 = vehicles[102]
+		vehicle(102, { 4, 3, 3 })
+		bankBalance = nil
+		hostTick()
+		step()
+		hostTick()
+		check(#sent == 2 and sentIds() == "100,102", "train queue: both trains in order: " .. sentIds())
+		local ids = {}
+		for _j, part in ipairs(sent[2] and sent[2].conf.vehicles or {}) do ids[#ids + 1] = part.part.modelId end
+		check(table.concat(ids, ",") == "4,2,2", "train queue: new locomotive kept, wagons swapped: " .. table.concat(ids, ","))
+		step()
+		vehicles[102] = saved102
+		clearQueue(content("train queue, clear"))
+	end)
+
+	section("new model expires: the job waits, blocked, and goes on when it is back", function()
+		step()
+		bankBalance = 0
+		openAndRender("expiring queue", 501, true)
+		local tt = content("expiring queue")
+		combos(tt)[2].props.onValueChange("m15")
+		tt = content("expiring queue, Auslauf")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("expiring queue, box on") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(openEntries() == 8, "expiring queue: 8 queued")
+		currentYear = 1981
+		bankBalance = nil
+		hostTick(2)
+		check(#sent == 0, "expired model still replaced: " .. #sent)
+		local q = openQueue(content("expiring queue, window"), "expiring")
+		local _t, node = lineOf(q.bodies[1], "Modell nicht mehr erhältlich")
+		check(node ~= nil and node.props.meta.class:find("error-tape", 1, true) ~= nil, "blocked job must say why, in the game's red box")
+		check(buttonIn(q.bodies[1], "Abbrechen") ~= nil, "blocked job must offer Cancel")
+		-- the red line takes the place of the tiles (card variant E); cancel stays in its own part on the right (user decision 20.10.2026)
+		local rowsBox = find(q.bodies[1], function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-order-body" end)[1]
+		check(rowsBox and #rowsBox.props.children == 2 and rowsBox.props.children[2] == node and #find(rowsBox, function(n) return n.kind == "Button" end) == 0,
+			"blocked: red line as second row, cancel outside")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == nil, "blocked: no tiles")
+		closeQueue()
+		currentYear = 1980
+		hostTick()
+		check(#sent == 8, "model back: not resumed: " .. #sent)
+		step()
+		clearQueue(content("expiring queue, clear"))
+	end)
+
+	section("a blocked job is removed with its button", function()
+		step()
+		bankBalance = 0
+		openAndRender("blocked remove", 501, true)
+		local tt = content("blocked remove")
+		combos(tt)[2].props.onValueChange("m15")
+		tt = content("blocked remove, Auslauf")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("blocked remove, box on") end
+		replaceButton(tt).props.onClick()
+		currentYear = 1981
+		hostTick()
+		local q = openQueue(content("blocked remove, window"), "blocked remove")
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
+		q = queueWindow("blocked removed")
+		check(#q.cards == 0 and tostring(saved().queue) == "", "blocked job not removed: " .. tostring(saved().queue))
+		closeQueue()
+		currentYear = 1980
+	end)
+
+	section("reserve: hidden with infinite money, capped at a trillion", function()
+		local tt = queueTrucks("reserve rules", 0)
+		bankBalance = nil
+		local q = openQueue(content("reserve rules, infinite"), "reserve infinite")
+		check(find(q.settings, function(n) return n.kind == "TextInputField" end)[1] == nil, "reserve shown with infinite money")
+		closeQueue()
+		bankBalance = 0
+		q = openQueue(content("reserve rules, money"), "reserve money")
+		local spin = find(q.settings, function(n) return n.kind == "TextInputField" end)[1]
+		check(spin ~= nil, "reserve field missing")
+		if spin then spin.props.onValueChange("5.000.000.000.000") end
+		check(saved().queueReserve == "1000000000000", "reserve not capped: " .. tostring(saved().queueReserve))
+		if spin then spin.props.onValueChange("") end
+		check(saved().queueReserve == "0", "empty reserve must be 0: " .. tostring(saved().queueReserve))
+		closeQueue()
+		clearQueue(tt)
+	end)
+
+	section("orders tab: prices follow the residual value while the game runs", function()
+		local tt = queueTrucks("revalue", 0)
+		bankBalance = 0
+		hostTick()
+		local q = openQueue(content("revalue"), "revalue")
+		check((MOCK.tileOf(q.bodies[1], "Nächstes") == "$61000" and MOCK.tileOf(q.bodies[1], "Gesamt") == "$488000"), "revalue: first prices")
+		residuals[115] = 1000 -- the oldest truck is worth something after all
+		q = queueWindow("revalue, paused")
+		check((MOCK.tileOf(q.bodies[1], "Nächstes") == "$61000" and MOCK.tileOf(q.bodies[1], "Gesamt") == "$488000"), "revalue: read again although the game stood still")
+		gameTimeNow = gameTimeNow + 1 -- the game runs: the prices follow at once (user decision 20.10.2026: live)
+		q = queueWindow("revalue, game runs")
+		check((MOCK.tileOf(q.bodies[1], "Nächstes") == "$60000" and MOCK.tileOf(q.bodies[1], "Gesamt") == "$487000"), "revalue: prices do not follow the residual value")
+		residuals[115] = nil
+		closeQueue()
+		clearQueue(tt)
+	end)
+
+	section("infinite money: the whole queue in one tick", function()
+		local tt = queueTrucks("infinite queue", 0)
+		bankBalance, sent = nil, {}
+		hostTick()
+		check(sentIds() == "115,110,111,112,113,114,116,117", "one tick, oldest first: " .. sentIds())
+		step()
+		hostTick(2)
+		check(#sent == 8 and openEntries() == 0, "queue not empty after one tick: " .. tostring(saved().queue))
+		clearQueue(tt)
+	end)
+
+	section("money for three of eight: three in one tick, the rest waits", function()
+		local tt = queueTrucks("three", 0)
+		bankBalance, sent = 3 * PRICE + 500, {}
+		hostTick()
+		check(sentIds() == "115,110,111", "three oldest in one tick: " .. sentIds())
+		step()
+		check(bankBalance == 500 and openEntries() == 5, "after three: balance " .. tostring(bankBalance) .. ", " .. tostring(saved().queue))
+		hostTick(3)
+		check(#sent == 3, "sent without money: " .. sentIds())
+		clearQueue(tt)
+		bankBalance = 0
+	end)
+
+	section("vehicles on order leave the old list; cancelling brings them back (user decision 20.10.2026)", function()
+		local tt = queueTrucks("older order", 0)
+		check(MOCK.oldEntry(tt, "m10") == nil, "on order: the trucks still offered: " .. tostring(MOCK.oldEntry(tt, "m10")))
+		-- a newer model came out: the player cancels the order, the trucks are back and can be ordered with it
+		local q = openQueue(tt, "on order")
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
+		closeQueue()
+		tt = content("cancelled")
+		local entry = MOCK.oldEntry(tt, "m10")
+		check(entry ~= nil and entry:find("8 Fahrzeuge", 1, true) ~= nil, "cancelled: the 8 trucks must be back: " .. tostring(entry))
+		tt = chooseKasten("newer order", 0)
+		combos(tt)[2].props.onValueChange("m15")
+		tt = content("newer order, model")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("newer order, box on") end
+		replaceButton(tt).props.onClick()
+		check(tostring(saved().queue):match("^%d+,m10,m15,0,0,0,0,0:115/1,110/1,111/1,112/1,113/1,114/1,116/1,117/1$") ~= nil,
+			"newer order: the trucks on the new order: " .. tostring(saved().queue))
+		clearQueue(content("newer order, clear"))
+	end)
+
+	section("replacing at once leaves vehicles on order alone", function()
+		local tt = queueTrucks("direct", 0)
+		check(openEntries() == 8, "direct: 8 queued")
+		-- the window opened again with money: the button must not reach the queue's trucks
+		tt = chooseKasten("direct, money", nil)
+		sent = {}
+		local b = replaceButton(tt)
+		if b and b.props.meta.enabled ~= false and b.props.onClick then b.props.onClick() end
+		check(#sent == 0 and openEntries() == 8, "direct: sent " .. sentIds() .. ", queue " .. tostring(saved().queue))
+		step()
+		bankBalance = 0
+		clearQueue(content("direct, clear"))
+	end)
+
+	section("negative balance: nothing", function()
+		local tt = queueTrucks("negative", 0)
+		bankBalance, sent = -5, {}
+		hostTick(3)
+		check(#sent == 0, "sent with a negative balance")
+		clearQueue(tt)
+		bankBalance = 0
+	end)
+
+	section("two jobs run one after the other", function()
+		step()
+		queueTrucks("fifo trucks", 0)
+		openAndRender("fifo trains", 500, true)
+		local tt = content("fifo trains")
+		combos(tt)[1].props.onValueChange("m3")
+		tt = content("fifo trains, Bm 235")
+		combos(tt)[2].props.onValueChange("m2")
+		tt = content("fifo trains, Avmz")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("fifo, box on") end
+		sent = {}
+		replaceButton(tt).props.onClick()
+		check(openEntries() == 10, "fifo: 10 queued: " .. tostring(saved().queue))
+		local q = openQueue(tt, "fifo")
+		check(#q.cards == 2 and #find(q.bodies[2], function(n) return n.kind == "TextView" and n.props.text == "2" and n.props.meta.class:find("font-scale-title-2", 1, true) ~= nil end) == 1, "second order must carry number 2")
+		closeQueue()
+		bankBalance = nil
+		for _k = 1, 10 do hostTick(); step() end
+		check(sentIds() == "115,110,111,112,113,114,116,117,100,102", "fifo: order " .. sentIds())
+		check(openEntries() == 0, "fifo: entries left")
+		clearQueue(content("fifo, clear"))
+	end)
+
+	section("a waiting order's prices follow the residual value, also once it moves up", function()
+		step()
+		queueTrucks("waiting prices trucks", 0)
+		openAndRender("waiting prices trains", 500, true)
+		local tt = content("waiting prices trains")
+		combos(tt)[1].props.onValueChange("m3")
+		tt = content("waiting prices, Bm 235")
+		combos(tt)[2].props.onValueChange("m2")
+		tt = content("waiting prices, Avmz")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("waiting prices, box on") end
+		replaceButton(tt).props.onClick()
+		local q = openQueue(tt, "waiting prices")
+		-- a long name loses its middle, the ending stays; the full name in the tooltip (user decision 20.10.2026)
+		local nm = find(q.bodies[2], function(n) return n.kind == "TextView" and n.props.meta.class:find("mvr-order-name", 1, true) ~= nil end)
+		check(#nm == 2 and nm[1].props.text == "Bm 235 (IC) D…Elfenbein)" and nm[1].props.meta.tooltip == "Bm 235 (IC) DB (Ozeanblau-Elfenbein)",
+			"long name: " .. tostring(nm[1] and nm[1].props.text) .. " / " .. tostring(nm[1] and nm[1].props.meta.tooltip))
+		local short = find(q.bodies[1], function(n) return n.kind == "TextView" and n.props.text == "Benz Dreitonner Kipper" end)[1]
+		check(short and short.props.meta.tooltip == nil, "short name: shown whole, without a tooltip")
+		-- the prices of a waiting order follow the residual value as well, before and after the order above it goes
+		-- (game test 20.10.2026: the second order's figures stood still)
+		local before = MOCK.tileOf(q.bodies[2], "Gesamt")
+		residuals[100] = 5000
+		gameTimeNow = gameTimeNow + 1
+		q = queueWindow("waiting prices, game runs")
+		local moved = MOCK.tileOf(q.bodies[2], "Gesamt")
+		check(moved ~= nil and moved ~= before, "waiting prices: the second order's total stood still: " .. tostring(before) .. " -> " .. tostring(moved))
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
+		q = queueWindow("waiting prices, first cancelled")
+		check(#q.cards == 1 and MOCK.tileOf(q.bodies[1], "Gesamt") == moved, "waiting prices: the order left keeps its total: " .. tostring(MOCK.tileOf(q.bodies[1], "Gesamt")))
+		residuals[100] = 9000
+		gameTimeNow = gameTimeNow + 1
+		q = queueWindow("waiting prices, game runs on")
+		check(MOCK.tileOf(q.bodies[1], "Gesamt") ~= moved, "waiting prices: the order left stood still: " .. tostring(MOCK.tileOf(q.bodies[1], "Gesamt")))
+		residuals[100] = nil
+		closeQueue()
+		clearQueue(content("waiting prices, clear"))
+		bankBalance = 0
+	end)
+
+	section("cancelling a job while its command is in flight", function()
+		local tt = queueTrucks("cancel", 0)
+		holdSteps, bankBalance, sent = true, PRICE, {}
+		hostTick()
+		check(#sent == 1, "cancel: one in flight")
+		local q = openQueue(tt, "cancel")
+		buttonIn(q.bodies[1], "Abbrechen").props.onClick()
+		q = queueWindow("cancelled")
+		check(#q.cards == 0 and openEntries() == 0, "cancel: job not removed")
+		closeQueue()
+		holdSteps = false
+		step() -- the callback of the cancelled job arrives
+		hostTick()
+		check(#sent == 1 and openEntries() == 0 and tostring(saved().queue) == "", "cancel: the late callback revived something: " .. tostring(saved().queue))
+	end)
+
+	section("paused: nothing until the box is cleared", function()
+		local tt = queueTrucks("paused", 0)
+		local q = openQueue(tt, "paused")
+		local box = find(q.settings, function(n) return n.kind == "CheckBox" end)[1]
+		-- name on the left, the box in the right column of the settings, like the reserve field
+		check(box and box.props.label == "Nachbestellungen anhalten", "hold box label: " .. tostring(box and box.props.label))
+		-- the settings are the footer below the orders (variant D, user decision 20.10.2026)
+		local kids = find(q.tree, function(n) return n.kind == "Component" and n.props.meta and n.props.meta.class == "mvr-orders" end)[1].props.layout.props.children
+		check(kids[#kids].kind == "recipe:MvrQueueSettings", "settings must be the last part of the tab")
+		check(#find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end) == 1, "settings must be one row")
+		-- reserve | hold box in the middle | cancel all (user decision 20.10.2026)
+		local foot = find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-row" end)[1]
+		local fk = {}
+		for _i, c in ipairs(foot and foot.props.children or {}) do fk[#fk + 1] = c.kind == "Component" and c.props.meta.class or c.kind end
+		check(table.concat(fk, "|") == "mvr-action-side|Spacer|CheckBox|Spacer|mvr-action-side", "orders footer: " .. table.concat(fk, "|"))
+		-- both sides lay their parts side by side
+		local sides = find(q.settings, function(n) return n.kind == "BoxLayout" and n.props.meta and n.props.meta.class == "mvr-foot-side" end)
+		check(#sides == 2 and sides[1].props.orientation == "H" and sides[2].props.orientation == "H", "orders footer: sides must be horizontal")
+		check(box ~= nil and box.props.value == 0, "paused box")
+		box.props.onValueChange(1)
+		check(saved().queuePaused == true, "paused not kept")
+		q = queueWindow("paused on")
+		check(find(q.settings, function(n) return n.kind == "CheckBox" end)[1].props.value == 1, "hold box must show it is on")
+		closeQueue()
+		bankBalance, sent = nil, {}
+		hostTick(3)
+		check(#sent == 0, "sent while paused")
+		openQueue(content("paused off"), "paused off")
+		find(queueWindow("paused off").settings, function(n) return n.kind == "CheckBox" end)[1].props.onValueChange(0)
+		closeQueue()
+		hostTick()
+		check(#sent == 8, "not resumed: " .. #sent)
+		step()
+		clearQueue(content("paused, clear"))
+	end)
+
+	section("refused three times: dropped as rejected", function()
+		local tt = queueTrucks("refused", 0)
+		refused[115] = true
+		sent = {}
+		for _k = 1, 3 do bankBalance = PRICE; hostTick(); step() end
+		check(sentIds() == "115,115,115", "refused: three tries expected: " .. sentIds())
+		bankBalance = PRICE
+		hostTick()
+		check(sentIds() == "115,115,115,110", "refused: next vehicle after three tries: " .. sentIds())
+		step()
+		local q = openQueue(content("refused, window"), "refused")
+		local _t, node = MOCK.tileOf(q.bodies[1], "Übersprungen")
+		check(node and node.props.meta.tooltip == "0 verkauft, 0 schon ersetzt, 1 vom Spiel abgelehnt", "refused: tooltip " .. tostring(node and node.props.meta.tooltip))
+		closeQueue()
+		refused = {}
+		clearQueue(tt)
+	end)
+
+	section("no callback: the vehicle tells whether it was replaced", function()
+		local tt = queueTrucks("no callback", 0)
+		holdSteps, bankBalance, sent = true, PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 115, "no callback: first command")
+		hostTick(5)
+		check(#sent == 1, "resent before the timeout")
+		MOCK.appClock = MOCK.appClock + 11
+		frame() -- the timeout: parts unchanged, so the vehicle stays at the head
+		hostTick()
+		check(#sent == 2 and sent[2].e == 115, "no callback, unchanged: not sent again: " .. sentIds())
+		-- this time the vehicle changed meanwhile: done, the next one is sent
+		vehicle(115, { 11 })
+		MOCK.appClock = MOCK.appClock + 11
+		frame()
+		hostTick()
+		check(#sent == 3 and sent[3].e == 110, "no callback, changed: next vehicle expected: " .. sentIds())
+		queuedCommands = {}
+		holdSteps = false
+		local q = openQueue(content("no callback, window"), "no callback")
+		check(MOCK.tileOf(q.bodies[1], "Offen") == "7", "no callback: counts")
+		closeQueue()
+		vehicle(115, { 10 })
+		vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = 1
+		clearQueue(tt)
+	end)
+
+	section("budget: an empty queue costs no native call, a waiting one only the clock", function()
+		MOCK.apiCalls = 0
+		for _k = 1, 100 do frame() end
+		hostTick(5)
+		check(MOCK.apiCalls == 0, "empty queue: " .. MOCK.apiCalls .. " native calls")
+		local tt = queueTrucks("budget", 0)
+		bankBalance = 0
+		hostTick() -- the first tick validates the head
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		for _k = 1, 100 do frame() end
+		check(MOCK.apiCalls == 100 and MOCK.apiCallsByName.getApplicationTime == 100, "frames between ticks: " .. MOCK.apiCalls .. " calls")
+		MOCK.apiCalls, MOCK.apiCallsByName = 0, {}
+		hostTick(10)
+		check((MOCK.apiCallsByName.getComponent or 0) == 0 and (MOCK.apiCallsByName.getEntitiesWithComponent or 0) == 0, "waiting for money: the fleet or the head read again")
+		clearQueue(tt)
+	end)
+
+	section("1000 stale vehicles: at most 20 dropped per tick", function()
+		for id = 2000, 2999 do
+			vehicle(id, { 10 })
+			vehicles[id].transportVehicleConfig.vehicles[1].purchaseTime = 0 -- older than the eight
+		end
+		local tt = queueTrucks("stale", 0)
+		check(openEntries() == 1008, "stale: 1008 queued, " .. openEntries())
+		-- numbers carry the game's thousands separator (user decision 20.10.2026)
+		check(MOCK.tabLabels(mainWindow()) == "Ersetzen|Nachbestellungen (1.008)", "thousands separator in the tab: " .. MOCK.tabLabels(mainWindow()))
+		check(hasText(tt, "Ersetzt: 0 von 1.008. 1.008 nachbestellt."), "thousands separator in the result line")
+		for id = 2000, 2999 do vehicles[id] = nil end
+		bankBalance, sent = nil, {}
+		hostTick()
+		check(openEntries() == 988 and #sent == 0, "stale: 20 dropped expected, " .. (1008 - openEntries()) .. " dropped, " .. #sent .. " sent")
+		hostTick()
+		check(openEntries() == 968, "stale: second tick, " .. openEntries() .. " left")
+		clearQueue(tt)
+	end)
+
+	section("the window's own batch and the queue never hit the same vehicle", function()
+		local tt = queueTrucks("race", 0)
+		holdSteps, bankBalance, sent = true, PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 115, "race: queue sent the oldest")
+		bankBalance = nil
+		-- the player picks the new model again in the open window (no step passes: the queue's command is still
+		-- waiting) and replaces everything with infinite money
+		combos(tt)[2].props.onValueChange("m11")
+		tt = content("race, window")
+		check(buttonText(replaceButton(tt)) == "Ersetzen", "race: button " .. tostring(buttonText(replaceButton(tt))))
+		replaceButton(tt).props.onClick()
+		-- all 8 are on order: the window sends none of them, the queue alone does (user decision 20.10.2026)
+		check(sentIds() == "115", "race: the window must leave the queue's vehicles out: " .. sentIds())
+		hostTick(3)
+		local seen, twice = {}, false
+		for _i, c in ipairs(sent) do twice = twice or seen[c.e] == true; seen[c.e] = true end
+		check(not twice, "race: a vehicle sent twice: " .. sentIds())
+		holdSteps = false
+		step()
+		clearQueue(content("race, clear"))
+	end)
+
+	section("no counter in the game bar: everything stays in the depot window (user decision 20.10.2026)", function()
+		local ok = pcall(render, "MvrQueueBar", {})
+		check(not ok, "a game bar counter is still registered")
+	end)
+
+	section("an error in the tick never reaches the UI; five in a row pause the queue", function()
+		local tt = queueTrucks("error", 0)
+		bankBalance, sent = nil, {}
+		local realGet = api.engine.getComponent
+		api.engine.getComponent = function(e, ct) if ct == CT.TRANSPORT_VEHICLE then error("component unreadable") end return realGet(e, ct) end
+		local okFrame = true
+		for _k = 1, 5 do
+			MOCK.appClock = MOCK.appClock + 11
+			okFrame = okFrame and pcall(frame)
+		end
+		api.engine.getComponent = realGet
+		check(okFrame, "error: the step hook threw")
+		check(#sent == 0 and saved().queuePaused == true, "error: queue not paused after five errors")
+		local q = openQueue(content("error, window"), "error")
+		check(lineOf(q.tree, "Fehler, Nachbestellungen angehalten: ") ~= nil, "error: window does not show it")
+		find(q.settings, function(n) return n.kind == "CheckBox" end)[1].props.onValueChange(0)
+		closeQueue()
+		MOCK.appClock = MOCK.appClock + 11
+		hostTick()
+		check(#sent == 8, "error: not resumed after unpausing: " .. #sent)
+		step()
+		clearQueue(tt)
+	end)
+
+	section("savegame: a new session continues the queue, garbage is left alone", function()
+		local tt = queueTrucks("session", 0)
+		local before = saved().queue
+		newSession()
+		mountHost()
+		bankBalance, sent = PRICE, {}
+		hostTick()
+		check(#sent == 1 and sent[1].e == 115, "session: queue not continued after loading: " .. sentIds())
+		step()
+		check(saved().queue ~= before and openEntries() == 7, "session: progress not written")
+		-- another version wrote the queue: not processed, not overwritten, said in the window
+		guiSaveData[MOD] = { sortOld = "name", queueFormat = "2", queue = "whatever", queueReserve = "5" }
+		newSession()
+		mountHost()
+		sent = {}
+		hostTick(3)
+		check(#sent == 0, "foreign format processed")
+		local hit = false
+		for _i, l in ipairs(logs) do if l:find("another version", 1, true) then hit = true end end
+		check(hit, "foreign format: no log line")
+		tt = chooseKasten("foreign, sort", 60999)
+		find(tt, function(n) return n.kind == "ToggleButton" and n.props.meta.class == "mvr-sort" end)[2].props.onValueChange(1)
+		check(saved().sortOld == "year" and saved().queueFormat == "2" and saved().queue == "whatever" and saved().queueReserve == "5", "foreign format overwritten by a settings change")
+		tt = content("foreign, queue")
+		if queueBox(tt).props.value == 0 then queueBox(tt).props.onValueChange(1); tt = content("foreign, box on") end
+		replaceButton(tt).props.onClick()
+		tt = content("foreign, clicked")
+		check(hasText(tt, "Die Nachbestellungen in diesem Spielstand stammen von einer anderen Version von Mass Vehicle Replace und bleiben unangetastet."), "foreign format: click must say why nothing was queued")
+		check(saved().queue == "whatever", "foreign format overwritten by a click")
+		local q = openQueue(tt, "foreign")
+		check(lineOf(q.tree, "Die Nachbestellungen in diesem Spielstand") ~= nil, "foreign format: window does not say so")
+		closeQueue()
+		-- damaged string of our own format: the same
+		guiSaveData[MOD] = { queueFormat = "1", queue = "1,m10,m11,0,0,0,0,0:115/x" }
+		newSession()
+		mountHost()
+		hostTick(2)
+		check(#sent == 0 and saved().queue == "1,m10,m11,0,0,0,0,0:115/x", "damaged queue processed or overwritten")
+		-- an old savegame without a queue, and none at all
+		guiSaveData[MOD] = { sortOld = "year" }
+		newSession()
+		mountHost()
+		hostTick(2)
+		guiSaveData[MOD] = nil
+		newSession()
+		mountHost()
+		hostTick(2)
+		check(#sent == 0, "old savegame: commands from nowhere")
+		tt = queueTrucks("old savegame, queue", 0)
+		check(openEntries() == 8 and saved().queueFormat == "1", "old savegame: queueing must start a queue")
+		clearQueue(tt)
+	end)
+
+	section("map editor: the host does nothing", function()
+		MOCK.mapEditor = true
+		local tt = queueTrucks("editor", 0)
+		newSession()
+		mountHost()
+		bankBalance, sent = nil, {}
+		hostTick(3)
+		check(#sent == 0, "editor: commands sent")
+		MOCK.mapEditor = false
+		newSession()
+		mountHost()
+		clearQueue(chooseKasten("editor, clear", 0))
+	end)
+
+	-- back to the state the following tests expect
+	bankBalance, holdSteps, refused, residuals = 5000000, false, {}, {}
+	vehicles[115].transportVehicleConfig.vehicles[1].purchaseTime = nil
+	if windows["mass_vehicle_replace.window"] then windows["mass_vehicle_replace.window"].params.onClose() end
 end
 
 print("== Robust against mods that overwrite the module field")
