@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Both model lists start sorted by year: the old list oldest first, the new list newest first.
 - Each queued vehicle is checked right before its command is sent: sold or handed to another player, entity id reused, or already carrying the new model (replaced by hand) is skipped and counted; a new model that is no longer for sale or unknown (mod removed) blocks only that job, the jobs behind it go on. A command the game refuses three times drops the vehicle; a command without an answer for 10 s is resolved by looking at the vehicle. Five Lua errors in a row pause the orders and the window says so.
 
+### Fixed
+
+- The window keeps its height when other models are chosen. The "Details" table always has the same number of lines. Values a model lacks stay empty. Before, the table grew or shrank with the chosen models.
+- The "Details" section has the same gap above and below the table. Before, the window's spacing rule reached into the game's card and put 8 more above it.
+
 ## [1.1.0] - 2026-10-19
 
 ### Added
